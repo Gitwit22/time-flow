@@ -69,6 +69,8 @@ export function getUpcomingInvoice(
 
   const [clientId, clientEntries] = grouped.entries().next().value as [string, TimeEntry[]];
   const totalHours = clientEntries.reduce((total, entry) => total + entry.durationHours, 0);
+  const client = clients.find((c) => c.id === clientId);
+  const hourlyRate = client?.hourlyRate ?? currentUser.hourlyRate;
 
   return {
     clientId,
@@ -76,7 +78,7 @@ export function getUpcomingInvoice(
     periodStart: toIsoDate(start),
     periodEnd: toIsoDate(end),
     totalHours,
-    totalAmount: totalHours * currentUser.hourlyRate,
+    totalAmount: totalHours * hourlyRate,
     existingInvoiceCount: invoices.filter((invoice) => invoice.clientId === clientId).length,
   };
 }

@@ -16,6 +16,7 @@ export interface Client {
   name: string;
   contactName?: string;
   contactEmail?: string;
+  hourlyRate?: number;
   companyViewerEnabled: boolean;
 }
 

@@ -49,6 +49,16 @@ export function ClientDialog({ client, open, onOpenChange, onSubmit }: ClientDia
               <Input type="email" value={form.contactEmail} onChange={(event) => setForm((current) => ({ ...current, contactEmail: event.target.value }))} />
             </div>
           </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Hourly rate (optional)</Label>
+            <Input
+              type="number"
+              step="0.01"
+              placeholder="Leave blank to use your default rate"
+              value={form.hourlyRate ?? ""}
+              onChange={(event) => setForm((current) => ({ ...current, hourlyRate: event.target.value ? Number(event.target.value) : undefined }))}
+            />
+          </div>
           <div className="flex items-center justify-between rounded-lg border p-3">
             <div>
               <p className="text-sm font-medium">Client viewer access</p>

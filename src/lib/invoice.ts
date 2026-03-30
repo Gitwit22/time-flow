@@ -30,6 +30,7 @@ export function buildInvoiceDrafts(
   return Array.from(groupedEntries.entries()).map(([groupClientId, grouped]) => {
     const client = clients.find((item) => item.id === groupClientId);
     const totalHours = grouped.reduce((total, entry) => total + entry.durationHours, 0);
+    const hourlyRate = client?.hourlyRate ?? currentUser.hourlyRate;
 
     return {
       clientId: groupClientId,
@@ -39,8 +40,8 @@ export function buildInvoiceDrafts(
       dueDate,
       entryIds: grouped.map((entry) => entry.id),
       totalHours,
-      hourlyRate: currentUser.hourlyRate,
-      totalAmount: totalHours * currentUser.hourlyRate,
+      hourlyRate,
+      totalAmount: totalHours * hourlyRate,
       notes: settings.invoiceNotes,
     };
   });

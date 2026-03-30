@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { generateViewerInvite } from "@/lib/auth";
+import { formatCurrency } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
 import type { Client } from "@/types";
 
@@ -85,8 +86,8 @@ export default function Clients() {
                   <p className="font-medium">{client.contactName || "-"}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground text-xs">Viewer Access</p>
-                  <p className="font-medium">{client.companyViewerEnabled ? "Enabled" : "Disabled"}</p>
+                  <p className="text-muted-foreground text-xs">Hourly Rate</p>
+                  <p className="font-medium">{client.hourlyRate ? `${formatCurrency(client.hourlyRate)}/hr` : "Default rate"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Client ID</p>
