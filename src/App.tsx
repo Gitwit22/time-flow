@@ -1,10 +1,34 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
+
+// Public pages
+import Landing from "./pages/Landing";
+import Login from "./pages/Login";
+import SignUp from "./pages/SignUp";
+import InviteAcceptance from "./pages/InviteAcceptance";
+import NotFound from "./pages/NotFound";
+
+// Admin layout + pages
+import { AdminLayout } from "./components/AdminLayout";
+import AdminDashboard from "./pages/admin/Dashboard";
+import TimeTracker from "./pages/admin/TimeTracker";
+import Clients from "./pages/admin/Clients";
+import InvoiceCenter from "./pages/admin/InvoiceCenter";
+import InvoiceDetail from "./pages/admin/InvoiceDetail";
+import EmailPrep from "./pages/admin/EmailPrep";
+import Reports from "./pages/admin/Reports";
+import SettingsPage from "./pages/admin/Settings";
+
+// Client layout + pages
+import { ClientLayout } from "./components/ClientLayout";
+import ClientDashboard from "./pages/client/Dashboard";
+import ClientTimeLogs from "./pages/client/TimeLogs";
+import ClientInvoiceHistory from "./pages/client/InvoiceHistory";
+import ClientInvoiceDetail from "./pages/client/InvoiceDetail";
+import ClientAccount from "./pages/client/Account";
 
 const queryClient = new QueryClient();
 
@@ -15,8 +39,33 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          {/* Public */}
+          <Route path="/" element={<Landing />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<SignUp />} />
+          <Route path="/invite" element={<InviteAcceptance />} />
+
+          {/* Admin */}
+          <Route path="/admin" element={<AdminLayout />}>
+            <Route index element={<AdminDashboard />} />
+            <Route path="time" element={<TimeTracker />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="invoices" element={<InvoiceCenter />} />
+            <Route path="invoices/:id" element={<InvoiceDetail />} />
+            <Route path="email" element={<EmailPrep />} />
+            <Route path="reports" element={<Reports />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
+
+          {/* Client Portal */}
+          <Route path="/client" element={<ClientLayout />}>
+            <Route index element={<ClientDashboard />} />
+            <Route path="time-logs" element={<ClientTimeLogs />} />
+            <Route path="invoices" element={<ClientInvoiceHistory />} />
+            <Route path="invoices/:id" element={<ClientInvoiceDetail />} />
+            <Route path="account" element={<ClientAccount />} />
+          </Route>
+
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
