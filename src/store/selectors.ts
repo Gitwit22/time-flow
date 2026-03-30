@@ -6,15 +6,21 @@ export function selectIsReadonly(state: AppState) {
   return state.currentUser.role === "client_viewer";
 }
 
-export function selectDashboardMetrics(state: AppState, referenceDate = new Date()) {
-  const billingPeriod = getBillingPeriod(referenceDate, state.currentUser.invoiceFrequency);
-  const todayHours = getTodaysHours(state.timeEntries, referenceDate);
-  const periodHours = getPeriodHours(state.timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodEarnings = getPeriodEarnings(state.timeEntries, state.currentUser.hourlyRate, billingPeriod.start, billingPeriod.end);
-  const status = getActiveStatus(state.activeSession);
-  const statusSince = state.activeSession.startedAt ? `Since ${formatClockTime(state.activeSession.startedAt)}` : "No active session";
+interface DashboardMetricsInput {
+  currentUser: Pick<AppState["currentUser"], "invoiceFrequency" | "hourlyRate">;
+  timeEntries: AppState["timeEntries"];
+  activeSession: AppState["activeSession"];
+}
 
-  const recentEntries = [...state.timeEntries]
+export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDate = new Date()) {
+  const billingPeriod = getBillingPeriod(referenceDate, input.currentUser.invoiceFrequency);
+  const todayHours = getTodaysHours(input.timeEntries, referenceDate);
+  const periodHours = getPeriodHours(input.timeEntries, billingPeriod.start, billingPeriod.end);
+  const periodEarnings = getPeriodEarnings(input.timeEntries, input.currentUser.hourlyRate, billingPeriod.start, billingPeriod.end);
+  const status = getActiveStatus(input.activeSession);
+  const statusSince = input.activeSession.startedAt ? `Since ${formatClockTime(input.activeSession.startedAt)}` : "No active session";
+
+  const recentEntries = [...input.timeEntries]
     .filter((entry) => entry.status !== "running")
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
     .slice(0, 6);

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight, Calendar, Clock, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
 
@@ -19,10 +19,23 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const timeEntries = useAppStore((state) => state.timeEntries);
+  const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
   const markTimeEntryInvoiced = useAppStore((state) => state.markTimeEntryInvoiced);
-  const metrics = useAppStore((state) => selectDashboardMetrics(state));
+  const metrics = useMemo(
+    () =>
+      selectDashboardMetrics({
+        currentUser: {
+          invoiceFrequency: currentUser.invoiceFrequency,
+          hourlyRate: currentUser.hourlyRate,
+        },
+        timeEntries,
+        activeSession,
+      }),
+    [activeSession, currentUser.hourlyRate, currentUser.invoiceFrequency, timeEntries],
+  );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
