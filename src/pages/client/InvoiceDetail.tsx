@@ -1,24 +1,55 @@
 import { ArrowLeft, Download, Eye } from "lucide-react";
+
+import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { useAppStore } from "@/store/appStore";
 import { Link, useParams } from "react-router-dom";
 
-const lineItems = [
-  { date: "Mar 3, 2026", description: "API endpoint development", hours: 8.0, rate: 150, amount: 1200 },
-  { date: "Mar 4, 2026", description: "Frontend integration", hours: 7.5, rate: 150, amount: 1125 },
-  { date: "Mar 5, 2026", description: "Testing & bug fixes", hours: 8.0, rate: 150, amount: 1200 },
-  { date: "Mar 6, 2026", description: "Code review & documentation", hours: 6.5, rate: 150, amount: 975 },
-  { date: "Mar 7, 2026", description: "Feature development", hours: 8.5, rate: 150, amount: 1275 },
-  { date: "Mar 10, 2026", description: "Database optimization", hours: 8.0, rate: 150, amount: 1200 },
-  { date: "Mar 11, 2026", description: "UI polish & responsive fixes", hours: 7.0, rate: 150, amount: 1050 },
-  { date: "Mar 12, 2026", description: "Deployment & monitoring", hours: 9.0, rate: 150, amount: 1350 },
-];
-
-const total = lineItems.reduce((s, l) => s + l.amount, 0);
+const statusStyles: Record<string, string> = {
+  draft: "status-badge-muted",
+  sent: "status-badge-warning",
+  paid: "status-badge-success",
+  overdue: "status-badge-warning",
+};
 
 export default function ClientInvoiceDetail() {
   const { id } = useParams();
+
+  const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
+  const invoices = useAppStore((state) => state.invoices);
+  const clients = useAppStore((state) => state.clients);
+  const timeEntries = useAppStore((state) => state.timeEntries);
+
+  const invoice = invoices.find((item) => item.id === id);
+
+  if (!invoice) {
+    return (
+      <div className="space-y-6 max-w-4xl mx-auto">
+        <Button variant="ghost" size="sm" asChild>
+          <Link to="/client/invoices">
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Invoices
+          </Link>
+        </Button>
+        <Card>
+          <CardContent className="p-8">
+            <EmptyState icon={Eye} title="Invoice not found" description="The requested invoice could not be located in your current data." />
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const client = clients.find((item) => item.id === invoice.clientId);
+  const entries = timeEntries
+    .filter((entry) => invoice.entryIds.includes(entry.id))
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const displayStatus = getInvoiceDisplayStatus(invoice);
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -44,39 +75,38 @@ export default function ClientInvoiceDetail() {
           <div className="flex justify-between items-start mb-8">
             <div>
               <h1 className="text-2xl font-bold font-heading">INVOICE</h1>
-              <p className="text-muted-foreground text-sm mt-1">{id || "INV-2026-003"}</p>
+              <p className="text-muted-foreground text-sm mt-1">{invoice.id}</p>
             </div>
             <div className="text-right">
-              <h2 className="font-heading font-semibold">John Doe</h2>
-              <p className="text-sm text-muted-foreground">Software Development</p>
-              <p className="text-sm text-muted-foreground">john@contractor.com</p>
+              <h2 className="font-heading font-semibold">{settings.businessName || currentUser.name}</h2>
+              <p className="text-sm text-muted-foreground">{currentUser.email}</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 p-4 rounded-lg bg-muted/50">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Date</p>
-              <p className="font-medium text-sm mt-1">Mar 31, 2026</p>
+              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.periodEnd)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Due Date</p>
-              <p className="font-medium text-sm mt-1">Apr 15, 2026</p>
+              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Billing Period</p>
-              <p className="font-medium text-sm mt-1">Mar 1 – 31, 2026</p>
+              <p className="font-medium text-sm mt-1">{formatPeriodLabel(invoice.periodStart, invoice.periodEnd)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Status</p>
-              <span className="status-badge-warning mt-1">Sent</span>
+              <span className={statusStyles[displayStatus]}>{displayStatus}</span>
             </div>
           </div>
 
           <div className="mb-8">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bill To</p>
-            <p className="font-medium">Acme Corp</p>
-            <p className="text-sm text-muted-foreground">Sarah Johnson</p>
-            <p className="text-sm text-muted-foreground">billing@acme.com</p>
+            <p className="font-medium">{client?.name ?? "Unknown client"}</p>
+            {client?.contactName ? <p className="text-sm text-muted-foreground">{client.contactName}</p> : null}
+            {client?.contactEmail ? <p className="text-sm text-muted-foreground">{client.contactEmail}</p> : null}
           </div>
 
           <table className="w-full text-sm mb-6">
@@ -90,13 +120,13 @@ export default function ClientInvoiceDetail() {
               </tr>
             </thead>
             <tbody>
-              {lineItems.map((item, i) => (
-                <tr key={i} className="border-b last:border-0">
-                  <td className="py-2.5">{item.date}</td>
-                  <td className="py-2.5">{item.description}</td>
-                  <td className="py-2.5 text-right">{item.hours}</td>
-                  <td className="py-2.5 text-right">${item.rate}</td>
-                  <td className="py-2.5 text-right font-medium">${item.amount.toLocaleString()}</td>
+              {entries.map((entry) => (
+                <tr key={entry.id} className="border-b last:border-0">
+                  <td className="py-2.5">{formatLongDate(entry.date)}</td>
+                  <td className="py-2.5">{entry.notes || "Tracked work"}</td>
+                  <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
+                  <td className="py-2.5 text-right">{formatCurrency(invoice.hourlyRate)}</td>
+                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * invoice.hourlyRate)}</td>
                 </tr>
               ))}
             </tbody>
@@ -108,20 +138,20 @@ export default function ClientInvoiceDetail() {
             <div className="w-64 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">${total.toLocaleString()}.00</span>
+                <span className="font-medium">{formatCurrency(invoice.totalAmount)}</span>
               </div>
               <Separator />
               <div className="flex justify-between text-lg">
                 <span className="font-heading font-bold">Total Due</span>
-                <span className="font-heading font-bold">${total.toLocaleString()}.00</span>
+                <span className="font-heading font-bold">{formatCurrency(invoice.totalAmount)}</span>
               </div>
             </div>
           </div>
 
           <div className="mt-8 p-4 rounded-lg bg-muted/50">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Payment Instructions</p>
-            <p className="text-sm">Bank Transfer: First National Bank, Acct #12345678, Routing #987654321</p>
-            <p className="text-sm text-muted-foreground mt-2">Payment due within 15 days of invoice date.</p>
+            <p className="text-sm">{settings.paymentInstructions || "No payment instructions set yet."}</p>
+            <p className="text-sm text-muted-foreground mt-2">{settings.invoiceNotes || "No default invoice notes set."}</p>
           </div>
         </CardContent>
       </Card>

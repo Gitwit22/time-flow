@@ -1,25 +1,46 @@
 import { FileText, Download, Eye, Send, CheckCircle2, Filter } from "lucide-react";
+import { useMemo, useState } from "react";
+
+import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
+import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Link } from "react-router-dom";
-
-const invoices = [
-  { id: "INV-2026-003", client: "Acme Corp", period: "Mar 1–31, 2026", hours: 62.5, rate: 150, amount: 9375, status: "draft" },
-  { id: "INV-2026-002", client: "Acme Corp", period: "Feb 1–28, 2026", hours: 72, rate: 150, amount: 10800, status: "sent" },
-  { id: "INV-2026-001", client: "Acme Corp", period: "Jan 1–31, 2026", hours: 80, rate: 150, amount: 12000, status: "paid" },
-  { id: "INV-2025-012", client: "Beta Inc", period: "Dec 1–31, 2025", hours: 40, rate: 125, amount: 5000, status: "paid" },
-];
+import { useAppStore } from "@/store/appStore";
+import { useToast } from "@/hooks/use-toast";
+import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
+import { getInvoiceDisplayStatus } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
-  ready: "status-badge-accent",
   sent: "status-badge-warning",
   paid: "status-badge-success",
+  overdue: "status-badge-warning",
 };
 
 export default function InvoiceCenter() {
+  const { toast } = useToast();
+  const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
+  const invoices = useAppStore((state) => state.invoices);
+  const clients = useAppStore((state) => state.clients);
+  const updateInvoice = useAppStore((state) => state.updateInvoice);
+  const [clientFilter, setClientFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const rows = useMemo(
+    () =>
+      [...invoices]
+        .map((invoice) => ({
+          ...invoice,
+          displayStatus: getInvoiceDisplayStatus(invoice),
+          clientName: clients.find((client) => client.id === invoice.clientId)?.name ?? "Unknown client",
+        }))
+        .filter((invoice) => (clientFilter === "all" ? true : invoice.clientId === clientFilter))
+        .filter((invoice) => (statusFilter === "all" ? true : invoice.displayStatus === statusFilter)),
+    [clientFilter, clients, invoices, statusFilter],
+  );
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header flex items-start justify-between">
@@ -27,34 +48,46 @@ export default function InvoiceCenter() {
           <h1 className="page-title">Invoices</h1>
           <p className="page-subtitle">Generate, preview, and manage your invoices.</p>
         </div>
-        <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
-          <FileText className="mr-2 h-4 w-4" />
-          Generate Invoice
-        </Button>
+        {!isReadonly ? (
+          <GenerateInvoiceDialog
+            trigger={
+              <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
+                <FileText className="mr-2 h-4 w-4" />
+                Generate Invoice
+              </Button>
+            }
+          />
+        ) : null}
       </div>
+
+      {isReadonly ? <div className="readonly-banner">Viewer mode: invoice generation and status updates are disabled.</div> : null}
 
       {/* Filters */}
       <div className="flex gap-3">
-        <Select defaultValue="all-clients">
+        <Select value={clientFilter} onValueChange={setClientFilter}>
           <SelectTrigger className="w-44">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all-clients">All Clients</SelectItem>
-            <SelectItem value="acme">Acme Corp</SelectItem>
-            <SelectItem value="beta">Beta Inc</SelectItem>
+            <SelectItem value="all">All Clients</SelectItem>
+            {clients.map((client) => (
+              <SelectItem key={client.id} value={client.id}>
+                {client.name}
+              </SelectItem>
+            ))}
           </SelectContent>
         </Select>
-        <Select defaultValue="all-status">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-36">
             <Filter className="mr-2 h-3.5 w-3.5" />
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all-status">All Status</SelectItem>
+            <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
             <SelectItem value="sent">Sent</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -77,16 +110,16 @@ export default function InvoiceCenter() {
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => (
+                {rows.map((inv) => (
                   <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{inv.id}</td>
-                    <td className="py-3 px-4">{inv.client}</td>
-                    <td className="py-3 px-4">{inv.period}</td>
-                    <td className="py-3 px-4">{inv.hours}h</td>
-                    <td className="py-3 px-4">${inv.rate}/hr</td>
-                    <td className="py-3 px-4 font-semibold">${inv.amount.toLocaleString()}</td>
+                    <td className="py-3 px-4">{inv.clientName}</td>
+                    <td className="py-3 px-4">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</td>
+                    <td className="py-3 px-4">{formatHours(inv.totalHours)}</td>
+                    <td className="py-3 px-4">{formatCurrency(inv.hourlyRate)}/hr</td>
+                    <td className="py-3 px-4 font-semibold">{formatCurrency(inv.totalAmount)}</td>
                     <td className="py-3 px-4">
-                      <span className={statusStyles[inv.status]}>{inv.status}</span>
+                      <span className={statusStyles[inv.displayStatus]}>{inv.displayStatus}</span>
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
@@ -98,13 +131,29 @@ export default function InvoiceCenter() {
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
                           <Download className="h-3.5 w-3.5" />
                         </Button>
-                        {inv.status === "draft" && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                        {!isReadonly && inv.status === "draft" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-muted-foreground"
+                            onClick={() => {
+                              updateInvoice(inv.id, { status: "sent" });
+                              toast({ title: "Invoice sent", description: `${inv.id} status updated to sent.` });
+                            }}
+                          >
                             <Send className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {inv.status === "sent" && (
-                          <Button variant="ghost" size="icon" className="h-7 w-7 text-success">
+                        {!isReadonly && inv.status === "sent" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-success"
+                            onClick={() => {
+                              updateInvoice(inv.id, { status: "paid" });
+                              toast({ title: "Invoice paid", description: `${inv.id} marked as paid.` });
+                            }}
+                          >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
@@ -114,6 +163,8 @@ export default function InvoiceCenter() {
                 ))}
               </tbody>
             </table>
+
+            {!rows.length ? <EmptyState icon={FileText} title="No invoices yet" description="Generate invoices from completed time entries to see them here." className="m-4" /> : null}
           </div>
         </CardContent>
       </Card>

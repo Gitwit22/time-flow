@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Route, Routes, Navigate } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { RequireContractor } from "@/components/layout/RequireContractor";
 
 // Public pages
 import Landing from "./pages/Landing";
@@ -29,6 +30,7 @@ import ClientTimeLogs from "./pages/client/TimeLogs";
 import ClientInvoiceHistory from "./pages/client/InvoiceHistory";
 import ClientInvoiceDetail from "./pages/client/InvoiceDetail";
 import ClientAccount from "./pages/client/Account";
+import ClientReports from "./pages/client/Reports";
 
 const queryClient = new QueryClient();
 
@@ -49,12 +51,33 @@ const App = () => (
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<AdminDashboard />} />
             <Route path="time" element={<TimeTracker />} />
-            <Route path="clients" element={<Clients />} />
+            <Route
+              path="clients"
+              element={
+                <RequireContractor>
+                  <Clients />
+                </RequireContractor>
+              }
+            />
             <Route path="invoices" element={<InvoiceCenter />} />
             <Route path="invoices/:id" element={<InvoiceDetail />} />
-            <Route path="email" element={<EmailPrep />} />
+            <Route
+              path="email"
+              element={
+                <RequireContractor>
+                  <EmailPrep />
+                </RequireContractor>
+              }
+            />
             <Route path="reports" element={<Reports />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route
+              path="settings"
+              element={
+                <RequireContractor>
+                  <SettingsPage />
+                </RequireContractor>
+              }
+            />
           </Route>
 
           {/* Client Portal */}
@@ -63,6 +86,7 @@ const App = () => (
             <Route path="time-logs" element={<ClientTimeLogs />} />
             <Route path="invoices" element={<ClientInvoiceHistory />} />
             <Route path="invoices/:id" element={<ClientInvoiceDetail />} />
+            <Route path="reports" element={<ClientReports />} />
             <Route path="account" element={<ClientAccount />} />
           </Route>
 

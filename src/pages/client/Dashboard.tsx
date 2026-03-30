@@ -1,27 +1,33 @@
-import { Clock, DollarSign, FileText, Calendar, Eye } from "lucide-react";
+import { ArrowRight, Calendar, Clock, DollarSign, Eye } from "lucide-react";
 import { SummaryCard } from "@/components/SummaryCard";
+import { UpcomingInvoiceCard } from "@/components/dashboard/UpcomingInvoiceCard";
+import { RecentTimeEntriesTable } from "@/components/time-tracker/RecentTimeEntriesTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
-
-const recentLogs = [
-  { date: "Mar 28, 2026", start: "09:00", end: "17:00", hours: 8.0, notes: "API integration" },
-  { date: "Mar 27, 2026", start: "09:30", end: "17:00", hours: 7.5, notes: "Frontend polish" },
-  { date: "Mar 26, 2026", start: "08:00", end: "16:00", hours: 8.0, notes: "Code review" },
-];
-
-const recentInvoices = [
-  { id: "INV-2026-002", period: "Feb 1–28, 2026", amount: 10800, status: "sent" },
-  { id: "INV-2026-001", period: "Jan 1–31, 2026", amount: 12000, status: "paid" },
-];
+import { getBillingPeriod } from "@/lib/date";
+import { getPeriodHours, getTodaysHours } from "@/lib/calculations";
+import { useAppStore } from "@/store/appStore";
+import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 
 export default function ClientDashboard() {
+  const currentUser = useAppStore((state) => state.currentUser);
+  const timeEntries = useAppStore((state) => state.timeEntries);
+  const invoices = useAppStore((state) => state.invoices);
+  const clients = useAppStore((state) => state.clients);
+  const recentEntries = [...timeEntries]
+    .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
+    .slice(0, 5);
+  const recentInvoices = [...invoices].slice(0, 4);
+  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
+  const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
+  const todaysHours = getTodaysHours(timeEntries, new Date());
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
         <h1 className="page-title">Client Dashboard</h1>
-        <p className="page-subtitle">View your contractor's work logs and invoices.</p>
+        <p className="page-subtitle">View contractor work logs and invoice progress in real time.</p>
       </div>
 
       <div className="readonly-banner">
@@ -30,37 +36,16 @@ export default function ClientDashboard() {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard title="Period Hours" value="62.5h" subtitle="Mar 1 – 31" icon={Clock} iconClassName="bg-primary/10 text-primary" />
-        <SummaryCard title="Est. Amount" value="$9,375" subtitle="@ $150/hr" icon={DollarSign} iconClassName="bg-accent/10 text-accent" />
-        <SummaryCard title="Latest Invoice" value="INV-002" subtitle="$10,800 — Sent" icon={FileText} iconClassName="bg-warning/10 text-warning" />
-        <SummaryCard title="Next Invoice" value="Apr 5" subtitle="Upcoming" icon={Calendar} iconClassName="bg-muted text-muted-foreground" />
+        <SummaryCard title="Status" value="Read-only" subtitle="Viewer access" icon={Eye} iconClassName="bg-muted text-muted-foreground" />
+        <SummaryCard title="Today's Hours" value={formatHours(todaysHours)} subtitle="Logged today" icon={Clock} iconClassName="bg-accent/10 text-accent" />
+        <SummaryCard title="Period Hours" value={formatHours(periodHours)} subtitle={formatPeriodLabel(billingPeriod.start, billingPeriod.end)} icon={Calendar} iconClassName="bg-primary/10 text-primary" />
+        <SummaryCard title="Period Earnings" value={formatCurrency(periodHours * currentUser.hourlyRate)} subtitle={`@ ${formatCurrency(currentUser.hourlyRate)}/hr`} icon={DollarSign} iconClassName="bg-success/10 text-success" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3 flex flex-row items-center justify-between">
-            <CardTitle className="text-base font-heading">Recent Work Logs</CardTitle>
-            <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
-              <Link to="/client/time-logs">View all</Link>
-            </Button>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {recentLogs.map((log, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b last:border-0">
-                  <div>
-                    <p className="text-sm font-medium">{log.date}</p>
-                    <p className="text-xs text-muted-foreground">{log.start} – {log.end}</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-sm font-medium">{log.hours}h</p>
-                    <p className="text-xs text-muted-foreground">{log.notes}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <UpcomingInvoiceCard />
+        </div>
 
         <Card>
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
@@ -71,17 +56,15 @@ export default function ClientDashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {recentInvoices.map((inv, i) => (
-                <div key={i} className="flex items-center justify-between py-2 border-b last:border-0">
+              {recentInvoices.map((inv) => (
+                <div key={inv.id} className="flex items-center justify-between py-2 border-b last:border-0">
                   <div>
                     <p className="text-sm font-medium">{inv.id}</p>
-                    <p className="text-xs text-muted-foreground">{inv.period}</p>
+                    <p className="text-xs text-muted-foreground">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</p>
                   </div>
-                  <div className="text-right flex items-center gap-2">
-                    <span className="text-sm font-medium">${inv.amount.toLocaleString()}</span>
-                    <Badge variant={inv.status === "paid" ? "secondary" : "outline"} className="text-xs">
-                      {inv.status}
-                    </Badge>
+                  <div className="text-right">
+                    <p className="text-sm font-medium">{formatCurrency(inv.totalAmount)}</p>
+                    <p className="text-xs text-muted-foreground">{inv.status}</p>
                   </div>
                 </div>
               ))}
@@ -89,6 +72,20 @@ export default function ClientDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-center justify-between">
+          <CardTitle className="text-base font-heading">Recent Time Entries</CardTitle>
+          <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
+            <Link to="/client/time-logs">
+              View all <ArrowRight className="ml-1 h-3 w-3" />
+            </Link>
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <RecentTimeEntriesTable entries={recentEntries} clients={clients} readOnly />
+        </CardContent>
+      </Card>
     </div>
   );
 }

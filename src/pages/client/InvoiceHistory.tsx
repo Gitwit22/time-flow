@@ -1,23 +1,31 @@
 import { Download, Eye } from "lucide-react";
+import { useMemo } from "react";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Link } from "react-router-dom";
-
-const invoices = [
-  { id: "INV-2026-003", period: "Mar 1–31, 2026", date: "Mar 31, 2026", amount: 9375, status: "draft" },
-  { id: "INV-2026-002", period: "Feb 1–28, 2026", date: "Feb 28, 2026", amount: 10800, status: "sent" },
-  { id: "INV-2026-001", period: "Jan 1–31, 2026", date: "Jan 31, 2026", amount: 12000, status: "paid" },
-  { id: "INV-2025-012", period: "Dec 1–31, 2025", date: "Dec 31, 2025", amount: 5000, status: "paid" },
-];
+import { useAppStore } from "@/store/appStore";
+import { formatCurrency, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { getInvoiceDisplayStatus } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
   sent: "status-badge-warning",
   paid: "status-badge-success",
+  overdue: "status-badge-warning",
 };
 
 export default function ClientInvoiceHistory() {
+  const invoices = useAppStore((state) => state.invoices);
+  const rows = useMemo(
+    () =>
+      [...invoices].map((invoice) => ({
+        ...invoice,
+        displayStatus: getInvoiceDisplayStatus(invoice),
+      })),
+    [invoices],
+  );
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
@@ -45,14 +53,14 @@ export default function ClientInvoiceHistory() {
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((inv) => (
+                {rows.map((inv) => (
                   <tr key={inv.id} className="border-b last:border-0">
                     <td className="py-3 px-4 font-medium">{inv.id}</td>
-                    <td className="py-3 px-4">{inv.period}</td>
-                    <td className="py-3 px-4">{inv.date}</td>
-                    <td className="py-3 px-4 font-semibold">${inv.amount.toLocaleString()}</td>
+                    <td className="py-3 px-4">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</td>
+                    <td className="py-3 px-4">{formatLongDate(inv.periodEnd)}</td>
+                    <td className="py-3 px-4 font-semibold">{formatCurrency(inv.totalAmount)}</td>
                     <td className="py-3 px-4">
-                      <span className={statusStyles[inv.status]}>{inv.status}</span>
+                      <span className={statusStyles[inv.displayStatus]}>{inv.displayStatus}</span>
                     </td>
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">

@@ -1,5 +1,6 @@
 import { type LucideIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
+
+import { StatCard } from "@/components/shared/StatCard";
 
 interface SummaryCardProps {
   title: string;
@@ -11,18 +12,5 @@ interface SummaryCardProps {
 }
 
 export function SummaryCard({ title, value, subtitle, icon: Icon, iconClassName, className }: SummaryCardProps) {
-  return (
-    <div className={cn("summary-card", className)}>
-      <div className="flex items-start justify-between">
-        <div>
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold font-heading mt-1">{value}</p>
-          {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
-        </div>
-        <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted", iconClassName)}>
-          <Icon className="h-5 w-5" />
-        </div>
-      </div>
-    </div>
-  );
+  return <StatCard title={title} value={value} subtitle={subtitle} icon={Icon as LucideIcon} iconClassName={iconClassName} className={className} />;
 }

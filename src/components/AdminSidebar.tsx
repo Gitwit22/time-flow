@@ -1,6 +1,5 @@
 import { LayoutDashboard, Clock, Users, FileText, Mail, BarChart3, Settings, Zap } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
-import { useLocation } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -13,6 +12,7 @@ import {
   SidebarFooter,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { useAppStore } from "@/store/appStore";
 
 const mainItems = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
@@ -30,7 +30,9 @@ const bottomItems = [
 export function AdminSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
-  const location = useLocation();
+  const role = useAppStore((store) => store.currentUser.role);
+  const visibleMainItems = role === "client_viewer" ? mainItems.filter((item) => ["Dashboard", "Time Tracker", "Invoices", "Reports"].includes(item.title)) : mainItems;
+  const visibleBottomItems = role === "client_viewer" ? [] : bottomItems;
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
@@ -51,7 +53,7 @@ export function AdminSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainItems.map((item) => (
+              {visibleMainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
@@ -74,7 +76,7 @@ export function AdminSidebar() {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {bottomItems.map((item) => (
+              {visibleBottomItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink

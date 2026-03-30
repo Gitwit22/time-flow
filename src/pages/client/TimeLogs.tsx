@@ -1,19 +1,21 @@
 import { Eye } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMemo } from "react";
 
-const timeLogs = [
-  { date: "2026-03-28", start: "09:00", end: "17:00", hours: 8.0, notes: "API integration & testing", period: "Mar 2026" },
-  { date: "2026-03-27", start: "09:30", end: "17:00", hours: 7.5, notes: "Frontend polish & review", period: "Mar 2026" },
-  { date: "2026-03-26", start: "08:00", end: "16:00", hours: 8.0, notes: "Code review & refactor", period: "Mar 2026" },
-  { date: "2026-03-25", start: "10:00", end: "16:30", hours: 6.5, notes: "Database migration", period: "Mar 2026" },
-  { date: "2026-03-24", start: "09:00", end: "17:30", hours: 8.5, notes: "Feature development", period: "Mar 2026" },
-  { date: "2026-03-21", start: "09:00", end: "17:00", hours: 8.0, notes: "Sprint planning & dev", period: "Mar 2026" },
-  { date: "2026-03-20", start: "08:30", end: "16:30", hours: 8.0, notes: "CI/CD pipeline setup", period: "Mar 2026" },
-  { date: "2026-03-19", start: "09:00", end: "16:00", hours: 7.0, notes: "Testing & QA", period: "Mar 2026" },
-];
+import { DataTable } from "@/components/shared/DataTable";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { formatHours, formatLongDate } from "@/lib/date";
+import { useAppStore } from "@/store/appStore";
 
 export default function ClientTimeLogs() {
+  const timeEntries = useAppStore((state) => state.timeEntries);
+  const clients = useAppStore((state) => state.clients);
+  const rows = useMemo(
+    () => [...timeEntries].sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
+    [timeEntries],
+  );
+
+  const totalHours = rows.reduce((sum, entry) => sum + entry.durationHours, 0);
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
@@ -26,55 +28,55 @@ export default function ClientTimeLogs() {
         <span>This page is view-only. Contact the contractor for corrections.</span>
       </div>
 
-      <div className="flex gap-3">
-        <Select defaultValue="current">
-          <SelectTrigger className="w-48">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="current">Current Period</SelectItem>
-            <SelectItem value="feb">Feb 2026</SelectItem>
-            <SelectItem value="jan">Jan 2026</SelectItem>
-            <SelectItem value="custom">Custom Range</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">All Time Entries</CardTitle>
+        </CardHeader>
         <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-muted-foreground">
-                  <th className="text-left py-3 px-4 font-medium">Date</th>
-                  <th className="text-left py-3 px-4 font-medium">Start</th>
-                  <th className="text-left py-3 px-4 font-medium">End</th>
-                  <th className="text-left py-3 px-4 font-medium">Hours</th>
-                  <th className="text-left py-3 px-4 font-medium">Description</th>
-                  <th className="text-left py-3 px-4 font-medium">Period</th>
-                </tr>
-              </thead>
-              <tbody>
-                {timeLogs.map((log, i) => (
-                  <tr key={i} className="border-b last:border-0">
-                    <td className="py-3 px-4 font-medium">{log.date}</td>
-                    <td className="py-3 px-4">{log.start}</td>
-                    <td className="py-3 px-4">{log.end}</td>
-                    <td className="py-3 px-4 font-medium">{log.hours}h</td>
-                    <td className="py-3 px-4 text-muted-foreground">{log.notes}</td>
-                    <td className="py-3 px-4">{log.period}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot>
-                <tr className="border-t bg-muted/50">
-                  <td className="py-3 px-4 font-semibold" colSpan={3}>Total</td>
-                  <td className="py-3 px-4 font-semibold">{timeLogs.reduce((s, l) => s + l.hours, 0)}h</td>
-                  <td colSpan={2}></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
+          <DataTable
+            rows={rows}
+            getRowKey={(entry) => entry.id}
+            emptyTitle="No time logs yet"
+            emptyDescription="Your contractor has not logged any entries yet."
+            columns={[
+              {
+                id: "date",
+                header: "Date",
+                render: (entry) => <span className="font-medium">{formatLongDate(entry.date)}</span>,
+              },
+              {
+                id: "start",
+                header: "Start",
+                render: (entry) => entry.startTime,
+              },
+              {
+                id: "end",
+                header: "End",
+                render: (entry) => entry.endTime ?? "-",
+              },
+              {
+                id: "hours",
+                header: "Hours",
+                render: (entry) => <span className="font-medium">{formatHours(entry.durationHours)}</span>,
+              },
+              {
+                id: "client",
+                header: "Client",
+                render: (entry) => clients.find((client) => client.id === entry.clientId)?.name ?? "Unknown client",
+              },
+              {
+                id: "notes",
+                header: "Description",
+                render: (entry) => <span className="text-muted-foreground">{entry.notes}</span>,
+              },
+              {
+                id: "status",
+                header: "Status",
+                render: (entry) => <span className="status-badge-muted">{entry.status}</span>,
+              },
+            ]}
+          />
+          <div className="border-t bg-muted/30 px-4 py-3 text-sm font-medium">Total tracked: {formatHours(totalHours)}</div>
         </CardContent>
       </Card>
     </div>

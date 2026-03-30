@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, FileText, User } from "lucide-react";
+import { LayoutDashboard, Clock, FileText, User, BarChart3 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useSidebar } from "@/components/ui/sidebar";
 import {
@@ -17,6 +17,7 @@ const items = [
   { title: "Dashboard", url: "/client", icon: LayoutDashboard },
   { title: "Time Logs", url: "/client/time-logs", icon: Clock },
   { title: "Invoices", url: "/client/invoices", icon: FileText },
+  { title: "Reports", url: "/client/reports", icon: BarChart3 },
 ];
 
 export function ClientSidebar() {

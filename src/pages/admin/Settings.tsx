@@ -1,12 +1,38 @@
+import { useEffect, useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { useAppStore } from "@/store/appStore";
 
 export default function SettingsPage() {
+  const { toast } = useToast();
+  const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
+  const clients = useAppStore((state) => state.clients);
+  const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
+  const updateSettings = useAppStore((state) => state.updateSettings);
+
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [businessName, setBusinessName] = useState("");
+  const [paymentInstructions, setPaymentInstructions] = useState("");
+  const [invoiceNotes, setInvoiceNotes] = useState("");
+  const [emailTemplate, setEmailTemplate] = useState("");
+
+  useEffect(() => {
+    setProfileName(currentUser.name);
+    setProfileEmail(currentUser.email);
+    setBusinessName(settings.businessName);
+    setPaymentInstructions(settings.paymentInstructions);
+    setInvoiceNotes(settings.invoiceNotes);
+    setEmailTemplate(settings.emailTemplate);
+  }, [currentUser.email, currentUser.name, settings.businessName, settings.emailTemplate, settings.invoiceNotes, settings.paymentInstructions]);
+
   return (
     <div className="space-y-6 max-w-3xl">
       <div className="page-header">
@@ -23,14 +49,74 @@ export default function SettingsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Full Name</Label>
-              <Input defaultValue="John Doe" />
+              <Input value={profileName} onChange={(event) => setProfileName(event.target.value)} />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Email</Label>
-              <Input defaultValue="john@contractor.com" />
+              <Input value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} />
             </div>
           </div>
-          <Button size="sm">Save Profile</Button>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Hourly Rate</Label>
+              <Input
+                type="number"
+                value={currentUser.hourlyRate}
+                onChange={(event) => updateCurrentUser({ hourlyRate: Number(event.target.value || 0) })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Invoice Due Days</Label>
+              <Input
+                type="number"
+                value={currentUser.invoiceDueDays}
+                onChange={(event) => updateCurrentUser({ invoiceDueDays: Number(event.target.value || 0) })}
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Invoice Frequency</Label>
+              <Select
+                value={currentUser.invoiceFrequency}
+                onValueChange={(value) => updateCurrentUser({ invoiceFrequency: value as typeof currentUser.invoiceFrequency })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="biweekly">Biweekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Default Client</Label>
+              <Select value={settings.defaultClientId ?? "none"} onValueChange={(value) => updateSettings({ defaultClientId: value === "none" ? undefined : value })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No default</SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => {
+              updateCurrentUser({ name: profileName, email: profileEmail });
+              toast({ title: "Profile saved", description: "Your profile settings were updated." });
+            }}
+          >
+            Save Profile
+          </Button>
         </CardContent>
       </Card>
 
@@ -43,22 +129,37 @@ export default function SettingsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Business Name</Label>
-              <Input defaultValue="John Doe Consulting" />
+              <Input value={businessName} onChange={(event) => setBusinessName(event.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Phone</Label>
-              <Input defaultValue="+1 (555) 123-4567" />
+              <Label className="text-xs">Company Viewer Access</Label>
+              <Select
+                value={settings.companyViewerAccess ? "enabled" : "disabled"}
+                onValueChange={(value) => updateSettings({ companyViewerAccess: value === "enabled" })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="enabled">Enabled</SelectItem>
+                  <SelectItem value="disabled">Disabled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
-          </div>
-          <div className="space-y-1.5">
-            <Label className="text-xs">Business Address</Label>
-            <Input defaultValue="123 Main St, Suite 100, New York, NY 10001" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Payment Instructions</Label>
-            <Textarea defaultValue="Bank Transfer: First National Bank, Acct #12345678, Routing #987654321" className="resize-none" />
+            <Textarea value={paymentInstructions} onChange={(event) => setPaymentInstructions(event.target.value)} className="resize-none" />
           </div>
-          <Button size="sm">Save Business Info</Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              updateSettings({ businessName, paymentInstructions });
+              toast({ title: "Business info saved", description: "Business settings were updated." });
+            }}
+          >
+            Save Business Info
+          </Button>
         </CardContent>
       </Card>
 
@@ -71,40 +172,40 @@ export default function SettingsPage() {
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Currency</Label>
-              <Select defaultValue="usd">
+              <Select value="usd" disabled>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="usd">USD ($)</SelectItem>
-                  <SelectItem value="eur">EUR (€)</SelectItem>
-                  <SelectItem value="gbp">GBP (£)</SelectItem>
-                  <SelectItem value="cad">CAD (C$)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Date Format</Label>
-              <Select defaultValue="mdy">
+              <Label className="text-xs">Timezone</Label>
+              <Select value="local" disabled>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="mdy">MM/DD/YYYY</SelectItem>
-                  <SelectItem value="dmy">DD/MM/YYYY</SelectItem>
-                  <SelectItem value="ymd">YYYY-MM-DD</SelectItem>
+                  <SelectItem value="local">Local Browser Timezone</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Default Invoice Notes</Label>
-            <Textarea defaultValue="Payment due within 15 days of invoice date. Thank you for your business." className="resize-none" />
+            <Textarea value={invoiceNotes} onChange={(event) => setInvoiceNotes(event.target.value)} className="resize-none" />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Email Template (Default Body)</Label>
-            <Textarea
-              className="resize-none min-h-[100px]"
-              defaultValue="Hello, attached is my invoice for services rendered during the selected billing period. Please let me know if anything else is needed. Thank you."
-            />
+            <Textarea className="resize-none min-h-[100px]" value={emailTemplate} onChange={(event) => setEmailTemplate(event.target.value)} />
           </div>
-          <Button size="sm">Save Defaults</Button>
+          <Button
+            size="sm"
+            onClick={() => {
+              updateSettings({ invoiceNotes, emailTemplate });
+              toast({ title: "Defaults saved", description: "Invoice defaults were updated." });
+            }}
+          >
+            Save Defaults
+          </Button>
         </CardContent>
       </Card>
     </div>
