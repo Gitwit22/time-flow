@@ -1,35 +1,41 @@
-import { DollarSign, Clock, FileText, TrendingUp } from "lucide-react";
+import { Clock, DollarSign, FileText, TrendingUp } from "lucide-react";
+
 import { SummaryCard } from "@/components/SummaryCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
+import { getInvoiceStatusCounts, getMonthlyEarnings, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
+import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
+import { useAppStore } from "@/store/appStore";
 
-const weeklyHours = [
-  { week: "W1", hours: 38 },
-  { week: "W2", hours: 42 },
-  { week: "W3", hours: 36 },
-  { week: "W4", hours: 40 },
-  { week: "W5", hours: 35 },
-  { week: "W6", hours: 44 },
-  { week: "W7", hours: 39 },
-  { week: "W8", hours: 41 },
-];
-
-const monthlyEarnings = [
-  { month: "Oct", earnings: 10500 },
-  { month: "Nov", earnings: 11200 },
-  { month: "Dec", earnings: 9800 },
-  { month: "Jan", earnings: 12000 },
-  { month: "Feb", earnings: 10800 },
-  { month: "Mar", earnings: 9375 },
-];
-
-const invoiceStatus = [
-  { name: "Paid", value: 8, color: "hsl(152, 60%, 40%)" },
-  { name: "Sent", value: 2, color: "hsl(38, 92%, 50%)" },
-  { name: "Draft", value: 1, color: "hsl(220, 9%, 46%)" },
-];
+const pieColors = {
+  paid: "hsl(152, 60%, 40%)",
+  sent: "hsl(38, 92%, 50%)",
+  draft: "hsl(220, 9%, 46%)",
+  overdue: "hsl(0, 74%, 42%)",
+};
 
 export default function Reports() {
+  const timeEntries = useAppStore((state) => state.timeEntries);
+  const invoices = useAppStore((state) => state.invoices);
+  const currentUser = useAppStore((state) => state.currentUser);
+  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
+  const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
+  const weeklyHours = getWeeklyHours(timeEntries);
+  const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
+  const monthlyEarnings = getMonthlyEarnings(timeEntries, currentUser.hourlyRate);
+  const statusTotals = getInvoiceStatusCounts(invoices);
+  const totalInvoiced = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "paid");
+  const unpaidBalance = unpaidInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const isReadonly = currentUser.role === "client_viewer";
+
+  const invoiceStatus = [
+    { name: "Paid", value: statusTotals.paid, color: pieColors.paid },
+    { name: "Sent", value: statusTotals.sent, color: pieColors.sent },
+    { name: "Draft", value: statusTotals.draft, color: pieColors.draft },
+    { name: "Overdue", value: statusTotals.overdue, color: pieColors.overdue },
+  ].filter((item) => item.value > 0);
+
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
@@ -37,11 +43,19 @@ export default function Reports() {
         <p className="page-subtitle">Your earnings, hours, and billing overview.</p>
       </div>
 
+      {isReadonly ? <div className="readonly-banner">Viewer mode: report data is visible but cannot be modified.</div> : null}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard title="This Week" value="32.5h" icon={Clock} iconClassName="bg-accent/10 text-accent" />
-        <SummaryCard title="This Month" value="62.5h" icon={Clock} iconClassName="bg-primary/10 text-primary" />
-        <SummaryCard title="Total Invoiced" value="$63,700" icon={FileText} iconClassName="bg-success/10 text-success" />
-        <SummaryCard title="Unpaid Balance" value="$9,375" subtitle="1 invoice pending" icon={DollarSign} iconClassName="bg-warning/10 text-warning" />
+        <SummaryCard title="This Week" value={formatHours(thisWeekHours)} icon={Clock} iconClassName="bg-accent/10 text-accent" />
+        <SummaryCard title="Current Period" value={formatHours(periodHours)} icon={Clock} iconClassName="bg-primary/10 text-primary" />
+        <SummaryCard title="Total Invoiced" value={formatCurrency(totalInvoiced)} icon={FileText} iconClassName="bg-success/10 text-success" />
+        <SummaryCard
+          title="Unpaid Balance"
+          value={formatCurrency(unpaidBalance)}
+          subtitle={`${unpaidInvoices.length} invoice${unpaidInvoices.length === 1 ? "" : "s"} pending`}
+          icon={DollarSign}
+          iconClassName="bg-warning/10 text-warning"
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -55,7 +69,7 @@ export default function Reports() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" />
                 <XAxis dataKey="week" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} />
-                <Tooltip />
+                <Tooltip formatter={(value: number) => formatHours(value)} />
                 <Bar dataKey="hours" fill="hsl(222, 47%, 11%)" radius={[4, 4, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -72,7 +86,7 @@ export default function Reports() {
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(220, 13%, 91%)" />
                 <XAxis dataKey="month" tick={{ fontSize: 12 }} />
                 <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => `$${v.toLocaleString()}`} />
+                <Tooltip formatter={(v: number) => formatCurrency(v)} />
                 <Line type="monotone" dataKey="earnings" stroke="hsl(35, 92%, 52%)" strokeWidth={2} dot={{ fill: "hsl(35, 92%, 52%)" }} />
               </LineChart>
             </ResponsiveContainer>

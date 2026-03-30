@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { downloadInvoiceExport } from "@/lib/export";
 import { buildInvoiceEmailDraft, getInvoiceDisplayStatus } from "@/lib/invoice";
 import { formatCurrency, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
@@ -21,6 +22,7 @@ export default function EmailPrep() {
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const invoices = useAppStore((state) => state.invoices);
+  const timeEntries = useAppStore((state) => state.timeEntries);
   const emailDrafts = useAppStore((state) => state.emailDrafts);
   const saveEmailDraft = useAppStore((state) => state.saveEmailDraft);
   const markEmailDraftReady = useAppStore((state) => state.markEmailDraftReady);
@@ -223,7 +225,25 @@ export default function EmailPrep() {
                 <Copy className="mr-2 h-4 w-4" />
                 Copy Email
               </Button>
-              <Button variant="outline" className="w-full">
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  if (!selectedInvoice) {
+                    return;
+                  }
+
+                  const entries = timeEntries.filter((entry) => selectedInvoice.entryIds.includes(entry.id));
+                  downloadInvoiceExport({
+                    invoice: selectedInvoice,
+                    entries,
+                    client: selectedClient,
+                    currentUser,
+                    settings,
+                  });
+                  toast({ title: "Invoice exported", description: `${selectedInvoice.id} was downloaded.` });
+                }}
+              >
                 <Download className="mr-2 h-4 w-4" />
                 Download Invoice
               </Button>

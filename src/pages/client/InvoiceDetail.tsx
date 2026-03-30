@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 import { useAppStore } from "@/store/appStore";
 import { Link, useParams } from "react-router-dom";
@@ -60,8 +61,20 @@ export default function ClientInvoiceDetail() {
             Back to Invoices
           </Link>
         </Button>
-        <Button variant="outline" size="sm">
-          <Download className="mr-1.5 h-3.5 w-3.5" /> Download PDF
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            downloadInvoiceExport({
+              invoice,
+              entries,
+              client,
+              currentUser,
+              settings,
+            })
+          }
+        >
+          <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
         </Button>
       </div>
 

@@ -16,6 +16,7 @@ export default function SettingsPage() {
   const clients = useAppStore((state) => state.clients);
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
   const updateSettings = useAppStore((state) => state.updateSettings);
+  const resetApp = useAppStore((state) => state.resetApp);
 
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -205,6 +206,29 @@ export default function SettingsPage() {
             }}
           >
             Save Defaults
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">Data Reset</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-sm text-muted-foreground">Clear all local TimeFlow data and return to a fresh state.</p>
+          <Button
+            variant="destructive"
+            onClick={() => {
+              const confirmed = window.confirm("Reset all app data on this browser? This cannot be undone.");
+              if (!confirmed) {
+                return;
+              }
+
+              resetApp();
+              toast({ title: "App reset", description: "Local app data was cleared and reinitialized." });
+            }}
+          >
+            Reset App Data
           </Button>
         </CardContent>
       </Card>

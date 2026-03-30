@@ -1,10 +1,11 @@
-import { Bell, Eye } from "lucide-react";
+import { Bell, Eye, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { logoutActiveUser } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 import type { UserRole } from "@/types";
 
@@ -31,6 +32,11 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
     navigate(role === "contractor" ? "/admin" : "/client");
   };
 
+  const handleLogout = () => {
+    logoutActiveUser();
+    navigate("/login", { replace: true });
+  };
+
   return (
     <header className="h-14 flex items-center justify-between border-b bg-card px-4">
       <div className="flex items-center gap-3">
@@ -54,6 +60,9 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
         </Select>
         <Button variant="ghost" size="icon" className="text-muted-foreground">
           <Bell className="h-4 w-4" />
+        </Button>
+        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleLogout}>
+          <LogOut className="h-4 w-4" />
         </Button>
         <Avatar className="h-8 w-8">
           <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">

@@ -36,6 +36,7 @@ export interface AppState {
   emailDrafts: Record<string, EmailDraft>;
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
+  syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
   addClient: (client: ClientDraft) => void;
@@ -64,6 +65,7 @@ export const useAppStore = create<AppState>()(
       ...seedData,
       setHydrated: (hydrated) => set({ hydrated }),
       setRole: (role) => set((state) => ({ currentUser: { ...state.currentUser, role } })),
+      syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
       updateCurrentUser: (updates) => {
         if (get().currentUser.role !== "contractor") {
           return;

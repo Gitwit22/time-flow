@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { generateViewerInvite } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 import type { Client } from "@/types";
 
@@ -15,6 +16,7 @@ export default function Clients() {
   const addClient = useAppStore((state) => state.addClient);
   const updateClient = useAppStore((state) => state.updateClient);
   const deleteClient = useAppStore((state) => state.deleteClient);
+  const currentUser = useAppStore((state) => state.currentUser);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
@@ -111,9 +113,17 @@ export default function Clients() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => {
+                    onClick={async () => {
                       updateClient(client.id, { companyViewerEnabled: true });
-                      toast({ title: "Viewer enabled", description: `Viewer access enabled for ${client.name}.` });
+                      const invite = generateViewerInvite(client.id, currentUser.email);
+                      const inviteUrl = `${window.location.origin}/invite?code=${encodeURIComponent(invite.code)}`;
+
+                      try {
+                        await navigator.clipboard.writeText(inviteUrl);
+                        toast({ title: "Invite link copied", description: `${client.name} viewer link copied to clipboard.` });
+                      } catch {
+                        toast({ title: "Invite generated", description: `Code for ${client.name}: ${invite.code}` });
+                      }
                     }}
                   >
                     <Mail className="mr-1.5 h-3.5 w-3.5" /> Invite Viewer

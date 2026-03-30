@@ -1,9 +1,13 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
+import { RequireAuth } from "@/components/layout/RequireAuth";
+import { getActiveUser, toAppIdentity } from "@/lib/auth";
+import { useAppStore } from "@/store/appStore";
 
 // Public pages
 import Landing from "./pages/Landing";
@@ -34,11 +38,27 @@ import ClientReports from "./pages/client/Reports";
 
 const queryClient = new QueryClient();
 
+function AuthBootstrapper() {
+  const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
+
+  useEffect(() => {
+    const user = getActiveUser();
+    if (!user) {
+      return;
+    }
+
+    syncCurrentUser(toAppIdentity(user));
+  }, [syncCurrentUser]);
+
+  return null;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
+      <AuthBootstrapper />
       <BrowserRouter>
         <Routes>
           {/* Public */}
@@ -48,7 +68,14 @@ const App = () => (
           <Route path="/invite" element={<InviteAcceptance />} />
 
           {/* Admin */}
-          <Route path="/admin" element={<AdminLayout />}>
+          <Route
+            path="/admin"
+            element={
+              <RequireAuth>
+                <AdminLayout />
+              </RequireAuth>
+            }
+          >
             <Route index element={<AdminDashboard />} />
             <Route path="time" element={<TimeTracker />} />
             <Route
@@ -81,7 +108,14 @@ const App = () => (
           </Route>
 
           {/* Client Portal */}
-          <Route path="/client" element={<ClientLayout />}>
+          <Route
+            path="/client"
+            element={
+              <RequireAuth>
+                <ClientLayout />
+              </RequireAuth>
+            }
+          >
             <Route index element={<ClientDashboard />} />
             <Route path="time-logs" element={<ClientTimeLogs />} />
             <Route path="invoices" element={<ClientInvoiceHistory />} />
