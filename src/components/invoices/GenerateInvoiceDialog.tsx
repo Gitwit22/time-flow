@@ -20,13 +20,14 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const invoices = useAppStore((state) => state.invoices);
   const commitInvoiceDrafts = useAppStore((state) => state.commitInvoiceDrafts);
   const [open, setOpen] = useState(false);
   const [clientId, setClientId] = useState<string>("all");
 
   const previews = useMemo(
-    () => buildInvoiceDrafts(timeEntries, clients, currentUser, settings, new Date(), clientId === "all" ? undefined : clientId),
-    [clientId, clients, currentUser, settings, timeEntries],
+    () => buildInvoiceDrafts(timeEntries, clients, currentUser, settings, invoices, new Date(), clientId === "all" ? undefined : clientId),
+    [clientId, clients, currentUser, settings, invoices, timeEntries],
   );
 
   const handleConfirm = () => {

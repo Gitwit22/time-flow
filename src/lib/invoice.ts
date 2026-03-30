@@ -8,18 +8,22 @@ export function buildInvoiceDrafts(
   clients: Client[],
   currentUser: UserProfile,
   settings: AppSettings,
+  invoices: Invoice[],
   referenceDate = new Date(),
   clientId?: string,
 ) {
   const { start, end } = getBillingPeriod(referenceDate, currentUser.invoiceFrequency);
   const dueDate = getInvoiceDueDate(end, currentUser.invoiceDueDays);
   const groupedEntries = new Map<string, TimeEntry[]>();
+  const alreadyInvoicedEntryIds = new Set(invoices.flatMap((invoice) => invoice.entryIds));
 
   entries
     .filter((entry) => {
       const inCurrentPeriod = entry.date >= toIsoDate(start) && entry.date <= toIsoDate(end);
       const matchesClient = clientId ? entry.clientId === clientId : true;
-      return entry.status === "completed" && inCurrentPeriod && matchesClient;
+      const isBillableStatus = entry.status !== "running";
+      const alreadyLinkedToInvoice = alreadyInvoicedEntryIds.has(entry.id);
+      return isBillableStatus && !alreadyLinkedToInvoice && inCurrentPeriod && matchesClient;
     })
     .forEach((entry) => {
       const existing = groupedEntries.get(entry.clientId) ?? [];

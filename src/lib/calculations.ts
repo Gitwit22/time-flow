@@ -49,10 +49,13 @@ export function getUpcomingInvoice(
   referenceDate = new Date(),
 ) {
   const { start, end } = getBillingPeriod(referenceDate, currentUser.invoiceFrequency);
+  const alreadyInvoicedEntryIds = new Set(invoices.flatMap((invoice) => invoice.entryIds));
   const relevantEntries = entries.filter((entry) => {
     const withinPeriod = isWithinInterval(parseISO(entry.date), { start, end });
     const isDefaultClient = settings.defaultClientId ? entry.clientId === settings.defaultClientId : true;
-    return entry.status === "completed" && withinPeriod && isDefaultClient;
+    const isBillableStatus = entry.status !== "running";
+    const alreadyLinkedToInvoice = alreadyInvoicedEntryIds.has(entry.id);
+    return isBillableStatus && !alreadyLinkedToInvoice && withinPeriod && isDefaultClient;
   });
 
   if (!relevantEntries.length) {
