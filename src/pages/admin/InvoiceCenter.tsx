@@ -149,7 +149,7 @@ export default function InvoiceCenter() {
 
                             toast({
                               title: opened ? "Invoice opened for download" : "Popup blocked",
-                              description: opened ? `${inv.id} opened in a printable invoice view.` : "Allow popups for this site to download invoices.",
+                              description: opened ? `${inv.id} opened in a printable invoice view.` : "Allow popups for this site, then try download again.",
                               variant: opened ? undefined : "destructive",
                             });
                           }}

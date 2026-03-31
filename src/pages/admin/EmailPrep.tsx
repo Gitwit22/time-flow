@@ -234,14 +234,18 @@ export default function EmailPrep() {
                   }
 
                   const entries = timeEntries.filter((entry) => selectedInvoice.entryIds.includes(entry.id));
-                  downloadInvoiceExport({
+                  const opened = downloadInvoiceExport({
                     invoice: selectedInvoice,
                     entries,
                     client: selectedClient,
                     currentUser,
                     settings,
                   });
-                  toast({ title: "Invoice exported", description: `${selectedInvoice.id} was downloaded.` });
+                  toast({
+                    title: opened ? "Invoice opened for download" : "Popup blocked",
+                    description: opened ? `${selectedInvoice.id} opened in a printable invoice view.` : "Allow popups for this site, then try download again.",
+                    variant: opened ? undefined : "destructive",
+                  });
                 }}
               >
                 <Download className="mr-2 h-4 w-4" />

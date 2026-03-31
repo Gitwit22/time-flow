@@ -9,6 +9,15 @@ interface InvoiceExportInput {
   settings: AppSettings;
 }
 
+const PRINT_SCRIPT = `
+  window.addEventListener("load", () => {
+    window.focus();
+    window.setTimeout(() => {
+      window.print();
+    }, 250);
+  });
+`;
+
 function escapeHtml(value: string) {
   return value
     .replaceAll("&", "&amp;")
@@ -18,10 +27,20 @@ function escapeHtml(value: string) {
     .replaceAll("'", "&#39;");
 }
 
+function formatMultilineHtml(value: string) {
+  return escapeHtml(value).replaceAll("\n", "<br />");
+}
+
 function buildInvoiceExportHtml({ invoice, entries, client, currentUser, settings }: InvoiceExportInput) {
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
+  const bannerMarkup = settings.invoiceBannerDataUrl
+    ? `<div class="banner"><img src="${escapeHtml(settings.invoiceBannerDataUrl)}" alt="Invoice banner" /></div>`
+    : "";
+  const logoMarkup = settings.invoiceLogoDataUrl
+    ? `<img class="logo" src="${escapeHtml(settings.invoiceLogoDataUrl)}" alt="${escapeHtml(businessName)} logo" />`
+    : "";
   const lineItems = entries
     .map(
       (entry) => `
@@ -42,8 +61,12 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, setting
     <title>${escapeHtml(invoice.id)}</title>
     <style>
       body { font-family: Georgia, "Times New Roman", serif; color: #111827; margin: 40px; }
+      .banner { margin-bottom: 24px; border-radius: 18px; overflow: hidden; background: linear-gradient(135deg, #dbeafe, #f8fafc); }
+      .banner img { display: block; width: 100%; max-height: 180px; object-fit: cover; }
       .header, .meta, .totals { display: flex; justify-content: space-between; gap: 24px; }
       .header { margin-bottom: 32px; }
+      .brand-lockup { display: flex; align-items: center; gap: 16px; }
+      .logo { max-width: 160px; max-height: 72px; object-fit: contain; display: block; }
       .meta { margin-bottom: 24px; }
       .meta-block { flex: 1; }
       h1 { margin: 0; font-size: 28px; letter-spacing: 0.04em; }
@@ -59,18 +82,28 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, setting
       .totals-row.total { font-weight: 700; font-size: 18px; border-top: 1px solid #111827; margin-top: 8px; padding-top: 12px; }
       .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; }
       .status { display: inline-block; padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+      @media (max-width: 720px) {
+        body { margin: 20px; }
+        .header, .meta { display: block; }
+        .brand-lockup { margin-top: 16px; }
+      }
       @media print { body { margin: 20px; } }
     </style>
+    <script>${PRINT_SCRIPT}</script>
   </head>
   <body>
+    ${bannerMarkup}
     <div class="header">
       <div>
         <h1>Invoice</h1>
         <p>${escapeHtml(invoice.id)}</p>
       </div>
-      <div>
-        <h2>${escapeHtml(businessName)}</h2>
-        <p>${escapeHtml(currentUser.email)}</p>
+      <div class="brand-lockup">
+        ${logoMarkup}
+        <div>
+          <h2>${escapeHtml(businessName)}</h2>
+          <p>${escapeHtml(currentUser.email)}</p>
+        </div>
       </div>
     </div>
 
@@ -116,28 +149,38 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, setting
 
     <div class="footer">
       <h2>Payment Instructions</h2>
-      <p>${escapeHtml(settings.paymentInstructions || "No payment instructions set.")}</p>
+      <p>${formatMultilineHtml(settings.paymentInstructions || "No payment instructions set.")}</p>
       <h2>Notes</h2>
-      <p>${escapeHtml(settings.invoiceNotes || "No invoice notes set.")}</p>
+      <p>${formatMultilineHtml(settings.invoiceNotes || "No invoice notes set.")}</p>
     </div>
   </body>
 </html>`;
 }
 
 export function downloadInvoiceExport(input: InvoiceExportInput) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=960,height=720");
+  try {
+    const printWindow = window.open("about:blank", "_blank", "width=960,height=720");
 
-  if (!printWindow) {
+    if (!printWindow) {
+      return false;
+    }
+
+    printWindow.document.title = input.invoice.id;
+    printWindow.document.body.innerHTML = `
+      <div style="font-family: Georgia, 'Times New Roman', serif; padding: 32px; color: #111827;">
+        <h1 style="margin: 0 0 12px; font-size: 24px;">Preparing invoice...</h1>
+        <p style="margin: 0;">${escapeHtml(input.invoice.id)} is loading in a printable view.</p>
+      </div>
+    `;
+
+    const html = buildInvoiceExportHtml(input);
+    const blob = new Blob([html], { type: "text/html" });
+    const objectUrl = URL.createObjectURL(blob);
+    printWindow.location.replace(objectUrl);
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+
+    return true;
+  } catch {
     return false;
   }
-
-  printWindow.document.open();
-  printWindow.document.write(buildInvoiceExportHtml(input));
-  printWindow.document.close();
-  printWindow.focus();
-  window.setTimeout(() => {
-    printWindow.print();
-  }, 250);
-
-  return true;
 }

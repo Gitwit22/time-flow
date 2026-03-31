@@ -282,6 +282,10 @@ export const useAppStore = create<AppState>()(
       merge: (persistedState, currentState) => ({
         ...currentState,
         ...(persistedState as Partial<AppState>),
+        settings: {
+          ...currentState.settings,
+          ...((persistedState as Partial<AppState>)?.settings ?? {}),
+        },
         invoices: ((persistedState as Partial<AppState>)?.invoices ?? currentState.invoices).map((invoice) => normalizeInvoiceRecord(invoice)),
         hydrated: true,
       }),

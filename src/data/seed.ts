@@ -19,6 +19,8 @@ export function createSeedData() {
     defaultClientId: undefined,
     invoiceNotes: "",
     paymentInstructions: "",
+    invoiceLogoDataUrl: undefined,
+    invoiceBannerDataUrl: undefined,
     companyViewerAccess: false,
     emailTemplate: [
       "Hello {{clientName}},",

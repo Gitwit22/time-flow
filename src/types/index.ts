@@ -59,6 +59,8 @@ export interface AppSettings {
   defaultClientId?: string;
   invoiceNotes: string;
   paymentInstructions: string;
+  invoiceLogoDataUrl?: string;
+  invoiceBannerDataUrl?: string;
   companyViewerAccess: boolean;
   emailTemplate: string;
 }

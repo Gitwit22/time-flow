@@ -70,14 +70,18 @@ export default function InvoiceDetail() {
             variant="outline"
             size="sm"
             onClick={() => {
-              downloadInvoiceExport({
+              const opened = downloadInvoiceExport({
                 invoice,
                 entries,
                 client,
                 currentUser,
                 settings,
               });
-                toast({ title: "Invoice opened for download", description: `${invoice.id} opened in a printable invoice view.` });
+              toast({
+                title: opened ? "Invoice opened for download" : "Popup blocked",
+                description: opened ? `${invoice.id} opened in a printable invoice view.` : "Allow popups for this site, then try download again.",
+                variant: opened ? undefined : "destructive",
+              });
             }}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
@@ -122,12 +126,19 @@ export default function InvoiceDetail() {
 
       <Card className="shadow-md">
         <CardContent className="p-8 sm:p-10">
+          {settings.invoiceBannerDataUrl ? (
+            <div className="mb-6 overflow-hidden rounded-2xl border bg-muted/30">
+              <img src={settings.invoiceBannerDataUrl} alt="Invoice banner" className="h-32 w-full object-cover" />
+            </div>
+          ) : null}
+
           <div className="flex justify-between items-start mb-8">
             <div>
               <h1 className="text-2xl font-bold font-heading">INVOICE</h1>
               <p className="text-muted-foreground text-sm mt-1">{invoice.id}</p>
             </div>
             <div className="text-right">
+              {settings.invoiceLogoDataUrl ? <img src={settings.invoiceLogoDataUrl} alt="Invoice logo" className="ml-auto mb-3 max-h-16 max-w-[180px] object-contain" /> : null}
               <h2 className="font-heading font-semibold">{settings.businessName || currentUser.name}</h2>
               <p className="text-sm text-muted-foreground">{currentUser.email}</p>
             </div>
