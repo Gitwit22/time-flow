@@ -20,12 +20,13 @@ export default function Reports() {
   const invoices = useAppStore((state) => state.invoices);
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, { start: billingPeriod.start, end: billingPeriod.end });
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const weeklyHours = getWeeklyHours(timeEntries);
   const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
-  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients);
+  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects);
   const statusTotals = getInvoiceStatusCounts(invoices);
   const totalInvoiced = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
   const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "paid");

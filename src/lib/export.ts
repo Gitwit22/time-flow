@@ -1,11 +1,14 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { resolveTimeEntryBillingContext } from "@/lib/projects";
 import type { AppSettings, Client, Invoice, TimeEntry, UserProfile } from "@/types";
+import type { Project } from "@/types";
 
 interface InvoiceExportInput {
   invoice: Invoice;
   entries: TimeEntry[];
   client?: Client;
   currentUser: UserProfile;
+  projects: Project[];
   settings: AppSettings;
 }
 
@@ -31,7 +34,7 @@ function formatMultilineHtml(value: string) {
   return escapeHtml(value).replaceAll("\n", "<br />");
 }
 
-function buildInvoiceExportHtml({ invoice, entries, client, currentUser, settings }: InvoiceExportInput) {
+function buildInvoiceExportHtml({ invoice, entries, client, currentUser, projects, settings }: InvoiceExportInput) {
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
@@ -43,14 +46,20 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, setting
     : "";
   const lineItems = entries
     .map(
-      (entry) => `
+      (entry) => {
+        const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
+        const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
+
+        return `
         <tr>
           <td>${escapeHtml(formatLongDate(entry.date))}</td>
+          <td>${escapeHtml(billingContext.project?.name ?? "Client-only")}</td>
           <td>${escapeHtml(entry.notes || "Tracked work")}</td>
           <td class="numeric">${escapeHtml(formatHours(entry.durationHours))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(invoice.hourlyRate))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(entry.durationHours * invoice.hourlyRate))}</td>
-        </tr>`,
+          <td class="numeric">${escapeHtml(formatCurrency(hourlyRate))}</td>
+          <td class="numeric">${escapeHtml(formatCurrency(entry.durationHours * hourlyRate))}</td>
+        </tr>`;
+      },
     )
     .join("");
 
@@ -128,6 +137,7 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, setting
       <thead>
         <tr>
           <th>Date</th>
+          <th>Project</th>
           <th>Description</th>
           <th class="numeric">Hours</th>
           <th class="numeric">Hourly Rate</th>

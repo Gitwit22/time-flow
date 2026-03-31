@@ -24,6 +24,7 @@ export default function ClientInvoiceDetail() {
   const settings = useAppStore((state) => state.settings);
   const invoices = useAppStore((state) => state.invoices);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
 
   const invoice = invoices.find((item) => item.id === id);
@@ -70,6 +71,7 @@ export default function ClientInvoiceDetail() {
               entries,
               client,
               currentUser,
+              projects,
               settings,
             })
           }
@@ -153,8 +155,8 @@ export default function ClientInvoiceDetail() {
                   <td className="py-2.5">{formatLongDate(entry.date)}</td>
                   <td className="py-2.5">{entry.notes || "Tracked work"}</td>
                   <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
-                  <td className="py-2.5 text-right">{formatCurrency(invoice.hourlyRate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * invoice.hourlyRate)}</td>
+                  <td className="py-2.5 text-right">{formatCurrency(entry.billingRate ?? invoice.hourlyRate)}</td>
+                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * (entry.billingRate ?? invoice.hourlyRate))}</td>
                 </tr>
               ))}
             </tbody>

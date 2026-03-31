@@ -13,9 +13,10 @@ export function UpcomingInvoiceCard() {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
-  const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, currentUser, settings, invoices, new Date(), settings.defaultClientId);
+  const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), settings.defaultClientId);
   const [upcomingInvoice] = invoiceDraftSummary.previews;
   const isReadonly = currentUser.role === "client_viewer";
 
@@ -48,6 +49,14 @@ export function UpcomingInvoiceCard() {
               <div>
                 <p className="text-xs text-muted-foreground">Est. amount</p>
                 <p className="text-sm font-medium">{formatCurrency(upcomingInvoice.totalAmount)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Rate profile</p>
+                <p className="text-sm font-medium">{upcomingInvoice.hasMixedRates ? "Mixed project/client rates" : `${formatCurrency(upcomingInvoice.hourlyRate)}/hr`}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Due date</p>
+                <p className="text-sm font-medium">{formatLongDate(upcomingInvoice.dueDate)}</p>
               </div>
             </div>
             {invoiceDraftSummary.missingRateClientNames.length ? (

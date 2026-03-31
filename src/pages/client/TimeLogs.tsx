@@ -9,6 +9,7 @@ import { useAppStore } from "@/store/appStore";
 export default function ClientTimeLogs() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const rows = useMemo(
     () => [...timeEntries].sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
     [timeEntries],
@@ -63,6 +64,11 @@ export default function ClientTimeLogs() {
                 id: "client",
                 header: "Client",
                 render: (entry) => clients.find((client) => client.id === entry.clientId)?.name ?? "Unknown client",
+              },
+              {
+                id: "project",
+                header: "Project",
+                render: (entry) => entry.projectId ? projects.find((project) => project.id === entry.projectId)?.name ?? "Unknown project" : "Client-only",
               },
               {
                 id: "notes",

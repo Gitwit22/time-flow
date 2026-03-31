@@ -4,9 +4,10 @@ import { FileText } from "lucide-react";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buildInvoiceDraftSummary } from "@/lib/billing";
-import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
+import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
 
@@ -17,6 +18,7 @@ interface GenerateInvoiceDialogProps {
 export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const { toast } = useToast();
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const timeEntries = useAppStore((state) => state.timeEntries);
@@ -24,12 +26,16 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const commitInvoiceDrafts = useAppStore((state) => state.commitInvoiceDrafts);
   const [open, setOpen] = useState(false);
   const [clientId, setClientId] = useState<string>("all");
+  const [dueDateOverrides, setDueDateOverrides] = useState<Record<string, string>>({});
 
   const invoiceDraftSummary = useMemo(
-    () => buildInvoiceDraftSummary(timeEntries, clients, currentUser, settings, invoices, new Date(), clientId === "all" ? undefined : clientId),
-    [clientId, clients, currentUser, settings, invoices, timeEntries],
+    () => buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), clientId === "all" ? undefined : clientId),
+    [clientId, clients, currentUser, projects, settings, invoices, timeEntries],
   );
-  const previews = invoiceDraftSummary.previews;
+  const previews = useMemo(
+    () => invoiceDraftSummary.previews.map((preview) => ({ ...preview, dueDate: dueDateOverrides[preview.clientId] ?? preview.dueDate })),
+    [dueDateOverrides, invoiceDraftSummary.previews],
+  );
 
   const handleConfirm = () => {
     const nextInvoices = commitInvoiceDrafts(previews);
@@ -43,6 +49,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
       title: "Draft invoices created",
       description: `${nextInvoices.length} invoice${nextInvoices.length > 1 ? "s were" : " was"} created and related entries were marked invoiced.`,
     });
+    setDueDateOverrides({});
     setOpen(false);
   };
 
@@ -55,7 +62,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
         </DialogHeader>
         <div className="space-y-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-sm text-muted-foreground">Completed entries in the active billing period are grouped by client.</p>
+            <p className="text-sm text-muted-foreground">Completed entries in the active billing period are grouped by client. Default due dates come from Settings → Invoice Due Days.</p>
             <Select value={clientId} onValueChange={setClientId}>
               <SelectTrigger className="w-[200px]">
                 <SelectValue />
@@ -95,12 +102,21 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Rate</p>
-                      <p className="font-medium">{formatCurrency(preview.hourlyRate)}</p>
+                      <p className="font-medium">{preview.hasMixedRates ? "Mixed rates" : formatCurrency(preview.hourlyRate)}</p>
                     </div>
                     <div>
                       <p className="text-xs text-muted-foreground">Draft total</p>
                       <p className="font-medium">{formatCurrency(preview.totalAmount)}</p>
                     </div>
+                  </div>
+                  <div className="mt-4 grid gap-2 sm:max-w-xs">
+                    <p className="text-xs text-muted-foreground">Due date</p>
+                    <Input
+                      type="date"
+                      value={preview.dueDate}
+                      onChange={(event) => setDueDateOverrides((current) => ({ ...current, [preview.clientId]: event.target.value }))}
+                    />
+                    <p className="text-xs text-muted-foreground">Current default: {formatLongDate(invoiceDraftSummary.previews.find((item) => item.clientId === preview.clientId)?.dueDate ?? preview.dueDate)}</p>
                   </div>
                 </div>
               ))}

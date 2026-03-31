@@ -11,13 +11,14 @@ interface DashboardMetricsInput {
   clients: AppState["clients"];
   currentUser: Pick<AppState["currentUser"], "invoiceFrequency">;
   invoices: AppState["invoices"];
+  projects: AppState["projects"];
   timeEntries: AppState["timeEntries"];
   activeSession: AppState["activeSession"];
 }
 
 export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDate = new Date()) {
   const billingPeriod = getBillingPeriod(referenceDate, input.currentUser.invoiceFrequency);
-  const billingSummary = getBillingSummary(input.timeEntries, input.clients, {
+  const billingSummary = getBillingSummary(input.timeEntries, input.clients, input.projects, {
     end: billingPeriod.end,
     invoices: input.invoices,
     start: billingPeriod.start,

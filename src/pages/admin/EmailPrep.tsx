@@ -239,6 +239,7 @@ export default function EmailPrep() {
                     entries,
                     client: selectedClient,
                     currentUser,
+                    projects,
                     settings,
                   });
                   toast({

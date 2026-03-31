@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Eye, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { ClientDialog } from "@/components/clients/ClientDialog";
+import { DocumentManager } from "@/components/shared/DocumentManager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,8 @@ export default function Clients() {
   const clients = useAppStore((state) => state.clients);
   const addClient = useAppStore((state) => state.addClient);
   const updateClient = useAppStore((state) => state.updateClient);
+  const addClientDocument = useAppStore((state) => state.addClientDocument);
+  const updateClientDocument = useAppStore((state) => state.updateClientDocument);
   const deleteClient = useAppStore((state) => state.deleteClient);
   const currentUser = useAppStore((state) => state.currentUser);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
@@ -147,6 +150,17 @@ export default function Clients() {
                   </Button>
                 </div>
               ) : null}
+
+              <div className="mt-5 border-t pt-5">
+                <DocumentManager
+                  contextLabel="client"
+                  currentUserName={currentUser.name}
+                  documents={client.documents}
+                  readOnly={isReadonly}
+                  onAdd={(document) => addClientDocument(client.id, document)}
+                  onUpdate={(documentId, updates) => updateClientDocument(client.id, documentId, updates)}
+                />
+              </div>
             </CardContent>
           </Card>
         ))}

@@ -3,11 +3,12 @@ import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/shared/DataTable";
 import { formatLongDate, formatHours } from "@/lib/date";
 import { Pencil, Trash2 } from "lucide-react";
-import type { Client, TimeEntry } from "@/types";
+import type { Client, Project, TimeEntry } from "@/types";
 
 interface RecentTimeEntriesTableProps {
   entries: TimeEntry[];
   clients: Client[];
+  projects: Project[];
   readOnly?: boolean;
   onEdit?: (entry: TimeEntry) => void;
   onDelete?: (entry: TimeEntry) => void;
@@ -25,8 +26,9 @@ function getStatusClass(status: TimeEntry["status"]) {
   return "status-badge-warning";
 }
 
-export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onDelete }: RecentTimeEntriesTableProps) {
+export function RecentTimeEntriesTable({ entries, clients, projects, readOnly, onEdit, onDelete }: RecentTimeEntriesTableProps) {
   const getClientName = (clientId: string) => clients.find((client) => client.id === clientId)?.name ?? "Unknown client";
+  const getProjectName = (projectId?: string) => (projectId ? projects.find((project) => project.id === projectId)?.name ?? "Unknown project" : "Client-only");
 
   return (
     <DataTable
@@ -46,6 +48,11 @@ export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onD
           render: (entry) => getClientName(entry.clientId),
         },
         {
+          id: "project",
+          header: "Project",
+          render: (entry) => getProjectName(entry.projectId),
+        },
+        {
           id: "notes",
           header: "Task / Notes",
           render: (entry) => <span className="text-muted-foreground">{entry.notes}</span>,
@@ -54,6 +61,11 @@ export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onD
           id: "hours",
           header: "Hours",
           render: (entry) => <span className="font-medium">{formatHours(entry.durationHours)}</span>,
+        },
+        {
+          id: "rate",
+          header: "Rate",
+          render: (entry) => <span className="font-medium">{entry.billingRate ? `$${entry.billingRate.toFixed(2)}/hr` : "Unrated"}</span>,
         },
         {
           id: "status",

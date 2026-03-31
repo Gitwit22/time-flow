@@ -19,6 +19,7 @@ const initialForm: Omit<Client, "id"> = {
   contactName: "",
   contactEmail: "",
   companyViewerEnabled: false,
+  documents: [],
 };
 
 export function ClientDialog({ client, open, onOpenChange, onSubmit }: ClientDialogProps) {

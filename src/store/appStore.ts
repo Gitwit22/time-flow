@@ -2,12 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { createSeedData } from "@/data/seed";
+import { normalizeAttachedDocumentRecord } from "@/lib/documents";
 import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
+import { normalizeTimeEntryRecord } from "@/lib/projects";
 import { APP_STORAGE_KEY, appStorage } from "@/lib/storage";
-import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDraftPreview, TimeEntry, UserProfile, UserRole, WorkSession } from "@/types";
+import type { AppSettings, AttachedDocument, Client, EmailDraft, Invoice, InvoiceDraftPreview, Project, TimeEntry, UserProfile, UserRole, WorkSession } from "@/types";
 
 type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & { durationHours?: number; status?: TimeEntry["status"] };
 type ClientDraft = Omit<Client, "id">;
+type ProjectDraft = Omit<Project, "id">;
+type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
 
 function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
@@ -30,6 +34,7 @@ export interface AppState {
   currentUser: UserProfile;
   settings: AppSettings;
   clients: Client[];
+  projects: Project[];
   timeEntries: TimeEntry[];
   activeSession: WorkSession;
   invoices: Invoice[];
@@ -42,7 +47,14 @@ export interface AppState {
   addClient: (client: ClientDraft) => void;
   updateClient: (id: string, updates: Partial<Client>) => void;
   deleteClient: (id: string) => void;
-  startSession: (clientId: string, notes?: string) => boolean;
+  addClientDocument: (clientId: string, document: AttachedDocumentDraft) => void;
+  updateClientDocument: (clientId: string, documentId: string, updates: Partial<AttachedDocument>) => void;
+  addProject: (project: ProjectDraft) => void;
+  updateProject: (id: string, updates: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
+  addProjectDocument: (projectId: string, document: AttachedDocumentDraft) => void;
+  updateProjectDocument: (projectId: string, documentId: string, updates: Partial<AttachedDocument>) => void;
+  startSession: (clientId: string, notes?: string, projectId?: string) => boolean;
   updateActiveSession: (updates: Partial<WorkSession>) => void;
   stopSession: () => TimeEntry | null;
   addTimeEntry: (entry: TimeEntryDraft) => void;
@@ -87,6 +99,33 @@ export const useAppStore = create<AppState>()(
 
         set((state) => ({ clients: [...state.clients, { ...client, id: createId("client") }] }));
       },
+      addClientDocument: (clientId, document) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({
+          clients: state.clients.map((client) =>
+            client.id === clientId ? { ...client, documents: [...client.documents, { ...document, id: createId("client-doc") }] } : client,
+          ),
+        }));
+      },
+      updateClientDocument: (clientId, documentId, updates) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({
+          clients: state.clients.map((client) =>
+            client.id === clientId
+              ? {
+                  ...client,
+                  documents: client.documents.map((document) => (document.id === documentId ? { ...document, ...updates } : document)),
+                }
+              : client,
+          ),
+        }));
+      },
       updateClient: (id, updates) => {
         if (get().currentUser.role !== "contractor") {
           return;
@@ -102,12 +141,66 @@ export const useAppStore = create<AppState>()(
 
           return {
             clients: state.clients.filter((client) => client.id !== id),
+            projects: state.projects.filter((project) => project.clientId !== id),
             timeEntries: state.timeEntries.filter((entry) => entry.clientId !== id),
             invoices: state.invoices.filter((invoice) => invoice.clientId !== id),
             activeSession: state.activeSession.clientId === id ? { isActive: false } : state.activeSession,
           };
         }),
-      startSession: (clientId, notes) => {
+      addProject: (project) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({ projects: [...state.projects, { ...project, id: createId("project") }] }));
+      },
+      updateProject: (id, updates) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({ projects: state.projects.map((project) => (project.id === id ? { ...project, ...updates } : project)) }));
+      },
+      deleteProject: (id) =>
+        set((state) => {
+          if (state.currentUser.role !== "contractor") {
+            return state;
+          }
+
+          return {
+            projects: state.projects.filter((project) => project.id !== id),
+            timeEntries: state.timeEntries.map((entry) => (entry.projectId === id ? { ...entry, projectId: undefined } : entry)),
+            activeSession: state.activeSession.projectId === id ? { isActive: false } : state.activeSession,
+          };
+        }),
+      addProjectDocument: (projectId, document) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({
+          projects: state.projects.map((project) =>
+            project.id === projectId ? { ...project, documents: [...project.documents, { ...document, id: createId("project-doc") }] } : project,
+          ),
+        }));
+      },
+      updateProjectDocument: (projectId, documentId, updates) => {
+        if (get().currentUser.role !== "contractor") {
+          return;
+        }
+
+        set((state) => ({
+          projects: state.projects.map((project) =>
+            project.id === projectId
+              ? {
+                  ...project,
+                  documents: project.documents.map((document) => (document.id === documentId ? { ...document, ...updates } : document)),
+                }
+              : project,
+          ),
+        }));
+      },
+      startSession: (clientId, notes, projectId) => {
         const state = get();
 
         if (state.activeSession.isActive || !clientId || state.currentUser.role === "client_viewer") {
@@ -118,6 +211,8 @@ export const useAppStore = create<AppState>()(
           activeSession: {
             isActive: true,
             clientId,
+            projectId,
+            billingRate: projectId ? state.projects.find((project) => project.id === projectId)?.hourlyRate : state.clients.find((client) => client.id === clientId)?.hourlyRate,
             startedAt: new Date().toISOString(),
             notes: notes?.trim(),
           },
@@ -145,35 +240,45 @@ export const useAppStore = create<AppState>()(
         const entry: TimeEntry = {
           id: createId("entry"),
           clientId: state.activeSession.clientId,
+          projectId: state.activeSession.projectId,
           date: startedAt.toISOString().slice(0, 10),
           startTime: startedAt.toTimeString().slice(0, 5),
           endTime: endedAt.toTimeString().slice(0, 5),
           durationHours,
+          billingRate: state.activeSession.billingRate,
           notes: state.activeSession.notes?.trim() || "Tracked work session",
           status: "completed",
         };
+        const normalizedEntry = normalizeTimeEntryRecord(entry, state.clients, state.projects);
 
         set((current) => ({
-          timeEntries: [entry, ...current.timeEntries],
+          timeEntries: [normalizedEntry, ...current.timeEntries],
           activeSession: { isActive: false },
         }));
 
-        return entry;
+        return normalizedEntry;
       },
       addTimeEntry: (entry) => {
-        if (get().currentUser.role !== "contractor") {
+        const state = get();
+        if (state.currentUser.role !== "contractor") {
           return;
         }
 
-        set((state) => ({
+        const nextEntry = normalizeTimeEntryRecord(
+          {
+            id: createId("entry"),
+            ...entry,
+            durationHours: entry.durationHours ?? calculateDurationHours(entry.startTime, entry.endTime),
+            status: entry.status ?? "completed",
+          },
+          state.clients,
+          state.projects,
+        );
+
+        set((current) => ({
           timeEntries: [
-            {
-              id: createId("entry"),
-              ...entry,
-              durationHours: entry.durationHours ?? calculateDurationHours(entry.startTime, entry.endTime),
-              status: entry.status ?? "completed",
-            },
-            ...state.timeEntries,
+            nextEntry,
+            ...current.timeEntries,
           ],
         }));
       },
@@ -195,7 +300,7 @@ export const useAppStore = create<AppState>()(
                 nextEntry.durationHours = calculateDurationHours(nextEntry.startTime, nextEntry.endTime);
               }
 
-              return nextEntry;
+              return normalizeTimeEntryRecord(nextEntry, state.clients, state.projects);
             }),
           };
         }),
@@ -279,16 +384,32 @@ export const useAppStore = create<AppState>()(
       name: APP_STORAGE_KEY,
       storage: appStorage,
       onRehydrateStorage: () => (state) => state?.setHydrated(true),
-      merge: (persistedState, currentState) => ({
-        ...currentState,
-        ...(persistedState as Partial<AppState>),
-        settings: {
-          ...currentState.settings,
-          ...((persistedState as Partial<AppState>)?.settings ?? {}),
-        },
-        invoices: ((persistedState as Partial<AppState>)?.invoices ?? currentState.invoices).map((invoice) => normalizeInvoiceRecord(invoice)),
-        hydrated: true,
-      }),
+      merge: (persistedState, currentState) => {
+        const persisted = (persistedState as Partial<AppState>) ?? {};
+        const clients = (persisted.clients ?? currentState.clients).map((client) => ({
+          ...client,
+          documents: (client.documents ?? []).map((document) => normalizeAttachedDocumentRecord(document)),
+        }));
+        const projects = (persisted.projects ?? currentState.projects).map((project) => ({
+          ...project,
+          documents: (project.documents ?? []).map((document) => normalizeAttachedDocumentRecord(document)),
+        }));
+        const timeEntries = (persisted.timeEntries ?? currentState.timeEntries).map((entry) => normalizeTimeEntryRecord(entry, clients, projects));
+
+        return {
+          ...currentState,
+          ...persisted,
+          clients,
+          projects,
+          timeEntries,
+          settings: {
+            ...currentState.settings,
+            ...(persisted.settings ?? {}),
+          },
+          invoices: (persisted.invoices ?? currentState.invoices).map((invoice) => normalizeInvoiceRecord(invoice, timeEntries)),
+          hydrated: true,
+        };
+      },
     },
   ),
 );

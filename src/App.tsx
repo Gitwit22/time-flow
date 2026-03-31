@@ -21,6 +21,8 @@ import { AdminLayout } from "./components/AdminLayout";
 import AdminDashboard from "./pages/admin/Dashboard";
 import TimeTracker from "./pages/admin/TimeTracker";
 import Clients from "./pages/admin/Clients";
+import ProjectsPage from "./pages/admin/Projects";
+import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
 import EmailPrep from "./pages/admin/EmailPrep";
@@ -83,6 +85,22 @@ const App = () => (
               element={
                 <RequireContractor>
                   <Clients />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="projects"
+              element={
+                <RequireContractor>
+                  <ProjectsPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="projects/:id"
+              element={
+                <RequireContractor>
+                  <ProjectDetailPage />
                 </RequireContractor>
               }
             />

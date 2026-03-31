@@ -20,11 +20,12 @@ export default function ClientReports() {
   const invoices = useAppStore((state) => state.invoices);
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, { start: billingPeriod.start, end: billingPeriod.end });
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const weeklyHours = getWeeklyHours(timeEntries);
-  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients);
+  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects);
   const statusTotals = getInvoiceStatusCounts(invoices);
 
   const statusData = [

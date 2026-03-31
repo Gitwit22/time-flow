@@ -19,6 +19,7 @@ export default function TimeTracker() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const addTimeEntry = useAppStore((state) => state.addTimeEntry);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
@@ -28,6 +29,7 @@ export default function TimeTracker() {
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "invoiced">("all");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "period">("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
+  const [projectFilter, setProjectFilter] = useState<string>("all");
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
 
@@ -45,10 +47,12 @@ export default function TimeTracker() {
         const matchesSearch = searchQuery.trim()
           ? entry.notes.toLowerCase().includes(searchQuery.toLowerCase()) ||
             (clients.find((client) => client.id === entry.clientId)?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+            || (projects.find((project) => project.id === entry.projectId)?.name ?? "").toLowerCase().includes(searchQuery.toLowerCase())
           : true;
 
         const matchesStatus = statusFilter === "all" ? true : entry.status === statusFilter;
         const matchesClient = clientFilter === "all" ? true : entry.clientId === clientFilter;
+        const matchesProject = projectFilter === "all" ? true : (projectFilter === "client-only" ? !entry.projectId : entry.projectId === projectFilter);
 
         const entryDate = parseISO(entry.date);
         const matchesDate =
@@ -60,10 +64,10 @@ export default function TimeTracker() {
                 ? isWithinInterval(entryDate, { start: weekStart, end: weekEnd })
                 : isWithinInterval(entryDate, { start: period.start, end: period.end });
 
-        return matchesSearch && matchesStatus && matchesClient && matchesDate;
+          return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
       })
       .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`));
-  }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, searchQuery, statusFilter, timeEntries]);
+        }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, statusFilter, timeEntries]);
 
   const handleAddManual = () => {
     if (isReadonly) {
@@ -154,6 +158,21 @@ export default function TimeTracker() {
                 </SelectContent>
               </Select>
 
+              <Select value={projectFilter} onValueChange={setProjectFilter}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Project" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All projects</SelectItem>
+                  <SelectItem value="client-only">Client only</SelectItem>
+                  {projects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
               <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as typeof statusFilter)}>
                 <SelectTrigger className="h-9">
                   <Filter className="mr-2 h-3.5 w-3.5" />
@@ -186,6 +205,7 @@ export default function TimeTracker() {
                     setStatusFilter("all");
                     setDateFilter("all");
                     setClientFilter("all");
+                    setProjectFilter("all");
                   }}
                 >
                   Reset
@@ -205,6 +225,7 @@ export default function TimeTracker() {
           <RecentTimeEntriesTable
             entries={filteredEntries}
             clients={clients}
+            projects={projects}
             readOnly={isReadonly}
             onEdit={handleEdit}
             onDelete={handleDelete}
@@ -214,6 +235,8 @@ export default function TimeTracker() {
 
       <TimeEntryDialog
         clients={clients}
+        projects={projects}
+        timeEntries={timeEntries}
         entry={editingEntry}
         open={isEntryDialogOpen}
         onOpenChange={(open) => {

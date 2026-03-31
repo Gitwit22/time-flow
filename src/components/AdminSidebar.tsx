@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, FileText, Mail, BarChart3, Settings, Zap } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -18,6 +18,7 @@ const mainItems = [
   { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
   { title: "Time Tracker", url: "/admin/time", icon: Clock },
   { title: "Clients", url: "/admin/clients", icon: Users },
+  { title: "Projects", url: "/admin/projects", icon: BriefcaseBusiness },
   { title: "Invoices", url: "/admin/invoices", icon: FileText },
   { title: "Email Prep", url: "/admin/email", icon: Mail },
   { title: "Reports", url: "/admin/reports", icon: BarChart3 },
@@ -31,6 +32,7 @@ export function AdminSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const role = useAppStore((store) => store.currentUser.role);
+  const settings = useAppStore((store) => store.settings);
   const visibleMainItems = role === "client_viewer" ? mainItems.filter((item) => ["Dashboard", "Time Tracker", "Invoices", "Reports"].includes(item.title)) : mainItems;
   const visibleBottomItems = role === "client_viewer" ? [] : bottomItems;
 
@@ -38,12 +40,18 @@ export function AdminSidebar() {
     <Sidebar collapsible="icon" className="border-r-0">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Zap className="h-5 w-5 text-sidebar-primary-foreground" />
-          </div>
+          {settings.invoiceLogoDataUrl ? (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
+              <img src={settings.invoiceLogoDataUrl} alt="Brand logo" className="h-full w-full object-contain" />
+            </div>
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
+              <Zap className="h-5 w-5 text-sidebar-primary-foreground" />
+            </div>
+          )}
           {!collapsed && (
             <div>
-              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">TimeFlow</h2>
+              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "TimeFlow"}</h2>
               <p className="text-xs text-sidebar-muted">Contractor Hub</p>
             </div>
           )}

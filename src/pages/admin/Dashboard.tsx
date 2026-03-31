@@ -19,6 +19,7 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const invoices = useAppStore((state) => state.invoices);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const activeSession = useAppStore((state) => state.activeSession);
@@ -32,10 +33,11 @@ export default function AdminDashboard() {
           invoiceFrequency: currentUser.invoiceFrequency,
         },
         invoices,
+        projects,
         timeEntries,
         activeSession,
       }),
-    [activeSession, clients, currentUser.invoiceFrequency, invoices, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -126,6 +128,7 @@ export default function AdminDashboard() {
           <RecentTimeEntriesTable
             entries={metrics.recentEntries}
             clients={clients}
+            projects={projects}
             readOnly={isReadonly}
             onEdit={handleEditEntry}
             onDelete={handleDeleteEntry}
@@ -135,6 +138,8 @@ export default function AdminDashboard() {
 
       <TimeEntryDialog
         clients={clients}
+        projects={projects}
+        timeEntries={timeEntries}
         entry={editingEntry}
         open={isEntryDialogOpen}
         onOpenChange={(open) => {

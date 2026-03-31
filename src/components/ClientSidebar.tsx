@@ -23,17 +23,24 @@ const items = [
 export function ClientSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
+  const settings = useAppStore((state) => state.settings);
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border bg-background">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2.5">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-            <FileText className="h-5 w-5 text-primary-foreground" />
-          </div>
+          {settings.invoiceLogoDataUrl ? (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40">
+              <img src={settings.invoiceLogoDataUrl} alt="Brand logo" className="h-full w-full object-contain" />
+            </div>
+          ) : (
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
+              <FileText className="h-5 w-5 text-primary-foreground" />
+            </div>
+          )}
           {!collapsed && (
             <div>
-              <h2 className="font-heading text-sm font-bold">TimeFlow</h2>
+              <h2 className="font-heading text-sm font-bold">{settings.businessName || "TimeFlow"}</h2>
               <p className="text-xs text-muted-foreground">Client Portal</p>
             </div>
           )}

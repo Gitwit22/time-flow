@@ -1,8 +1,9 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, FileText } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText, RotateCcw } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
@@ -26,6 +27,7 @@ export default function InvoiceDetail() {
   const settings = useAppStore((state) => state.settings);
   const invoices = useAppStore((state) => state.invoices);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const isReadonly = currentUser.role === "client_viewer";
@@ -75,6 +77,7 @@ export default function InvoiceDetail() {
                 entries,
                 client,
                 currentUser,
+                projects,
                 settings,
               });
               toast({
@@ -117,8 +120,15 @@ export default function InvoiceDetail() {
             </Button>
           ) : null}
             {invoice.status === "paid" ? (
-              <Button size="sm" variant="outline" disabled>
-                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Paid {invoice.paidAt ? formatLongDate(invoice.paidAt) : ""}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  updateInvoice(invoice.id, { paidAt: undefined, status: "issued" });
+                  toast({ title: "Invoice marked unpaid", description: `${invoice.id} was moved back to issued status.` });
+                }}
+              >
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Mark Unpaid
               </Button>
             ) : null}
         </div>
@@ -155,7 +165,13 @@ export default function InvoiceDetail() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Due Date</p>
-              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
+              {isReadonly ? (
+                <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
+              ) : (
+                <div className="mt-1 max-w-[180px]">
+                  <Input type="date" value={invoice.dueDate} onChange={(event) => updateInvoice(invoice.id, { dueDate: event.target.value })} />
+                </div>
+              )}
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Billing Period</p>
@@ -194,8 +210,8 @@ export default function InvoiceDetail() {
                   <td className="py-2.5">{formatLongDate(entry.date)}</td>
                   <td className="py-2.5">{entry.notes || "Tracked work"}</td>
                   <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
-                  <td className="py-2.5 text-right">{formatCurrency(invoice.hourlyRate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * invoice.hourlyRate)}</td>
+                  <td className="py-2.5 text-right">{formatCurrency(entry.billingRate ?? invoice.hourlyRate)}</td>
+                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * (entry.billingRate ?? invoice.hourlyRate))}</td>
                 </tr>
               ))}
             </tbody>

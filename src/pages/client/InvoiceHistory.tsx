@@ -21,6 +21,7 @@ export default function ClientInvoiceHistory() {
   const settings = useAppStore((state) => state.settings);
   const invoices = useAppStore((state) => state.invoices);
   const clients = useAppStore((state) => state.clients);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const rows = useMemo(
     () =>
@@ -86,6 +87,7 @@ export default function ClientInvoiceHistory() {
                               entries,
                               client,
                               currentUser,
+                              projects,
                               settings,
                             });
                           }}
