@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Zap } from "lucide-react";
+import { AlertTriangle, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { getViewerClientIdForUser, loginWithCredentials, toAppIdentity } from "@/lib/auth";
+import { clearAuthState, getViewerClientIdForUser, loginWithCredentials, toAppIdentity } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 
 export default function Login() {
@@ -17,6 +17,7 @@ export default function Login() {
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showRecovery, setShowRecovery] = useState(false);
 
   const handleSignIn = async () => {
     if (!loginId.trim() || !password.trim()) {
@@ -68,6 +69,35 @@ export default function Login() {
           </div>
           <div className="text-center">
             <Link to="/invite" className="text-xs text-muted-foreground hover:underline">Continue as Client Viewer →</Link>
+          </div>
+          <div className="border-t pt-3">
+            <button
+              type="button"
+              className="w-full text-xs text-muted-foreground hover:text-foreground text-center"
+              onClick={() => setShowRecovery((v) => !v)}
+            >
+              {showRecovery ? "Hide account recovery" : "Can't access your account?"}
+            </button>
+            {showRecovery ? (
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30 p-3 space-y-2">
+                <div className="flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  <span>This will clear your login credentials. Your app data (clients, invoices, etc.) is stored separately and will not be lost.</span>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs border-amber-300 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-300 dark:hover:bg-amber-900/40"
+                  onClick={() => {
+                    clearAuthState();
+                    toast({ title: "Login credentials cleared", description: "You can now create a new account with a fresh password." });
+                    navigate("/signup", { replace: true });
+                  }}
+                >
+                  Reset credentials and re-register
+                </Button>
+              </div>
+            ) : null}
           </div>
         </CardContent>
       </Card>

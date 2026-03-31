@@ -4,11 +4,12 @@ import { useMemo } from "react";
 import { DataTable } from "@/components/shared/DataTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatHours, formatLongDate } from "@/lib/date";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 
 export default function ClientTimeLogs() {
-  const { activeClient, clients, projects, timeEntries } = useAppStore(selectViewerScope);
+  const { activeClient, clients, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
   const rows = useMemo(
     () => [...timeEntries].sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
     [timeEntries],

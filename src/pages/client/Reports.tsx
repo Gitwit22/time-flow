@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getBillingSummary, getMonthlyEarnings } from "@/lib/billing";
 import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
 import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 
@@ -18,7 +19,7 @@ const pieColors = {
  
 export default function ClientReports() {
   const currentUser = useAppStore((state) => state.currentUser);
-  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
   const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getActiveUser, logoutActiveUser } from "@/lib/auth";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 import type { UserRole } from "@/types";
@@ -30,7 +31,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const clients = useAppStore((state) => state.clients);
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
-  const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(selectViewerScope);
+  const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
 

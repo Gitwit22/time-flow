@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 
@@ -12,7 +13,7 @@ export default function ClientAccount() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
-  const { activeClient } = useAppStore(selectViewerScope);
+  const { activeClient } = useAppStore(useShallow(selectViewerScope));
   const isReadonly = currentUser.role === "client_viewer";
   const [name, setName] = useState(currentUser.name);
   const [email, setEmail] = useState(currentUser.email);

@@ -140,6 +140,14 @@ export function logoutActiveUser() {
   clearSession();
 }
 
+export function clearAuthState() {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
+  window.localStorage.removeItem(AUTH_SESSION_KEY);
+}
+
 export function updateActiveUserProfile(updates: { name?: string; loginId?: string }) {
   const session = readSession();
   if (!session) {

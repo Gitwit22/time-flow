@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { downloadInvoiceExport } from "@/lib/export";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatLongDate, formatPeriodLabel } from "@/lib/date";
@@ -20,7 +21,7 @@ const statusStyles: Record<string, string> = {
 export default function ClientInvoiceHistory() {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
   const rows = useMemo(
     () =>
       [...invoices].map((invoice) => ({

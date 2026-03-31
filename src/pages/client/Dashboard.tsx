@@ -8,13 +8,14 @@ import { Link } from "react-router-dom";
 import { getBillingSummary } from "@/lib/billing";
 import { getBillingPeriod } from "@/lib/date";
 import { getPeriodHours, getTodaysHours } from "@/lib/calculations";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 
 export default function ClientDashboard() {
   const currentUser = useAppStore((state) => state.currentUser);
-  const { activeClient, clients, invoices, projects, timeEntries, viewerClientId } = useAppStore(selectViewerScope);
+  const { activeClient, clients, invoices, projects, timeEntries, viewerClientId } = useAppStore(useShallow(selectViewerScope));
   const recentEntries = [...timeEntries]
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
     .slice(0, 5);

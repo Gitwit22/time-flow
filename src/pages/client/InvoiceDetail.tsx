@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 import { Link, useParams } from "react-router-dom";
@@ -23,7 +24,7 @@ export default function ClientInvoiceDetail() {
 
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
 
   const invoice = invoices.find((item) => item.id === id);
 
