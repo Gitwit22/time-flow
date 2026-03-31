@@ -1,6 +1,7 @@
 import { LayoutDashboard, Clock, FileText, User, BarChart3 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useSidebar } from "@/components/ui/sidebar";
+import { useAppStore } from "@/store/appStore";
 import {
   Sidebar,
   SidebarContent,

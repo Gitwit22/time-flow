@@ -53,6 +53,12 @@ export default function InvoiceDetail() {
   }
 
   const client = clients.find((item) => item.id === invoice.clientId);
+  const clientContacts = (client?.contacts?.length
+    ? client.contacts
+    : client?.contactName || client?.contactEmail
+      ? [{ name: client.contactName ?? "", email: client.contactEmail ?? "" }]
+      : [])
+    .filter((contact) => contact.name || contact.email);
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -190,8 +196,12 @@ export default function InvoiceDetail() {
           <div className="mb-8">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bill To</p>
             <p className="font-medium">{client?.name ?? "Unknown client"}</p>
-            {client?.contactName ? <p className="text-sm text-muted-foreground">{client.contactName}</p> : null}
-            {client?.contactEmail ? <p className="text-sm text-muted-foreground">{client.contactEmail}</p> : null}
+            {clientContacts.map((contact, index) => (
+              <p key={`invoice-contact-${index}`} className="text-sm text-muted-foreground">
+                {contact.name || "Unnamed"}
+                {contact.email ? ` · ${contact.email}` : ""}
+              </p>
+            ))}
           </div>
 
           <table className="w-full text-sm mb-6">

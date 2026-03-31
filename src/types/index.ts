@@ -31,11 +31,17 @@ export interface AttachedDocument {
   storageKey?: string;
 }
 
+export interface ClientContact {
+  name: string;
+  email: string;
+}
+
 export interface Client {
   id: string;
   name: string;
   contactName?: string;
   contactEmail?: string;
+  contacts?: ClientContact[];
   hourlyRate?: number;
   companyViewerEnabled: boolean;
   documents: AttachedDocument[];

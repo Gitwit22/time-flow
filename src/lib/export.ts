@@ -38,6 +38,14 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
+  const contactLines = (client?.contacts?.length
+    ? client.contacts
+    : client?.contactName || client?.contactEmail
+      ? [{ name: client.contactName ?? "", email: client.contactEmail ?? "" }]
+      : [])
+    .filter((contact) => contact.name || contact.email)
+    .map((contact) => `${contact.name || "Unnamed"}${contact.email ? ` - ${contact.email}` : ""}`);
+  const contactMarkup = contactLines.length ? contactLines.map((line) => `<p>${escapeHtml(line)}</p>`).join("") : "";
   const bannerMarkup = settings.invoiceBannerDataUrl
     ? `<div class="banner"><img src="${escapeHtml(settings.invoiceBannerDataUrl)}" alt="Invoice banner" /></div>`
     : "";
@@ -120,8 +128,7 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
       <div class="meta-block">
         <h2>Bill To</h2>
         <p>${escapeHtml(client?.name ?? "Unknown client")}</p>
-        <p>${escapeHtml(client?.contactName ?? "")}</p>
-        <p>${escapeHtml(client?.contactEmail ?? "")}</p>
+        ${contactMarkup}
       </div>
       <div class="meta-block">
         <h2>Invoice Details</h2>

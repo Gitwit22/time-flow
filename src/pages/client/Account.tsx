@@ -22,6 +22,13 @@ export default function ClientAccount() {
     setEmail(currentUser.email);
   }, [currentUser.email, currentUser.name]);
 
+  const visibleContacts = (activeClient?.contacts?.length
+    ? activeClient.contacts
+    : activeClient?.contactName || activeClient?.contactEmail
+      ? [{ name: activeClient.contactName ?? "", email: activeClient.contactEmail ?? "" }]
+      : [])
+    .filter((contact) => contact.name || contact.email);
+
   return (
     <div className="space-y-6 max-w-lg">
       <div className="page-header">
@@ -38,8 +45,21 @@ export default function ClientAccount() {
           </CardHeader>
           <CardContent className="space-y-1 text-sm text-muted-foreground">
             <p className="font-medium text-foreground">{activeClient?.name ?? "No company selected"}</p>
-            <p>{activeClient?.contactName ?? "No primary contact set"}</p>
-            <p>{activeClient?.contactEmail ?? "No contact email set"}</p>
+            {visibleContacts.length ? (
+              <div className="space-y-1.5">
+                {visibleContacts.map((contact, index) => (
+                  <p key={`viewer-contact-${index}`}>
+                    <span className="font-medium text-foreground">{contact.name || "Unnamed"}</span>
+                    {contact.email ? <span> · {contact.email}</span> : null}
+                  </p>
+                ))}
+              </div>
+            ) : (
+              <>
+                <p>No primary contact set</p>
+                <p>No contact email set</p>
+              </>
+            )}
           </CardContent>
         </Card>
       ) : null}

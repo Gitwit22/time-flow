@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { updateActiveUserProfile } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 
 const MAX_BRANDING_FILE_BYTES = 750 * 1024;
@@ -119,6 +120,9 @@ export default function SettingsPage() {
               <Input value={profileEmail} onChange={(event) => setProfileEmail(event.target.value)} />
             </div>
           </div>
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Changing your email updates your login ID for future sign-ins. Your current password stays the same.
+          </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Invoice Due Days</Label>
@@ -169,8 +173,26 @@ export default function SettingsPage() {
           <Button
             size="sm"
             onClick={() => {
-              updateCurrentUser({ name: profileName, email: profileEmail });
-              toast({ title: "Profile saved", description: "Your profile settings were updated." });
+              try {
+                const previousLoginId = currentUser.email;
+                const updatedUser = updateActiveUserProfile({
+                  name: profileName,
+                  loginId: profileEmail,
+                });
+
+                updateCurrentUser({ name: updatedUser.name, email: updatedUser.loginId });
+
+                const loginChanged = previousLoginId !== updatedUser.loginId;
+                toast({
+                  title: "Profile saved",
+                  description: loginChanged
+                    ? "Your login email was updated. Use the new email next time you sign in."
+                    : "Your profile settings were updated.",
+                });
+              } catch (error) {
+                const description = error instanceof Error ? error.message : "Unable to save profile settings.";
+                toast({ title: "Unable to save profile", description, variant: "destructive" });
+              }
             }}
           >
             Save Profile

@@ -140,6 +140,51 @@ export function logoutActiveUser() {
   clearSession();
 }
 
+export function updateActiveUserProfile(updates: { name?: string; loginId?: string }) {
+  const session = readSession();
+  if (!session) {
+    throw new Error("You must be signed in to update profile details.");
+  }
+
+  const state = readAuthState();
+  const userIndex = state.users.findIndex((user) => user.id === session.userId);
+  if (userIndex === -1) {
+    throw new Error("Signed-in user was not found.");
+  }
+
+  const currentUser = state.users[userIndex];
+  const nextName = updates.name?.trim() ? updates.name.trim() : currentUser.name;
+  const nextLoginId = updates.loginId ? normalizeLoginId(updates.loginId) : currentUser.loginId;
+
+  if (!nextLoginId) {
+    throw new Error("Login cannot be empty.");
+  }
+
+  const loginCollision = state.users.some((user) => user.id !== currentUser.id && user.loginId === nextLoginId);
+  if (loginCollision) {
+    throw new Error("An account with this login already exists.");
+  }
+
+  const updatedUser: AuthUser = {
+    ...currentUser,
+    name: nextName,
+    loginId: nextLoginId,
+  };
+
+  writeAuthState({
+    ...state,
+    users: state.users.map((user) => (user.id === updatedUser.id ? updatedUser : user)),
+    invites:
+      currentUser.loginId === updatedUser.loginId
+        ? state.invites
+        : state.invites.map((invite) =>
+            invite.createdByLoginId === currentUser.loginId ? { ...invite, createdByLoginId: updatedUser.loginId } : invite,
+          ),
+  });
+
+  return updatedUser;
+}
+
 export async function registerContractor(name: string, loginId: string, password: string) {
   const normalizedLoginId = normalizeLoginId(loginId);
   const state = readAuthState();

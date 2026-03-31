@@ -25,6 +25,16 @@ export default function Clients() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
 
+  const getVisibleContacts = (client: Client) => {
+    const contacts = client.contacts?.length
+      ? client.contacts
+      : client.contactName || client.contactEmail
+        ? [{ name: client.contactName ?? "", email: client.contactEmail ?? "" }]
+        : [];
+
+    return contacts.filter((contact) => contact.name || contact.email);
+  };
+
   const handleSaveClient = (value: Omit<Client, "id">) => {
     if (isReadonly) {
       return;
@@ -72,13 +82,16 @@ export default function Clients() {
       {isReadonly ? <div className="readonly-banner">Viewer mode: client management is disabled.</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {clients.map((client) => (
+        {clients.map((client) => {
+          const visibleContacts = getVisibleContacts(client);
+
+          return (
           <Card key={client.id}>
             <CardContent className="p-5">
               <div className="flex items-start justify-between mb-4">
                 <div>
                   <h3 className="font-heading font-semibold text-lg">{client.name}</h3>
-                  <p className="text-sm text-muted-foreground">{client.contactName || "No contact name"}</p>
+                  <p className="text-sm text-muted-foreground">{visibleContacts[0]?.name || "No contact name"}</p>
                 </div>
                 <div className="flex items-center gap-1">
                   {client.companyViewerEnabled && (
@@ -91,7 +104,7 @@ export default function Clients() {
               <div className="grid grid-cols-2 gap-3 text-sm mb-4">
                 <div>
                   <p className="text-muted-foreground text-xs">Contact</p>
-                  <p className="font-medium">{client.contactName || "-"}</p>
+                  <p className="font-medium">{visibleContacts[0]?.name || "-"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Hourly Rate</p>
@@ -103,9 +116,23 @@ export default function Clients() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Email</p>
-                  <p className="font-medium truncate">{client.contactEmail || "-"}</p>
+                  <p className="font-medium truncate">{visibleContacts[0]?.email || "-"}</p>
                 </div>
               </div>
+
+              {visibleContacts.length > 1 ? (
+                <div className="mb-4 rounded-lg border bg-muted/30 px-3 py-2">
+                  <p className="text-xs text-muted-foreground mb-2">People with visibility</p>
+                  <div className="space-y-1.5 text-sm">
+                    {visibleContacts.map((contact, index) => (
+                      <p key={`${client.id}-contact-${index}`} className="truncate">
+                        <span className="font-medium">{contact.name || "Unnamed"}</span>
+                        {contact.email ? <span className="text-muted-foreground"> · {contact.email}</span> : null}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               {!isReadonly ? (
                 <div className="flex gap-2">
@@ -163,7 +190,8 @@ export default function Clients() {
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
 
       <ClientDialog

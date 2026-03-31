@@ -7,6 +7,10 @@ export function createSeedData() {
       name: "Northwind Labs",
       contactName: "Ava Chen",
       contactEmail: "ava@northwindlabs.com",
+      contacts: [
+        { name: "Ava Chen", email: "ava@northwindlabs.com" },
+        { name: "Liam Patel", email: "liam@northwindlabs.com" },
+      ],
       hourlyRate: 90,
       companyViewerEnabled: true,
       documents: [
@@ -29,6 +33,9 @@ export function createSeedData() {
       name: "Atlas Commerce",
       contactName: "Marcus Reed",
       contactEmail: "marcus@atlascommerce.com",
+      contacts: [
+        { name: "Marcus Reed", email: "marcus@atlascommerce.com" },
+      ],
       hourlyRate: 105,
       companyViewerEnabled: true,
       documents: [],
@@ -38,6 +45,9 @@ export function createSeedData() {
       name: "Harbor Health",
       contactName: "Leah Morgan",
       contactEmail: "leah@harborhealth.com",
+      contacts: [
+        { name: "Leah Morgan", email: "leah@harborhealth.com" },
+      ],
       hourlyRate: 120,
       companyViewerEnabled: false,
       documents: [],
