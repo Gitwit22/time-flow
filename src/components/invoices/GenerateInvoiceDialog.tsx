@@ -5,8 +5,8 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
-import { buildInvoiceDrafts } from "@/lib/invoice";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
 
@@ -25,10 +25,11 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const [open, setOpen] = useState(false);
   const [clientId, setClientId] = useState<string>("all");
 
-  const previews = useMemo(
-    () => buildInvoiceDrafts(timeEntries, clients, currentUser, settings, invoices, new Date(), clientId === "all" ? undefined : clientId),
+  const invoiceDraftSummary = useMemo(
+    () => buildInvoiceDraftSummary(timeEntries, clients, currentUser, settings, invoices, new Date(), clientId === "all" ? undefined : clientId),
     [clientId, clients, currentUser, settings, invoices, timeEntries],
   );
+  const previews = invoiceDraftSummary.previews;
 
   const handleConfirm = () => {
     const nextInvoices = commitInvoiceDrafts(previews);
@@ -70,6 +71,12 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
             </Select>
           </div>
 
+          {invoiceDraftSummary.missingRateClientNames.length ? (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              These clients need hourly rates before invoices can be generated: {invoiceDraftSummary.missingRateClientNames.join(", ")}.
+            </div>
+          ) : null}
+
           {previews.length ? (
             <div className="space-y-3">
               {previews.map((preview) => (
@@ -98,6 +105,12 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                 </div>
               ))}
             </div>
+          ) : invoiceDraftSummary.missingRateClientNames.length ? (
+            <EmptyState
+              icon={FileText}
+              title="No invoice drafts yet"
+              description="Add hourly rates to the affected client records, then return here to generate invoices."
+            />
           ) : (
             <EmptyState icon={FileText} title="No draft invoices available" description="Completed entries need to exist in the current billing period before invoices can be generated." />
           )}

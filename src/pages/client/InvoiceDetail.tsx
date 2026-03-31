@@ -12,7 +12,7 @@ import { Link, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
-  sent: "status-badge-warning",
+  issued: "status-badge-warning",
   paid: "status-badge-success",
   overdue: "status-badge-warning",
 };
@@ -99,7 +99,11 @@ export default function ClientInvoiceDetail() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 p-4 rounded-lg bg-muted/50">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Date</p>
-              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.periodEnd)}</p>
+              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Issue Date</p>
+              <p className="font-medium text-sm mt-1">{invoice.issuedAt ? formatLongDate(invoice.issuedAt) : "Not issued"}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Due Date</p>
@@ -112,6 +116,10 @@ export default function ClientInvoiceDetail() {
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Status</p>
               <span className={statusStyles[displayStatus]}>{displayStatus}</span>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Paid Date</p>
+              <p className="font-medium text-sm mt-1">{invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid"}</p>
             </div>
           </div>
 

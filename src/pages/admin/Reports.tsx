@@ -3,13 +3,14 @@ import { Clock, DollarSign, FileText, TrendingUp } from "lucide-react";
 import { SummaryCard } from "@/components/SummaryCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
-import { getInvoiceStatusCounts, getMonthlyEarnings, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
+import { getBillingSummary, getMonthlyEarnings } from "@/lib/billing";
+import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
 import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
 
 const pieColors = {
   paid: "hsl(152, 60%, 40%)",
-  sent: "hsl(38, 92%, 50%)",
+  issued: "hsl(38, 92%, 50%)",
   draft: "hsl(220, 9%, 46%)",
   overdue: "hsl(0, 74%, 42%)",
 };
@@ -18,11 +19,13 @@ export default function Reports() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const currentUser = useAppStore((state) => state.currentUser);
+  const clients = useAppStore((state) => state.clients);
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
+  const periodBilling = getBillingSummary(timeEntries, clients, { start: billingPeriod.start, end: billingPeriod.end });
   const weeklyHours = getWeeklyHours(timeEntries);
   const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
-  const monthlyEarnings = getMonthlyEarnings(timeEntries, currentUser.hourlyRate);
+  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients);
   const statusTotals = getInvoiceStatusCounts(invoices);
   const totalInvoiced = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
   const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "paid");
@@ -31,7 +34,7 @@ export default function Reports() {
 
   const invoiceStatus = [
     { name: "Paid", value: statusTotals.paid, color: pieColors.paid },
-    { name: "Sent", value: statusTotals.sent, color: pieColors.sent },
+    { name: "Issued", value: statusTotals.issued, color: pieColors.issued },
     { name: "Draft", value: statusTotals.draft, color: pieColors.draft },
     { name: "Overdue", value: statusTotals.overdue, color: pieColors.overdue },
   ].filter((item) => item.value > 0);
@@ -47,7 +50,7 @@ export default function Reports() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard title="This Week" value={formatHours(thisWeekHours)} icon={Clock} iconClassName="bg-accent/10 text-accent" />
-        <SummaryCard title="Current Period" value={formatHours(periodHours)} icon={Clock} iconClassName="bg-primary/10 text-primary" />
+        <SummaryCard title="Current Period" value={formatHours(periodHours)} subtitle={periodBilling.missingRateEntries.length ? `${periodBilling.missingRateEntries.length} entries missing rates` : "All rated work included"} icon={Clock} iconClassName="bg-primary/10 text-primary" />
         <SummaryCard title="Total Invoiced" value={formatCurrency(totalInvoiced)} icon={FileText} iconClassName="bg-success/10 text-success" />
         <SummaryCard
           title="Unpaid Balance"

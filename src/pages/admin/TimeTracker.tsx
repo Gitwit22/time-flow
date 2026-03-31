@@ -23,7 +23,6 @@ export default function TimeTracker() {
   const addTimeEntry = useAppStore((state) => state.addTimeEntry);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
-  const markTimeEntryInvoiced = useAppStore((state) => state.markTimeEntryInvoiced);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "invoiced">("all");
@@ -108,15 +107,6 @@ export default function TimeTracker() {
 
     deleteTimeEntry(entry.id);
     toast({ title: "Entry deleted", description: "The selected entry was removed." });
-  };
-
-  const handleMarkInvoiced = (entry: TimeEntry) => {
-    if (isReadonly || entry.status !== "completed") {
-      return;
-    }
-
-    markTimeEntryInvoiced(entry.id);
-    toast({ title: "Entry marked invoiced", description: "The selected entry is now invoiced." });
   };
 
   return (
@@ -218,7 +208,6 @@ export default function TimeTracker() {
             readOnly={isReadonly}
             onEdit={handleEdit}
             onDelete={handleDelete}
-            onMarkInvoiced={handleMarkInvoiced}
           />
         </CardContent>
       </Card>

@@ -4,8 +4,8 @@ import { Link } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
-import { getUpcomingInvoice } from "@/lib/calculations";
 import { useAppStore } from "@/store/appStore";
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 
@@ -15,7 +15,8 @@ export function UpcomingInvoiceCard() {
   const clients = useAppStore((state) => state.clients);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
-  const upcomingInvoice = getUpcomingInvoice(timeEntries, currentUser, settings, clients, invoices);
+  const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, currentUser, settings, invoices, new Date(), settings.defaultClientId);
+  const [upcomingInvoice] = invoiceDraftSummary.previews;
   const isReadonly = currentUser.role === "client_viewer";
 
   return (
@@ -49,6 +50,11 @@ export function UpcomingInvoiceCard() {
                 <p className="text-sm font-medium">{formatCurrency(upcomingInvoice.totalAmount)}</p>
               </div>
             </div>
+            {invoiceDraftSummary.missingRateClientNames.length ? (
+              <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Set hourly rates for {invoiceDraftSummary.missingRateClientNames.join(", ")} to include all logged work in invoice previews.
+              </p>
+            ) : null}
             {!isReadonly ? (
               <GenerateInvoiceDialog
                 trigger={
@@ -62,6 +68,12 @@ export function UpcomingInvoiceCard() {
               <p className="text-sm text-muted-foreground">Invoice generation is limited to contractor mode.</p>
             )}
           </>
+        ) : invoiceDraftSummary.missingRateClientNames.length ? (
+          <EmptyState
+            icon={FileText}
+            title="Set client rates to preview invoices"
+            description={`No invoice preview can be generated until these clients have hourly rates: ${invoiceDraftSummary.missingRateClientNames.join(", ")}.`}
+          />
         ) : (
           <EmptyState icon={FileText} title="No invoice preview yet" description={`No completed work has been logged for ${formatLongDate(new Date())} in the current billing period.`} />
         )}

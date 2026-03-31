@@ -59,20 +59,15 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Hourly Rate</Label>
-              <Input
-                type="number"
-                value={currentUser.hourlyRate}
-                onChange={(event) => updateCurrentUser({ hourlyRate: Number(event.target.value || 0) })}
-              />
-            </div>
-            <div className="space-y-1.5">
               <Label className="text-xs">Invoice Due Days</Label>
               <Input
                 type="number"
                 value={currentUser.invoiceDueDays}
                 onChange={(event) => updateCurrentUser({ invoiceDueDays: Number(event.target.value || 0) })}
               />
+            </div>
+            <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+              Client billing rates are managed on each client record.
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">

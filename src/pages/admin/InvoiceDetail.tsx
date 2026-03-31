@@ -1,4 +1,4 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, Send } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Link, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
-  sent: "status-badge-warning",
+  issued: "status-badge-warning",
   paid: "status-badge-success",
   overdue: "status-badge-warning",
 };
@@ -77,29 +77,46 @@ export default function InvoiceDetail() {
                 currentUser,
                 settings,
               });
-              toast({ title: "Invoice exported", description: `${invoice.id} was downloaded.` });
+                toast({ title: "Invoice opened for download", description: `${invoice.id} opened in a printable invoice view.` });
             }}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
           </Button>
-          <Button size="sm" asChild>
+            <Button size="sm" variant="outline" asChild>
             <Link to="/admin/email">
-              <Send className="mr-1.5 h-3.5 w-3.5" /> Email Invoice
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Create Email Draft
             </Link>
           </Button>
-          {!isReadonly && invoice.status === "sent" ? (
+            {!isReadonly && invoice.status === "draft" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  updateInvoice(invoice.id, { issuedAt: new Date().toISOString(), paidAt: undefined, status: "issued" });
+                  toast({ title: "Invoice issued", description: `${invoice.id} is now ready to share.` });
+                }}
+              >
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Mark Issued
+              </Button>
+            ) : null}
+            {!isReadonly && invoice.status === "issued" ? (
             <Button
               size="sm"
               variant="outline"
               className="text-success border-success/30 hover:bg-success/10"
               onClick={() => {
-                updateInvoice(invoice.id, { status: "paid" });
+                  updateInvoice(invoice.id, { paidAt: new Date().toISOString(), status: "paid" });
                 toast({ title: "Invoice paid", description: `${invoice.id} marked as paid.` });
               }}
             >
               <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Mark Paid
             </Button>
           ) : null}
+            {invoice.status === "paid" ? (
+              <Button size="sm" variant="outline" disabled>
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Paid {invoice.paidAt ? formatLongDate(invoice.paidAt) : ""}
+              </Button>
+            ) : null}
         </div>
       </div>
 
@@ -119,7 +136,11 @@ export default function InvoiceDetail() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8 p-4 rounded-lg bg-muted/50">
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Date</p>
-              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.periodEnd)}</p>
+              <p className="font-medium text-sm mt-1">{formatLongDate(invoice.createdAt)}</p>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Issue Date</p>
+              <p className="font-medium text-sm mt-1">{invoice.issuedAt ? formatLongDate(invoice.issuedAt) : "Not issued"}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Due Date</p>
@@ -132,6 +153,10 @@ export default function InvoiceDetail() {
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Status</p>
               <span className={statusStyles[displayStatus]}>{displayStatus}</span>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Paid Date</p>
+              <p className="font-medium text-sm mt-1">{invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid"}</p>
             </div>
           </div>
 

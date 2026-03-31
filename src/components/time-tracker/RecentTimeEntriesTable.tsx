@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/shared/DataTable";
 import { formatLongDate, formatHours } from "@/lib/date";
-import { Pencil, ReceiptText, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import type { Client, TimeEntry } from "@/types";
 
 interface RecentTimeEntriesTableProps {
@@ -11,7 +11,6 @@ interface RecentTimeEntriesTableProps {
   readOnly?: boolean;
   onEdit?: (entry: TimeEntry) => void;
   onDelete?: (entry: TimeEntry) => void;
-  onMarkInvoiced?: (entry: TimeEntry) => void;
 }
 
 function getStatusClass(status: TimeEntry["status"]) {
@@ -26,7 +25,7 @@ function getStatusClass(status: TimeEntry["status"]) {
   return "status-badge-warning";
 }
 
-export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onDelete, onMarkInvoiced }: RecentTimeEntriesTableProps) {
+export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onDelete }: RecentTimeEntriesTableProps) {
   const getClientName = (clientId: string) => clients.find((client) => client.id === clientId)?.name ?? "Unknown client";
 
   return (
@@ -71,11 +70,6 @@ export function RecentTimeEntriesTable({ entries, clients, readOnly, onEdit, onD
               <Badge variant="outline">View only</Badge>
             ) : (
               <div className="flex items-center justify-end gap-1">
-                {entry.status === "completed" ? (
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onMarkInvoiced?.(entry)}>
-                    <ReceiptText className="h-4 w-4" />
-                  </Button>
-                ) : null}
                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit?.(entry)}>
                   <Pencil className="h-4 w-4" />
                 </Button>

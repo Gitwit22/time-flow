@@ -54,7 +54,7 @@ export function ClientDialog({ client, open, onOpenChange, onSubmit }: ClientDia
             <Input
               type="number"
               step="0.01"
-              placeholder="Leave blank to use your default rate"
+              placeholder="Required before this client can be invoiced"
               value={form.hourlyRate ?? ""}
               onChange={(event) => setForm((current) => ({ ...current, hourlyRate: event.target.value ? Number(event.target.value) : undefined }))}
             />

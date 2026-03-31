@@ -1,7 +1,21 @@
 import { eachWeekOfInterval, endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths, subWeeks } from "date-fns";
 
+import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { getBillingPeriod, toIsoDate } from "@/lib/date";
 import type { AppSettings, Client, Invoice, TimeEntry, UserProfile, WorkSession } from "@/types";
+
+function getTrackedEntries(entries: TimeEntry[]) {
+  const seenEntryIds = new Set<string>();
+
+  return entries.filter((entry) => {
+    if (entry.status === "running" || seenEntryIds.has(entry.id)) {
+      return false;
+    }
+
+    seenEntryIds.add(entry.id);
+    return true;
+  });
+}
 
 function isTrackedEntry(entry: TimeEntry) {
   return entry.status !== "running";
@@ -10,7 +24,7 @@ function isTrackedEntry(entry: TimeEntry) {
 export function getTodaysHours(entries: TimeEntry[], today = new Date()) {
   const todayKey = toIsoDate(today);
 
-  return entries
+  return getTrackedEntries(entries)
     .filter((entry) => entry.date === todayKey && isTrackedEntry(entry))
     .reduce((total, entry) => total + entry.durationHours, 0);
 }
@@ -19,7 +33,7 @@ export function getPeriodHours(entries: TimeEntry[], start: string | Date, end: 
   const startDate = parseISO(typeof start === "string" ? start : toIsoDate(start));
   const endDate = parseISO(typeof end === "string" ? end : toIsoDate(end));
 
-  return entries
+  return getTrackedEntries(entries)
     .filter((entry) => {
       const entryDate = parseISO(entry.date);
       return isTrackedEntry(entry) && isWithinInterval(entryDate, { start: startDate, end: endDate });
@@ -48,41 +62,25 @@ export function getUpcomingInvoice(
   invoices: Invoice[],
   referenceDate = new Date(),
 ) {
-  const { start, end } = getBillingPeriod(referenceDate, currentUser.invoiceFrequency);
-  const alreadyInvoicedEntryIds = new Set(invoices.flatMap((invoice) => invoice.entryIds));
-  const relevantEntries = entries.filter((entry) => {
-    const withinPeriod = isWithinInterval(parseISO(entry.date), { start, end });
-    const isDefaultClient = settings.defaultClientId ? entry.clientId === settings.defaultClientId : true;
-    const isBillableStatus = entry.status !== "running";
-    const alreadyLinkedToInvoice = alreadyInvoicedEntryIds.has(entry.id);
-    return isBillableStatus && !alreadyLinkedToInvoice && withinPeriod && isDefaultClient;
-  });
+  const invoiceDraftSummary = buildInvoiceDraftSummary(
+    entries,
+    clients,
+    currentUser,
+    settings,
+    invoices,
+    referenceDate,
+    settings.defaultClientId,
+  );
+  const [firstPreview] = invoiceDraftSummary.previews;
 
-  if (!relevantEntries.length) {
+  if (!firstPreview) {
     return null;
   }
 
-  const grouped = new Map<string, TimeEntry[]>();
-
-  relevantEntries.forEach((entry) => {
-    const existing = grouped.get(entry.clientId) ?? [];
-    existing.push(entry);
-    grouped.set(entry.clientId, existing);
-  });
-
-  const [clientId, clientEntries] = grouped.entries().next().value as [string, TimeEntry[]];
-  const totalHours = clientEntries.reduce((total, entry) => total + entry.durationHours, 0);
-  const client = clients.find((c) => c.id === clientId);
-  const hourlyRate = client?.hourlyRate ?? currentUser.hourlyRate;
-
   return {
-    clientId,
-    clientName: getClientName(clientId, clients),
-    periodStart: toIsoDate(start),
-    periodEnd: toIsoDate(end),
-    totalHours,
-    totalAmount: totalHours * hourlyRate,
-    existingInvoiceCount: invoices.filter((invoice) => invoice.clientId === clientId).length,
+    ...firstPreview,
+    existingInvoiceCount: invoices.filter((invoice) => invoice.clientId === firstPreview.clientId).length,
+    missingRateClientNames: invoiceDraftSummary.missingRateClientNames,
   };
 }
 
@@ -113,16 +111,16 @@ export function getInvoiceStatusCounts(invoices: Invoice[], referenceDate = new 
     (totals, invoice) => {
       if (invoice.status === "paid") {
         totals.paid += 1;
-      } else if (invoice.status === "sent" && parseISO(invoice.dueDate) < referenceDate) {
+      } else if (invoice.status === "issued" && parseISO(invoice.dueDate) < referenceDate) {
         totals.overdue += 1;
-      } else if (invoice.status === "sent") {
-        totals.sent += 1;
+      } else if (invoice.status === "issued") {
+        totals.issued += 1;
       } else {
         totals.draft += 1;
       }
 
       return totals;
     },
-    { paid: 0, sent: 0, overdue: 0, draft: 0 },
+    { paid: 0, issued: 0, overdue: 0, draft: 0 },
   );
 }

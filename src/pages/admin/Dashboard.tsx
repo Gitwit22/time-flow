@@ -19,22 +19,23 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
+  const invoices = useAppStore((state) => state.invoices);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
-  const markTimeEntryInvoiced = useAppStore((state) => state.markTimeEntryInvoiced);
   const metrics = useMemo(
     () =>
       selectDashboardMetrics({
+        clients,
         currentUser: {
           invoiceFrequency: currentUser.invoiceFrequency,
-          hourlyRate: currentUser.hourlyRate,
         },
+        invoices,
         timeEntries,
         activeSession,
       }),
-    [activeSession, currentUser.hourlyRate, currentUser.invoiceFrequency, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, invoices, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -69,15 +70,6 @@ export default function AdminDashboard() {
     toast({ title: "Entry deleted", description: "The selected time entry was removed." });
   };
 
-  const handleMarkInvoiced = (entry: TimeEntry) => {
-    if (isReadonly || entry.status !== "completed") {
-      return;
-    }
-
-    markTimeEntryInvoiced(entry.id);
-    toast({ title: "Entry marked invoiced", description: "This entry is now tracked as invoiced work." });
-  };
-
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
@@ -110,7 +102,7 @@ export default function AdminDashboard() {
         <SummaryCard
           title="Period Earnings"
           value={formatCurrency(metrics.periodEarnings)}
-          subtitle={`@ ${formatCurrency(currentUser.hourlyRate)}/hr`}
+          subtitle={metrics.unratedEntryCount ? `${metrics.unratedEntryCount} entries missing client rates` : "Based on rated client work"}
           icon={DollarSign}
           iconClassName="bg-success/10 text-success"
         />
@@ -137,7 +129,6 @@ export default function AdminDashboard() {
             readOnly={isReadonly}
             onEdit={handleEditEntry}
             onDelete={handleDeleteEntry}
-            onMarkInvoiced={handleMarkInvoiced}
           />
         </CardContent>
       </Card>

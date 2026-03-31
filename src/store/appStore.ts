@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { createSeedData } from "@/data/seed";
-import { materializeInvoiceDrafts } from "@/lib/invoice";
+import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { APP_STORAGE_KEY, appStorage } from "@/lib/storage";
 import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDraftPreview, TimeEntry, UserProfile, UserRole, WorkSession } from "@/types";
 
@@ -282,6 +282,7 @@ export const useAppStore = create<AppState>()(
       merge: (persistedState, currentState) => ({
         ...currentState,
         ...(persistedState as Partial<AppState>),
+        invoices: ((persistedState as Partial<AppState>)?.invoices ?? currentState.invoices).map((invoice) => normalizeInvoiceRecord(invoice)),
         hydrated: true,
       }),
     },

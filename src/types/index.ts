@@ -43,12 +43,15 @@ export interface Invoice {
   clientId: string;
   periodStart: string;
   periodEnd: string;
+  createdAt: string;
   dueDate: string;
   entryIds: string[];
   totalHours: number;
   hourlyRate: number;
   totalAmount: number;
-  status: "draft" | "sent" | "paid";
+  status: "draft" | "issued" | "paid";
+  issuedAt?: string;
+  paidAt?: string;
 }
 
 export interface AppSettings {

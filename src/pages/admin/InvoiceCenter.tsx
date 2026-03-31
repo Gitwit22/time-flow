@@ -1,4 +1,4 @@
-import { FileText, Download, Eye, Send, CheckCircle2, Filter } from "lucide-react";
+import { FileText, Download, Eye, CheckCircle2, Filter } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
@@ -10,11 +10,12 @@ import { Link } from "react-router-dom";
 import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
+import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
-  sent: "status-badge-warning",
+  issued: "status-badge-warning",
   paid: "status-badge-success",
   overdue: "status-badge-warning",
 };
@@ -22,8 +23,11 @@ const statusStyles: Record<string, string> = {
 export default function InvoiceCenter() {
   const { toast } = useToast();
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
+  const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const invoices = useAppStore((state) => state.invoices);
   const clients = useAppStore((state) => state.clients);
+  const timeEntries = useAppStore((state) => state.timeEntries);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -85,7 +89,7 @@ export default function InvoiceCenter() {
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
-            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="issued">Issued</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
             <SelectItem value="overdue">Overdue</SelectItem>
           </SelectContent>
@@ -128,7 +132,28 @@ export default function InvoiceCenter() {
                             <Eye className="h-3.5 w-3.5" />
                           </Link>
                         </Button>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-muted-foreground"
+                          onClick={() => {
+                            const client = clients.find((item) => item.id === inv.clientId);
+                            const entries = timeEntries.filter((entry) => inv.entryIds.includes(entry.id));
+                            const opened = downloadInvoiceExport({
+                              invoice: inv,
+                              entries,
+                              client,
+                              currentUser,
+                              settings,
+                            });
+
+                            toast({
+                              title: opened ? "Invoice opened for download" : "Popup blocked",
+                              description: opened ? `${inv.id} opened in a printable invoice view.` : "Allow popups for this site to download invoices.",
+                              variant: opened ? undefined : "destructive",
+                            });
+                          }}
+                        >
                           <Download className="h-3.5 w-3.5" />
                         </Button>
                         {!isReadonly && inv.status === "draft" && (
@@ -137,26 +162,27 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             onClick={() => {
-                              updateInvoice(inv.id, { status: "sent" });
-                              toast({ title: "Invoice sent", description: `${inv.id} status updated to sent.` });
+                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: new Date().toISOString(), status: "issued" });
+                              toast({ title: "Invoice issued", description: `${inv.id} is now ready to share with the client.` });
                             }}
                           >
-                            <Send className="h-3.5 w-3.5" />
+                            <FileText className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {!isReadonly && inv.status === "sent" && (
+                        {!isReadonly && inv.status === "issued" && (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-success"
                             onClick={() => {
-                              updateInvoice(inv.id, { status: "paid" });
+                              updateInvoice(inv.id, { paidAt: new Date().toISOString(), status: "paid" });
                               toast({ title: "Invoice paid", description: `${inv.id} marked as paid.` });
                             }}
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
+                        {inv.status === "paid" ? <CheckCircle2 className="h-3.5 w-3.5 text-success" /> : null}
                       </div>
                     </td>
                   </tr>

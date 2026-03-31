@@ -1,6 +1,6 @@
 import { isBefore, parseISO } from "date-fns";
 
-import { getBillingPeriod, getInvoiceDueDate, toIsoDate } from "@/lib/date";
+import { buildInvoiceDraftSummary } from "@/lib/billing";
 import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDisplayStatus, InvoiceDraftPreview, TimeEntry, UserProfile } from "@/types";
 
 export function buildInvoiceDrafts(
@@ -12,43 +12,7 @@ export function buildInvoiceDrafts(
   referenceDate = new Date(),
   clientId?: string,
 ) {
-  const { start, end } = getBillingPeriod(referenceDate, currentUser.invoiceFrequency);
-  const dueDate = getInvoiceDueDate(end, currentUser.invoiceDueDays);
-  const groupedEntries = new Map<string, TimeEntry[]>();
-  const alreadyInvoicedEntryIds = new Set(invoices.flatMap((invoice) => invoice.entryIds));
-
-  entries
-    .filter((entry) => {
-      const inCurrentPeriod = entry.date >= toIsoDate(start) && entry.date <= toIsoDate(end);
-      const matchesClient = clientId ? entry.clientId === clientId : true;
-      const isBillableStatus = entry.status !== "running";
-      const alreadyLinkedToInvoice = alreadyInvoicedEntryIds.has(entry.id);
-      return isBillableStatus && !alreadyLinkedToInvoice && inCurrentPeriod && matchesClient;
-    })
-    .forEach((entry) => {
-      const existing = groupedEntries.get(entry.clientId) ?? [];
-      existing.push(entry);
-      groupedEntries.set(entry.clientId, existing);
-    });
-
-  return Array.from(groupedEntries.entries()).map(([groupClientId, grouped]) => {
-    const client = clients.find((item) => item.id === groupClientId);
-    const totalHours = grouped.reduce((total, entry) => total + entry.durationHours, 0);
-    const hourlyRate = client?.hourlyRate ?? currentUser.hourlyRate;
-
-    return {
-      clientId: groupClientId,
-      clientName: client?.name ?? "Unknown client",
-      periodStart: toIsoDate(start),
-      periodEnd: toIsoDate(end),
-      dueDate,
-      entryIds: grouped.map((entry) => entry.id),
-      totalHours,
-      hourlyRate,
-      totalAmount: totalHours * hourlyRate,
-      notes: settings.invoiceNotes,
-    };
-  });
+  return buildInvoiceDraftSummary(entries, clients, currentUser, settings, invoices, referenceDate, clientId).previews;
 }
 
 export function nextInvoiceId(invoices: Invoice[], referenceDate = new Date()) {
@@ -66,9 +30,11 @@ export function nextInvoiceId(invoices: Invoice[], referenceDate = new Date()) {
 export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoices: Invoice[], referenceDate = new Date()) {
   const nextInvoices: Invoice[] = [];
   let runningInvoices = [...invoices];
+  const createdAt = new Date().toISOString();
 
   previews.forEach((preview) => {
     const invoice: Invoice = {
+      createdAt,
       id: nextInvoiceId(runningInvoices, referenceDate),
       clientId: preview.clientId,
       periodStart: preview.periodStart,
@@ -89,11 +55,21 @@ export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoic
 }
 
 export function getInvoiceDisplayStatus(invoice: Invoice, referenceDate = new Date()): InvoiceDisplayStatus {
-  if (invoice.status === "sent" && isBefore(parseISO(invoice.dueDate), referenceDate)) {
+  if (invoice.status === "issued" && isBefore(parseISO(invoice.dueDate), referenceDate)) {
     return "overdue";
   }
 
   return invoice.status;
+}
+
+export function normalizeInvoiceRecord(invoice: Invoice | (Omit<Invoice, "status" | "createdAt"> & { createdAt?: string; status?: Invoice["status"] | "sent" })) {
+  const normalizedStatus = invoice.status === "sent" ? "issued" : invoice.status ?? "draft";
+
+  return {
+    ...invoice,
+    createdAt: invoice.createdAt ?? invoice.issuedAt ?? new Date(invoice.periodEnd).toISOString(),
+    status: normalizedStatus,
+  } as Invoice;
 }
 
 export function buildInvoiceEmailDraft(invoice: Invoice, client: Client | undefined, currentUser: UserProfile, settings: AppSettings): EmailDraft {

@@ -8,7 +8,7 @@ export function createSeedData() {
     name: "John Doe",
     email: "john@contractor.com",
     role: "contractor",
-    hourlyRate: 150,
+    hourlyRate: 0,
     invoiceFrequency: "monthly",
     invoiceDueDays: 14,
     currency: "USD",

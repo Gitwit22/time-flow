@@ -27,6 +27,11 @@ export default function Clients() {
       return;
     }
 
+    if (!value.hourlyRate || value.hourlyRate <= 0) {
+      toast({ title: "Hourly rate required", description: "Set a client hourly rate before saving this client.", variant: "destructive" });
+      return;
+    }
+
     if (editingClient) {
       updateClient(editingClient.id, value);
       toast({ title: "Client updated", description: `${value.name} was updated.` });
@@ -87,7 +92,7 @@ export default function Clients() {
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Hourly Rate</p>
-                  <p className="font-medium">{client.hourlyRate ? `${formatCurrency(client.hourlyRate)}/hr` : "Default rate"}</p>
+                  <p className="font-medium">{client.hourlyRate ? `${formatCurrency(client.hourlyRate)}/hr` : "Rate required"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground text-xs">Client ID</p>
