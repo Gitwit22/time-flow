@@ -13,6 +13,18 @@ type ClientDraft = Omit<Client, "id">;
 type ProjectDraft = Omit<Project, "id">;
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
 
+function resolveViewerClientId(clients: Client[], settings: AppSettings, preferredClientId?: string) {
+  if (preferredClientId && clients.some((client) => client.id === preferredClientId)) {
+    return preferredClientId;
+  }
+
+  if (settings.defaultClientId && clients.some((client) => client.id === settings.defaultClientId)) {
+    return settings.defaultClientId;
+  }
+
+  return clients[0]?.id;
+}
+
 function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
@@ -32,6 +44,8 @@ function calculateDurationHours(startTime: string, endTime?: string) {
 export interface AppState {
   hydrated: boolean;
   currentUser: UserProfile;
+  viewerClientId?: string;
+  viewerClientLocked: boolean;
   settings: AppSettings;
   clients: Client[];
   projects: Project[];
@@ -41,6 +55,7 @@ export interface AppState {
   emailDrafts: Record<string, EmailDraft>;
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
+  setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
@@ -75,8 +90,23 @@ export const useAppStore = create<AppState>()(
     (set, get) => ({
       hydrated: false,
       ...seedData,
+      viewerClientId: undefined,
+      viewerClientLocked: false,
       setHydrated: (hydrated) => set({ hydrated }),
-      setRole: (role) => set((state) => ({ currentUser: { ...state.currentUser, role } })),
+      setRole: (role) =>
+        set((state) => ({
+          currentUser: { ...state.currentUser, role },
+          viewerClientId:
+            role === "client_viewer"
+              ? resolveViewerClientId(state.clients, state.settings, state.viewerClientId)
+              : state.viewerClientId,
+          viewerClientLocked: role === "client_viewer" ? state.viewerClientLocked : false,
+        })),
+      setViewerClientContext: (clientId, locked = false) =>
+        set((state) => ({
+          viewerClientId: locked ? clientId : resolveViewerClientId(state.clients, state.settings, clientId),
+          viewerClientLocked: locked,
+        })),
       syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
       updateCurrentUser: (updates) => {
         if (get().currentUser.role !== "contractor") {
@@ -145,6 +175,10 @@ export const useAppStore = create<AppState>()(
             timeEntries: state.timeEntries.filter((entry) => entry.clientId !== id),
             invoices: state.invoices.filter((invoice) => invoice.clientId !== id),
             activeSession: state.activeSession.clientId === id ? { isActive: false } : state.activeSession,
+            viewerClientId:
+              state.viewerClientId === id
+                ? (state.viewerClientLocked ? undefined : resolveViewerClientId(state.clients.filter((client) => client.id !== id), state.settings))
+                : state.viewerClientId,
           };
         }),
       addProject: (project) => {
@@ -378,7 +412,7 @@ export const useAppStore = create<AppState>()(
             },
           };
         }),
-      resetApp: () => set({ ...createSeedData(), hydrated: true }),
+      resetApp: () => set({ ...createSeedData(), hydrated: true, viewerClientId: undefined, viewerClientLocked: false }),
     }),
     {
       name: APP_STORAGE_KEY,
@@ -402,6 +436,8 @@ export const useAppStore = create<AppState>()(
           clients,
           projects,
           timeEntries,
+          viewerClientId: (persisted as Partial<AppState>).viewerClientId,
+          viewerClientLocked: (persisted as Partial<AppState>).viewerClientLocked ?? false,
           settings: {
             ...currentState.settings,
             ...(persisted.settings ?? {}),

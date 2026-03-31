@@ -131,6 +131,11 @@ export function getActiveUser() {
   return state.users.find((user) => user.id === session.userId) ?? null;
 }
 
+export function getViewerClientIdForUser(userId: string) {
+  const state = readAuthState();
+  return state.invites.find((invite) => invite.usedByUserId === userId)?.clientId;
+}
+
 export function logoutActiveUser() {
   clearSession();
 }

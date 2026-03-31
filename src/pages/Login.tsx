@@ -6,12 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { loginWithCredentials, toAppIdentity } from "@/lib/auth";
+import { getViewerClientIdForUser, loginWithCredentials, toAppIdentity } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 
 export default function Login() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
@@ -26,6 +27,7 @@ export default function Login() {
     try {
       setIsSubmitting(true);
       const user = await loginWithCredentials(loginId, password);
+      setViewerClientContext(user.role === "client_viewer" ? getViewerClientIdForUser(user.id) : undefined, user.role === "client_viewer");
       syncCurrentUser(toAppIdentity(user));
       navigate(user.role === "contractor" ? "/admin" : "/client", { replace: true });
     } catch (error) {

@@ -9,14 +9,18 @@ import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "
 import { useAppStore } from "@/store/appStore";
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 
-export function UpcomingInvoiceCard() {
+interface UpcomingInvoiceCardProps {
+  clientId?: string;
+}
+
+export function UpcomingInvoiceCard({ clientId }: UpcomingInvoiceCardProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
-  const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), settings.defaultClientId);
+  const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), clientId ?? settings.defaultClientId);
   const [upcomingInvoice] = invoiceDraftSummary.previews;
   const isReadonly = currentUser.role === "client_viewer";
 

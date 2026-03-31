@@ -5,11 +5,10 @@ import { DataTable } from "@/components/shared/DataTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatHours, formatLongDate } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 
 export default function ClientTimeLogs() {
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
+  const { activeClient, clients, projects, timeEntries } = useAppStore(selectViewerScope);
   const rows = useMemo(
     () => [...timeEntries].sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
     [timeEntries],
@@ -21,7 +20,7 @@ export default function ClientTimeLogs() {
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
         <h1 className="page-title">Time Logs</h1>
-        <p className="page-subtitle">View your contractor's logged work hours.</p>
+        <p className="page-subtitle">{activeClient ? `View ${activeClient.name}'s logged work hours.` : "Select a company to preview its time log history."}</p>
       </div>
 
       <div className="readonly-banner">

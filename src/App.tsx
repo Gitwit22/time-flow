@@ -6,7 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireAuth } from "@/components/layout/RequireAuth";
-import { getActiveUser, toAppIdentity } from "@/lib/auth";
+import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 
 // Public pages
@@ -41,6 +41,7 @@ import ClientReports from "./pages/client/Reports";
 const queryClient = new QueryClient();
 
 function AuthBootstrapper() {
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
 
   useEffect(() => {
@@ -49,8 +50,9 @@ function AuthBootstrapper() {
       return;
     }
 
+    setViewerClientContext(user.role === "client_viewer" ? getViewerClientIdForUser(user.id) : undefined, user.role === "client_viewer");
     syncCurrentUser(toAppIdentity(user));
-  }, [syncCurrentUser]);
+  }, [setViewerClientContext, syncCurrentUser]);
 
   return null;
 }

@@ -12,6 +12,7 @@ import { useAppStore } from "@/store/appStore";
 export default function SignUp() {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,6 +34,7 @@ export default function SignUp() {
     try {
       setIsSubmitting(true);
       const user = await registerContractor(name, email, password);
+      setViewerClientContext(undefined, false);
       syncCurrentUser(toAppIdentity(user));
       toast({ title: "Account created", description: "Your contractor workspace is ready." });
       navigate("/admin", { replace: true });

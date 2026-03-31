@@ -6,13 +6,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { acceptViewerInvite, toAppIdentity } from "@/lib/auth";
+import { acceptViewerInvite, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
 
 export default function InviteAcceptance() {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const [name, setName] = useState("");
   const [inviteCode, setInviteCode] = useState((searchParams.get("code") || "").toUpperCase());
@@ -28,6 +29,7 @@ export default function InviteAcceptance() {
     try {
       setIsSubmitting(true);
       const user = await acceptViewerInvite(inviteCode, name, password);
+      setViewerClientContext(getViewerClientIdForUser(user.id), true);
       syncCurrentUser(toAppIdentity(user));
       toast({ title: "Invite accepted", description: "Viewer access has been enabled for your account." });
       navigate("/client", { replace: true });

@@ -1,5 +1,5 @@
 import { ChangeEvent, useMemo, useState } from "react";
-import { Archive, Download, Eye, FolderOpen, Pencil, RotateCcw, Save, Upload } from "lucide-react";
+import { Archive, Download, Eye, FolderOpen, Loader2, Pencil, RotateCcw, Save, Upload } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -30,12 +30,44 @@ function readAsDataUrl(file: File) {
   });
 }
 
+/**
+ * Upload via the Cloudflare Pages Function (/api/upload).
+ * Returns the R2 object key on success.
+ * Throws with a user-facing message on failure.
+ */
+async function uploadToCloud(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const response = await fetch("/api/upload", { method: "POST", body: form });
+
+  if (!response.ok) {
+    let message = "Storage upload failed.";
+    try {
+      const json = await response.json() as { error?: string };
+      if (json.error) message = json.error;
+    } catch { /* ignore parse errors */ }
+    throw new Error(message);
+  }
+
+  const json = await response.json() as { key: string };
+  return json.key;
+}
+
+/** True when running in production (i.e. the Pages Function is available). */
+function isCloudAvailable() {
+  // In dev (npm run dev / Vite) there is no /api/* Function available
+  // unless the user also runs `wrangler pages dev`. We detect production
+  // by checking that we are not on localhost.
+  return typeof window !== "undefined" && !window.location.hostname.includes("localhost");
+}
+
 export function DocumentManager({
   contextLabel,
   documents,
   currentUserName,
   readOnly,
-  maxFileBytes = 1024 * 1024,
+  maxFileBytes = isCloudAvailable() ? 10 * 1024 * 1024 : 1024 * 1024,
   onAdd,
   onUpdate,
 }: DocumentManagerProps) {
@@ -49,6 +81,8 @@ export function DocumentManager({
   const activeDocuments = useMemo(() => documents.filter((document) => document.status === "active"), [documents]);
   const archivedDocuments = useMemo(() => documents.filter((document) => document.status === "archived"), [documents]);
 
+  const [isUploading, setIsUploading] = useState(false);
+
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
@@ -56,8 +90,12 @@ export function DocumentManager({
       return;
     }
 
+    const limitLabel = isCloudAvailable()
+      ? `${Math.round(maxFileBytes / 1024 / 1024)} MB`
+      : `${Math.round(maxFileBytes / 1024)} KB`;
+
     if (file.size > maxFileBytes) {
-      toast({ title: "Document too large", description: `Use a file under ${Math.round(maxFileBytes / 1024)} KB for reliable local storage.`, variant: "destructive" });
+      toast({ title: "Document too large", description: `Use a file under ${limitLabel}.`, variant: "destructive" });
       event.target.value = "";
       return;
     }
@@ -78,15 +116,26 @@ export function DocumentManager({
       return;
     }
 
+    setIsUploading(true);
     try {
-      const dataUrl = await readAsDataUrl(pendingFile);
-      onAdd(createAttachedDocumentDraft(pendingFile, dataUrl, currentUserName, pendingTitle, pendingNote));
+      if (isCloudAvailable()) {
+        // Production: upload to R2 via Pages Function; store the key, not a data URL
+        const storageKey = await uploadToCloud(pendingFile);
+        onAdd(createAttachedDocumentDraft(pendingFile, "", currentUserName, pendingTitle, pendingNote, storageKey));
+      } else {
+        // Dev fallback: store as base64 data URL in localStorage
+        const dataUrl = await readAsDataUrl(pendingFile);
+        onAdd(createAttachedDocumentDraft(pendingFile, dataUrl, currentUserName, pendingTitle, pendingNote));
+      }
       toast({ title: "Document saved", description: `${pendingTitle.trim()} was attached to this ${contextLabel}.` });
       setPendingFile(null);
       setPendingTitle("");
       setPendingNote("");
-    } catch {
-      toast({ title: "Upload failed", description: "The document could not be attached.", variant: "destructive" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The document could not be attached.";
+      toast({ title: "Upload failed", description: message, variant: "destructive" });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -113,8 +162,12 @@ export function DocumentManager({
                 <Textarea className="min-h-24 resize-none" value={pendingNote} onChange={(event) => setPendingNote(event.target.value)} />
               </div>
               <div className="md:col-span-2 flex gap-2">
-                <Button onClick={() => void handleSaveDocument()}>
-                  <Upload className="mr-2 h-4 w-4" /> Save Document
+                <Button onClick={() => void handleSaveDocument()} disabled={isUploading}>
+                  {isUploading ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Uploading…</>
+                  ) : (
+                    <><Upload className="mr-2 h-4 w-4" /> Save Document</>
+                  )}
                 </Button>
                 <Button
                   variant="outline"
@@ -170,12 +223,19 @@ export function DocumentManager({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" asChild>
-                    <a href={document.dataUrl} target="_blank" rel="noreferrer">
+                    <a
+                      href={document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
                       <Eye className="mr-1.5 h-3.5 w-3.5" /> View
                     </a>
                   </Button>
                   <Button variant="outline" size="sm" asChild>
-                    <a href={document.dataUrl} download={document.originalFilename}>
+                    <a
+                      href={document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
+                      download={document.originalFilename}
+                    >
                       <Download className="mr-1.5 h-3.5 w-3.5" /> Download
                     </a>
                   </Button>

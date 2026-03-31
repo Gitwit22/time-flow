@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { downloadInvoiceExport } from "@/lib/export";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 
@@ -19,10 +20,7 @@ const statusStyles: Record<string, string> = {
 export default function ClientInvoiceHistory() {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const invoices = useAppStore((state) => state.invoices);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
   const rows = useMemo(
     () =>
       [...invoices].map((invoice) => ({
@@ -36,7 +34,7 @@ export default function ClientInvoiceHistory() {
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
         <h1 className="page-title">Invoice History</h1>
-        <p className="page-subtitle">View and download your contractor's invoices.</p>
+        <p className="page-subtitle">{activeClient ? `View and download invoices for ${activeClient.name}.` : "Select a company to preview its invoices."}</p>
       </div>
 
       <div className="readonly-banner">

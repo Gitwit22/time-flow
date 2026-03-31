@@ -5,8 +5,9 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { logoutActiveUser } from "@/lib/auth";
+import { getActiveUser, logoutActiveUser } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 import type { UserRole } from "@/types";
 
 interface AppTopbarProps {
@@ -24,8 +25,14 @@ function getInitials(name: string) {
 
 export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const navigate = useNavigate();
+  const activeAuthUser = getActiveUser();
   const currentUser = useAppStore((state) => state.currentUser);
+  const clients = useAppStore((state) => state.clients);
   const setRole = useAppStore((state) => state.setRole);
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
+  const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(selectViewerScope);
+  const canSwitchRoles = activeAuthUser?.role === "contractor";
+  const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
 
   const handleRoleChange = (role: UserRole) => {
     setRole(role);
@@ -44,20 +51,36 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
         {currentUser.role === "client_viewer" && readonlyHint ? (
           <div className="hidden items-center gap-1.5 text-xs text-muted-foreground sm:flex">
             <Eye className="h-3.5 w-3.5" />
-            <span>{readonlyHint}</span>
+            <span>{activeClient ? `${readonlyHint} for ${activeClient.name}` : readonlyHint}</span>
           </div>
         ) : null}
       </div>
       <div className="flex items-center gap-3">
-        <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
-          <SelectTrigger className="h-8 w-[170px] text-xs">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="contractor">Contractor mode</SelectItem>
-            <SelectItem value="client_viewer">Client viewer mode</SelectItem>
-          </SelectContent>
-        </Select>
+        {currentUser.role === "client_viewer" ? (
+          <Select value={viewerClientId} onValueChange={(value) => setViewerClientContext(value, viewerClientLocked)} disabled={viewerClientLocked || !availableViewerClients.length}>
+            <SelectTrigger className="h-8 w-[220px] text-xs">
+              <SelectValue placeholder="Select company" />
+            </SelectTrigger>
+            <SelectContent>
+              {availableViewerClients.map((client) => (
+                <SelectItem key={client.id} value={client.id}>
+                  {client.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : null}
+        {canSwitchRoles ? (
+          <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
+            <SelectTrigger className="h-8 w-[170px] text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="contractor">Contractor mode</SelectItem>
+              <SelectItem value="client_viewer">Client viewer mode</SelectItem>
+            </SelectContent>
+          </Select>
+        ) : null}
         <Button variant="ghost" size="icon" className="text-muted-foreground">
           <Bell className="h-4 w-4" />
         </Button>

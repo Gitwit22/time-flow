@@ -3,8 +3,67 @@ import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculati
 import { formatClockTime, getBillingPeriod } from "@/lib/date";
 import type { AppState } from "@/store/appStore";
 
+function resolveScopedViewerClientId(state: AppState) {
+  if (state.currentUser.role !== "client_viewer") {
+    return undefined;
+  }
+
+  if (state.viewerClientId && state.clients.some((client) => client.id === state.viewerClientId)) {
+    return state.viewerClientId;
+  }
+
+  if (state.viewerClientLocked) {
+    return undefined;
+  }
+
+  if (state.settings.defaultClientId && state.clients.some((client) => client.id === state.settings.defaultClientId)) {
+    return state.settings.defaultClientId;
+  }
+
+  return state.clients[0]?.id;
+}
+
 export function selectIsReadonly(state: AppState) {
   return state.currentUser.role === "client_viewer";
+}
+
+export function selectViewerScope(state: AppState) {
+  const viewerClientId = resolveScopedViewerClientId(state);
+  const activeClient = viewerClientId ? state.clients.find((client) => client.id === viewerClientId) : undefined;
+
+  if (state.currentUser.role !== "client_viewer") {
+    return {
+      activeClient: undefined,
+      clients: state.clients,
+      invoices: state.invoices,
+      projects: state.projects,
+      timeEntries: state.timeEntries,
+      viewerClientId: undefined,
+      viewerClientLocked: state.viewerClientLocked,
+    };
+  }
+
+  if (!viewerClientId) {
+    return {
+      activeClient: undefined,
+      clients: [],
+      invoices: [],
+      projects: [],
+      timeEntries: [],
+      viewerClientId: undefined,
+      viewerClientLocked: state.viewerClientLocked,
+    };
+  }
+
+  return {
+    activeClient,
+    clients: state.clients.filter((client) => client.id === viewerClientId),
+    invoices: state.invoices.filter((invoice) => invoice.clientId === viewerClientId),
+    projects: state.projects.filter((project) => project.clientId === viewerClientId),
+    timeEntries: state.timeEntries.filter((entry) => entry.clientId === viewerClientId),
+    viewerClientId,
+    viewerClientLocked: state.viewerClientLocked,
+  };
 }
 
 interface DashboardMetricsInput {

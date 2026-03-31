@@ -8,6 +8,7 @@ import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 import { Link, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
@@ -22,10 +23,7 @@ export default function ClientInvoiceDetail() {
 
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const invoices = useAppStore((state) => state.invoices);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
 
   const invoice = invoices.find((item) => item.id === id);
 
@@ -47,7 +45,7 @@ export default function ClientInvoiceDetail() {
     );
   }
 
-  const client = clients.find((item) => item.id === invoice.clientId);
+  const client = activeClient ?? clients.find((item) => item.id === invoice.clientId);
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));

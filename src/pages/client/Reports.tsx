@@ -7,6 +7,7 @@ import { getBillingSummary, getMonthlyEarnings } from "@/lib/billing";
 import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
 import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 
 const pieColors = {
   paid: "hsl(152, 60%, 40%)",
@@ -16,11 +17,8 @@ const pieColors = {
 };
  
 export default function ClientReports() {
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
   const currentUser = useAppStore((state) => state.currentUser);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
+  const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(selectViewerScope);
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
   const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
@@ -39,7 +37,7 @@ export default function ClientReports() {
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
         <h1 className="page-title">Reports</h1>
-        <p className="page-subtitle">Read-only performance summaries for hours, billing, and invoice status.</p>
+        <p className="page-subtitle">{activeClient ? `Read-only performance summaries for ${activeClient.name}.` : "Select a company to preview its reports."}</p>
       </div>
 
       <div className="readonly-banner">

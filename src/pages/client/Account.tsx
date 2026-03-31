@@ -6,11 +6,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 
 export default function ClientAccount() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
+  const { activeClient } = useAppStore(selectViewerScope);
   const isReadonly = currentUser.role === "client_viewer";
   const [name, setName] = useState(currentUser.name);
   const [email, setEmail] = useState(currentUser.email);
@@ -28,6 +30,19 @@ export default function ClientAccount() {
       </div>
 
       {isReadonly ? <div className="readonly-banner">Viewer mode: profile editing is disabled.</div> : null}
+
+      {isReadonly ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-heading">Viewing Company</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">{activeClient?.name ?? "No company selected"}</p>
+            <p>{activeClient?.contactName ?? "No primary contact set"}</p>
+            <p>{activeClient?.contactEmail ?? "No contact email set"}</p>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader className="pb-3">

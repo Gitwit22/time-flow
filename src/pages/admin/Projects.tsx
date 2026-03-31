@@ -1,10 +1,21 @@
-import { BriefcaseBusiness, ChevronRight, Plus, TriangleAlert } from "lucide-react";
+import { BriefcaseBusiness, ChevronRight, Plus, Trash2, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ProjectDialog } from "@/components/projects/ProjectDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -34,6 +45,7 @@ export default function ProjectsPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const addProject = useAppStore((state) => state.addProject);
+  const deleteProject = useAppStore((state) => state.deleteProject);
   const updateProject = useAppStore((state) => state.updateProject);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -204,7 +216,7 @@ export default function ProjectsPage() {
                 </div>
 
                 {!isReadonly ? (
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -215,6 +227,34 @@ export default function ProjectsPage() {
                     >
                       Edit project
                     </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive">
+                          <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                          Delete project
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete {project.name}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This removes the project and its attached documents from TimeFlow. Existing linked time entries will be kept, but they will no longer point to this project.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                            onClick={() => {
+                              deleteProject(project.id);
+                              toast({ title: "Project deleted", description: `${project.name} was removed.` });
+                            }}
+                          >
+                            Delete project
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
                   </div>
                 ) : null}
               </CardContent>

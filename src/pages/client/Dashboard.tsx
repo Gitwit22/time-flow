@@ -9,27 +9,26 @@ import { getBillingSummary } from "@/lib/billing";
 import { getBillingPeriod } from "@/lib/date";
 import { getPeriodHours, getTodaysHours } from "@/lib/calculations";
 import { useAppStore } from "@/store/appStore";
+import { selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 
 export default function ClientDashboard() {
   const currentUser = useAppStore((state) => state.currentUser);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
-  const clients = useAppStore((state) => state.clients);
+  const { activeClient, clients, invoices, projects, timeEntries, viewerClientId } = useAppStore(selectViewerScope);
   const recentEntries = [...timeEntries]
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
     .slice(0, 5);
   const recentInvoices = [...invoices].slice(0, 4);
   const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, { start: billingPeriod.start, end: billingPeriod.end });
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const todaysHours = getTodaysHours(timeEntries, new Date());
 
   return (
     <div className="space-y-6 max-w-6xl">
       <div className="page-header">
         <h1 className="page-title">Client Dashboard</h1>
-        <p className="page-subtitle">View contractor work logs and invoice progress in real time.</p>
+        <p className="page-subtitle">{activeClient ? `Viewing ${activeClient.name}'s work logs and invoice progress in real time.` : "Select a company to preview what that client would see."}</p>
       </div>
 
       <div className="readonly-banner">
@@ -46,7 +45,7 @@ export default function ClientDashboard() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
-          <UpcomingInvoiceCard />
+          <UpcomingInvoiceCard clientId={viewerClientId} />
         </div>
 
         <Card>
@@ -85,7 +84,7 @@ export default function ClientDashboard() {
           </Button>
         </CardHeader>
         <CardContent>
-          <RecentTimeEntriesTable entries={recentEntries} clients={clients} readOnly />
+          <RecentTimeEntriesTable entries={recentEntries} clients={clients} projects={projects} readOnly />
         </CardContent>
       </Card>
     </div>

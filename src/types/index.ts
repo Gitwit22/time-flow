@@ -25,7 +25,10 @@ export interface AttachedDocument {
   status: AttachedDocumentStatus;
   mimeType: string;
   sizeBytes: number;
+  /** base64 data URL — only set for pre-cloud / legacy documents */
   dataUrl: string;
+  /** R2 object key — set when the document was uploaded via /api/upload */
+  storageKey?: string;
 }
 
 export interface Client {

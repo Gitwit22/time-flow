@@ -3,6 +3,7 @@ import type { AttachedDocument } from "@/types";
 export type LegacyAttachedDocument = Partial<AttachedDocument> & {
   name?: string;
   visibility?: string;
+  storageKey?: string;
 };
 
 function stripExtension(filename: string) {
@@ -14,7 +15,14 @@ export function getDefaultDocumentTitle(filename: string) {
   return stripped || filename;
 }
 
-export function createAttachedDocumentDraft(file: File, dataUrl: string, uploadedBy: string, title: string, note?: string): Omit<AttachedDocument, "id"> {
+export function createAttachedDocumentDraft(
+  file: File,
+  dataUrl: string,
+  uploadedBy: string,
+  title: string,
+  note?: string,
+  storageKey?: string,
+): Omit<AttachedDocument, "id"> {
   return {
     title: title.trim() || getDefaultDocumentTitle(file.name),
     originalFilename: file.name,
@@ -25,6 +33,7 @@ export function createAttachedDocumentDraft(file: File, dataUrl: string, uploade
     mimeType: file.type || "application/octet-stream",
     sizeBytes: file.size,
     dataUrl,
+    storageKey,
   };
 }
 
@@ -43,5 +52,6 @@ export function normalizeAttachedDocumentRecord(document: LegacyAttachedDocument
     mimeType: document.mimeType ?? "application/octet-stream",
     sizeBytes: document.sizeBytes ?? 0,
     dataUrl: document.dataUrl ?? "",
+    storageKey: document.storageKey,
   };
 }
