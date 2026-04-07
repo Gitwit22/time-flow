@@ -2,7 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/shared/DataTable";
 import { formatLongDate, formatHours } from "@/lib/date";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import type { Client, Project, TimeEntry } from "@/types";
 
 interface RecentTimeEntriesTableProps {
@@ -12,6 +12,7 @@ interface RecentTimeEntriesTableProps {
   readOnly?: boolean;
   onEdit?: (entry: TimeEntry) => void;
   onDelete?: (entry: TimeEntry) => void;
+  onUnmarkInvoiced?: (entry: TimeEntry) => void;
 }
 
 function getStatusClass(status: TimeEntry["status"]) {
@@ -26,7 +27,7 @@ function getStatusClass(status: TimeEntry["status"]) {
   return "status-badge-warning";
 }
 
-export function RecentTimeEntriesTable({ entries, clients, projects, readOnly, onEdit, onDelete }: RecentTimeEntriesTableProps) {
+export function RecentTimeEntriesTable({ entries, clients, projects, readOnly, onEdit, onDelete, onUnmarkInvoiced }: RecentTimeEntriesTableProps) {
   const getClientName = (clientId: string) => clients.find((client) => client.id === clientId)?.name ?? "Unknown client";
   const getProjectName = (projectId?: string) => (projectId ? projects.find((project) => project.id === projectId)?.name ?? "Unknown project" : "Client-only");
 
@@ -82,9 +83,21 @@ export function RecentTimeEntriesTable({ entries, clients, projects, readOnly, o
               <Badge variant="outline">View only</Badge>
             ) : (
               <div className="flex items-center justify-end gap-1">
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit?.(entry)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
+                {entry.status === "invoiced" ? (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-warning"
+                    title="Release back to billable"
+                    onClick={() => onUnmarkInvoiced?.(entry)}
+                  >
+                    <RotateCcw className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit?.(entry)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                )}
                 <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => onDelete?.(entry)}>
                   <Trash2 className="h-4 w-4" />
                 </Button>

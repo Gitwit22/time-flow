@@ -24,6 +24,7 @@ export default function TimeTracker() {
   const addTimeEntry = useAppStore((state) => state.addTimeEntry);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
+  const unmarkTimeEntryInvoiced = useAppStore((state) => state.unmarkTimeEntryInvoiced);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "invoiced">("all");
@@ -111,6 +112,20 @@ export default function TimeTracker() {
 
     deleteTimeEntry(entry.id);
     toast({ title: "Entry deleted", description: "The selected entry was removed." });
+  };
+
+  const handleUnmarkInvoiced = (entry: TimeEntry) => {
+    if (isReadonly) {
+      return;
+    }
+
+    unmarkTimeEntryInvoiced(entry.id);
+    toast({
+      title: "Entry released",
+      description: entry.invoiceId
+        ? `Entry moved back to billable. Note: invoice ${entry.invoiceId} still exists.`
+        : "Entry moved back to billable status.",
+    });
   };
 
   return (
@@ -229,6 +244,7 @@ export default function TimeTracker() {
             readOnly={isReadonly}
             onEdit={handleEdit}
             onDelete={handleDelete}
+            onUnmarkInvoiced={handleUnmarkInvoiced}
           />
         </CardContent>
       </Card>
