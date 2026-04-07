@@ -2,7 +2,7 @@ import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths
 
 import { getBillingPeriod, getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
 import { resolveTimeEntryBillingContext, uniqueProjectIds } from "@/lib/projects";
-import type { AppSettings, Client, Invoice, InvoiceDraftPreview, Project, TimeEntry, UserProfile } from "@/types";
+import type { AppSettings, Client, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
 
 interface BillingSummaryOptions {
   clientId?: string;
@@ -151,19 +151,41 @@ export function buildInvoiceDraftSummary(
   return {
     missingRateClientNames: summary.missingRateClientNames,
     missingRateEntries: summary.missingRateEntries,
-    previews: Array.from(groupedLines.entries()).map(([groupClientId, grouped]) => ({
-      clientId: groupClientId,
-      clientName: grouped[0]?.client.name ?? "Unknown client",
-      dueDate,
-      entryIds: grouped.map((line) => line.entry.id),
-      hasMixedRates: new Set(grouped.map((line) => line.hourlyRate)).size > 1,
-      hourlyRate: grouped[0]?.hourlyRate ?? 0,
-      periodEnd: toIsoDate(billingPeriod.end),
-      periodStart: toIsoDate(billingPeriod.start),
-      projectIds: uniqueProjectIds(grouped.map((line) => line.entry)),
-      totalAmount: Number(grouped.reduce((sum, line) => sum + line.amount, 0).toFixed(2)),
-      totalHours: Number(grouped.reduce((sum, line) => sum + line.entry.durationHours, 0).toFixed(2)),
-    })),
+    previews: Array.from(groupedLines.entries()).map(([groupClientId, grouped]) => {
+      const subtotal = Number(grouped.reduce((sum, line) => sum + line.amount, 0).toFixed(2));
+      const entryIds = grouped.map((line) => line.entry.id);
+      const lineItems: InvoiceLineItem[] = grouped.map((line, i) => ({
+        id: `li-${i}`,
+        description: line.entry.notes || (line.project ? line.project.name : line.client.name),
+        date: line.entry.date,
+        hours: line.entry.durationHours,
+        rate: line.hourlyRate,
+        amount: line.amount,
+        timeEntryIds: [line.entry.id],
+      }));
+      return {
+        billingMode: "range" as InvoiceBillingMode,
+        clientId: groupClientId,
+        clientName: grouped[0]?.client.name ?? "Unknown client",
+        dueDate,
+        entryIds,
+        grouping: "none" as InvoiceGrouping,
+        hasMixedRates: new Set(grouped.map((line) => line.hourlyRate)).size > 1,
+        hourlyRate: grouped[0]?.hourlyRate ?? 0,
+        lineItems,
+        periodEnd: toIsoDate(billingPeriod.end),
+        periodStart: toIsoDate(billingPeriod.start),
+        projectIds: uniqueProjectIds(grouped.map((line) => line.entry)),
+        rangeEnd: toIsoDate(billingPeriod.end),
+        rangeStart: toIsoDate(billingPeriod.start),
+        subtotal,
+        taxAmount: 0,
+        taxRate: 0,
+        timeEntryIds: entryIds,
+        totalAmount: subtotal,
+        totalHours: Number(grouped.reduce((sum, line) => sum + line.entry.durationHours, 0).toFixed(2)),
+      };
+    }),
   };
 }
 
@@ -179,4 +201,116 @@ export function getMonthlyEarnings(entries: TimeEntry[], clients: Client[], proj
       month: format(monthDate, "MMM"),
     };
   });
+}
+
+export interface SingleClientPreviewResult {
+  preview: InvoiceDraftPreview | null;
+  missingRateEntries: TimeEntry[];
+}
+
+export function buildSingleClientInvoicePreview(
+  allEntries: TimeEntry[],
+  clients: Client[],
+  projects: Project[],
+  clientId: string,
+  billingMode: InvoiceBillingMode,
+  dueDate: string,
+  options: {
+    rangeStart?: string;
+    rangeEnd?: string;
+    taxRate?: number;
+    grouping?: InvoiceGrouping;
+  } = {},
+): SingleClientPreviewResult {
+  const { rangeStart, rangeEnd, taxRate = 0, grouping = "none" } = options;
+  const client = clients.find((c) => c.id === clientId);
+
+  if (!client) {
+    return { preview: null, missingRateEntries: [] };
+  }
+
+  const candidateEntries = getDedupedEntries(allEntries).filter(
+    (entry) =>
+      entry.clientId === clientId &&
+      entry.billable &&
+      entry.status !== "running" &&
+      entry.status !== "invoiced" &&
+      entry.invoiceId === null,
+  );
+
+  const filtered =
+    billingMode === "range" && rangeStart && rangeEnd
+      ? candidateEntries.filter((entry) => isInSelectedRange(entry, rangeStart, rangeEnd))
+      : candidateEntries;
+
+  const lines: RatedTimeEntry[] = [];
+  const missingRateEntries: TimeEntry[] = [];
+
+  filtered.forEach((entry) => {
+    const context = resolveTimeEntryBillingContext(entry, clients, projects);
+
+    if (!context.hourlyRate) {
+      missingRateEntries.push(entry);
+      return;
+    }
+
+    lines.push({
+      amount: Number((entry.durationHours * context.hourlyRate).toFixed(2)),
+      client,
+      entry,
+      hourlyRate: context.hourlyRate,
+      project: context.project,
+    });
+  });
+
+  if (lines.length === 0) {
+    return { preview: null, missingRateEntries };
+  }
+
+  const entryIds = lines.map((l) => l.entry.id);
+  const totalHours = Number(lines.reduce((sum, l) => sum + l.entry.durationHours, 0).toFixed(2));
+  const subtotal = Number(lines.reduce((sum, l) => sum + l.amount, 0).toFixed(2));
+  const taxAmount = Number((subtotal * taxRate).toFixed(2));
+  const totalAmount = Number((subtotal + taxAmount).toFixed(2));
+  const hasMixedRates = new Set(lines.map((l) => l.hourlyRate)).size > 1;
+  const hourlyRate = lines[0]?.hourlyRate ?? 0;
+
+  const lineItems: InvoiceLineItem[] = lines.map((l, i) => ({
+    id: `li-${i}`,
+    description: l.entry.notes || (l.project ? l.project.name : client.name),
+    date: l.entry.date,
+    hours: l.entry.durationHours,
+    rate: l.hourlyRate,
+    amount: l.amount,
+    timeEntryIds: [l.entry.id],
+  }));
+
+  const sortedDates = lines.map((l) => l.entry.date).sort();
+  const periodStart = sortedDates[0] ?? toIsoDate(new Date());
+  const periodEnd = sortedDates[sortedDates.length - 1] ?? periodStart;
+
+  const preview: InvoiceDraftPreview = {
+    billingMode,
+    clientId,
+    clientName: client.name,
+    dueDate,
+    entryIds,
+    grouping,
+    hasMixedRates,
+    hourlyRate,
+    lineItems,
+    periodEnd,
+    periodStart,
+    projectIds: uniqueProjectIds(lines.map((l) => l.entry)),
+    rangeEnd,
+    rangeStart,
+    subtotal,
+    taxAmount,
+    taxRate,
+    timeEntryIds: entryIds,
+    totalAmount,
+    totalHours,
+  };
+
+  return { preview, missingRateEntries };
 }

@@ -36,19 +36,28 @@ export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoic
 
   previews.forEach((preview) => {
     const invoice: Invoice = {
+      billingMode: preview.billingMode ?? "range",
       createdAt,
-      hasMixedRates: preview.hasMixedRates,
-      id: nextInvoiceId(runningInvoices, referenceDate),
       clientId: preview.clientId,
-      periodStart: preview.periodStart,
-      periodEnd: preview.periodEnd,
       dueDate: preview.dueDate,
       entryIds: preview.entryIds,
-      projectIds: preview.projectIds,
-      totalHours: preview.totalHours,
+      grouping: preview.grouping ?? "none",
+      hasMixedRates: preview.hasMixedRates,
       hourlyRate: preview.hourlyRate,
-      totalAmount: preview.totalAmount,
+      id: nextInvoiceId(runningInvoices, referenceDate),
+      lineItems: preview.lineItems ?? [],
+      periodEnd: preview.periodEnd,
+      periodStart: preview.periodStart,
+      projectIds: preview.projectIds,
+      rangeEnd: preview.rangeEnd,
+      rangeStart: preview.rangeStart,
       status: "draft",
+      subtotal: preview.subtotal ?? preview.totalAmount,
+      taxAmount: preview.taxAmount ?? 0,
+      taxRate: preview.taxRate ?? 0,
+      timeEntryIds: preview.timeEntryIds ?? preview.entryIds,
+      totalAmount: preview.totalAmount,
+      totalHours: preview.totalHours,
     };
 
     runningInvoices = [...runningInvoices, invoice];
@@ -67,7 +76,19 @@ export function getInvoiceDisplayStatus(invoice: Invoice, referenceDate = new Da
 }
 
 export function normalizeInvoiceRecord(
-  invoice: Invoice | (Omit<Invoice, "status" | "createdAt" | "projectIds" | "hasMixedRates"> & { createdAt?: string; status?: Invoice["status"] | "sent"; projectIds?: string[]; hasMixedRates?: boolean }),
+  invoice: Invoice | (Omit<Invoice, "status" | "createdAt" | "projectIds" | "hasMixedRates" | "billingMode" | "grouping" | "lineItems" | "timeEntryIds" | "subtotal" | "taxRate" | "taxAmount"> & {
+    createdAt?: string;
+    status?: Invoice["status"] | "sent";
+    projectIds?: string[];
+    hasMixedRates?: boolean;
+    billingMode?: Invoice["billingMode"];
+    grouping?: Invoice["grouping"];
+    lineItems?: Invoice["lineItems"];
+    timeEntryIds?: string[];
+    subtotal?: number;
+    taxRate?: number;
+    taxAmount?: number;
+  }),
   entries: TimeEntry[] = [],
 ) {
   const normalizedStatus = invoice.status === "sent" ? "issued" : invoice.status ?? "draft";
@@ -76,10 +97,17 @@ export function normalizeInvoiceRecord(
 
   return {
     ...invoice,
+    billingMode: invoice.billingMode ?? "range",
     createdAt: invoice.createdAt ?? invoice.issuedAt ?? new Date(invoice.periodEnd).toISOString(),
+    grouping: invoice.grouping ?? "none",
     hasMixedRates: invoice.hasMixedRates ?? rates.length > 1,
+    lineItems: invoice.lineItems ?? [],
     projectIds: invoice.projectIds ?? uniqueProjectIds(linkedEntries),
     status: normalizedStatus,
+    subtotal: invoice.subtotal ?? invoice.totalAmount ?? 0,
+    taxAmount: invoice.taxAmount ?? 0,
+    taxRate: invoice.taxRate ?? 0,
+    timeEntryIds: invoice.timeEntryIds ?? invoice.entryIds ?? [],
   } as Invoice;
 }
 

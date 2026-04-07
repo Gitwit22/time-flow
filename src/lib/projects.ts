@@ -73,9 +73,16 @@ export function normalizeTimeEntryRecord(entry: TimeEntry, clients: Client[], pr
         ? client.hourlyRate
         : undefined;
 
+  const billable = typeof entry.billable === "boolean" ? entry.billable : true;
+  const invoiced = typeof entry.invoiced === "boolean" ? entry.invoiced : entry.status === "invoiced" || Boolean(entry.invoiceId);
+
   return {
     ...entry,
     billingRate,
+    billable,
+    invoiced,
+    invoiceId: invoiced ? entry.invoiceId ?? null : null,
+    status: invoiced ? "invoiced" : entry.status === "invoiced" ? "completed" : entry.status,
     clientId,
     projectId: project?.id,
   };

@@ -72,8 +72,24 @@ export interface TimeEntry {
   endTime?: string;
   durationHours: number;
   billingRate?: number;
+  billable: boolean;
+  invoiced: boolean;
+  invoiceId: string | null;
   notes: string;
   status: "running" | "completed" | "invoiced";
+}
+
+export type InvoiceBillingMode = "range" | "outstanding";
+export type InvoiceGrouping = "none" | "day" | "week";
+
+export interface InvoiceLineItem {
+  id: string;
+  description: string;
+  date: string;
+  hours: number;
+  rate: number;
+  amount: number;
+  timeEntryIds: string[];
 }
 
 export interface WorkSession {
@@ -90,15 +106,24 @@ export interface Invoice {
   clientId: string;
   periodStart: string;
   periodEnd: string;
+  billingMode: InvoiceBillingMode;
+  rangeStart?: string;
+  rangeEnd?: string;
+  grouping: InvoiceGrouping;
   createdAt: string;
   dueDate: string;
   entryIds: string[];
+  timeEntryIds: string[];
+  lineItems: InvoiceLineItem[];
   projectIds: string[];
   totalHours: number;
   hourlyRate: number;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
   totalAmount: number;
   hasMixedRates: boolean;
-  status: "draft" | "issued" | "paid";
+  status: "draft" | "issued" | "sent" | "paid";
   issuedAt?: string;
   paidAt?: string;
 }
@@ -126,11 +151,20 @@ export interface InvoiceDraftPreview {
   clientName: string;
   periodStart: string;
   periodEnd: string;
+  billingMode: InvoiceBillingMode;
+  rangeStart?: string;
+  rangeEnd?: string;
+  grouping: InvoiceGrouping;
   dueDate: string;
   entryIds: string[];
+  timeEntryIds: string[];
+  lineItems: InvoiceLineItem[];
   projectIds: string[];
   totalHours: number;
   hourlyRate: number;
+  subtotal: number;
+  taxRate: number;
+  taxAmount: number;
   totalAmount: number;
   hasMixedRates: boolean;
 }

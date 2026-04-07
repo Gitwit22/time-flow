@@ -77,6 +77,7 @@ export interface AppState {
   deleteTimeEntry: (id: string) => void;
   markTimeEntryInvoiced: (id: string) => void;
   commitInvoiceDrafts: (previews: InvoiceDraftPreview[]) => Invoice[];
+  commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
@@ -376,6 +377,26 @@ export const useAppStore = create<AppState>()(
         }));
 
         return nextInvoices;
+      },
+      commitSingleInvoice: (preview) => {
+        const state = get();
+        if (state.currentUser.role !== "contractor") {
+          return null;
+        }
+
+        const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
+        if (!invoice) return null;
+
+        set((current) => ({
+          invoices: [invoice, ...current.invoices],
+          timeEntries: current.timeEntries.map((entry) =>
+            preview.entryIds.includes(entry.id)
+              ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId: invoice.id }
+              : entry,
+          ),
+        }));
+
+        return invoice;
       },
       updateInvoice: (id, updates) =>
         set((state) => {
