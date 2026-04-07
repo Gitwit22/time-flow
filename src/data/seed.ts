@@ -63,8 +63,6 @@ export function createSeedData() {
 
 export type SeedData = ReturnType<typeof createSeedData>;
 
-    {
-      id: "client-northwind",
       name: "Northwind Labs",
       contactName: "Ava Chen",
       contactEmail: "ava@northwindlabs.com",
