@@ -1,8 +1,9 @@
-import { FileText, Download, Eye, CheckCircle2, Filter, RotateCcw } from "lucide-react";
+import { FileText, Download, Eye, CheckCircle2, Filter, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -30,6 +31,7 @@ export default function InvoiceCenter() {
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
+  const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -209,6 +211,39 @@ export default function InvoiceCenter() {
                           >
                             <RotateCcw className="h-3.5 w-3.5" />
                           </Button>
+                        ) : null}
+                        {!isReadonly ? (
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive/70 hover:text-destructive">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Void invoice {inv.id}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This will permanently delete the invoice and release all linked time entries back to
+                                  billable status so they can be re-invoiced. This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => {
+                                    deleteInvoice(inv.id);
+                                    toast({
+                                      title: "Invoice voided",
+                                      description: `${inv.id} was deleted and its time entries were released back to billable status.`,
+                                    });
+                                  }}
+                                >
+                                  Void Invoice
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         ) : null}
                       </div>
                     </td>

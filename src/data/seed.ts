@@ -1,7 +1,68 @@
 import type { AppSettings, Client, EmailDraft, Invoice, Project, TimeEntry, UserProfile, WorkSession } from "@/types";
 
 export function createSeedData() {
-  const clients: Client[] = [
+  const clients: Client[] = [];
+
+  const projects: Project[] = [];
+
+  const currentUser: UserProfile = {
+    id: "user-default",
+    name: "",
+    email: "",
+    role: "contractor",
+    hourlyRate: 0,
+    invoiceFrequency: "monthly",
+    invoiceDueDays: 14,
+    currency: "USD",
+  };
+
+  const settings: AppSettings = {
+    businessName: "",
+    defaultClientId: undefined,
+    invoiceNotes: "",
+    paymentInstructions: "",
+    invoiceLogoDataUrl: undefined,
+    invoiceBannerDataUrl: undefined,
+    companyViewerAccess: false,
+    emailTemplate: [
+      "Hello {{clientName}},",
+      "",
+      "Attached is invoice {{invoiceNumber}} from {{businessName}} for work completed during {{invoicePeriod}}.",
+      "",
+      "Amount due: ${{amount}}",
+      "Due date: {{dueDate}}",
+      "",
+      "Please let me know if you need anything else.",
+      "",
+      "Best,",
+      "{{contractorName}}",
+    ].join("\n"),
+  };
+
+  const timeEntries: TimeEntry[] = [];
+
+  const activeSession: WorkSession = {
+    isActive: false,
+  };
+
+  const invoices: Invoice[] = [];
+
+  const emailDrafts: Record<string, EmailDraft> = {};
+
+  return {
+    currentUser,
+    settings,
+    clients,
+    projects,
+    timeEntries,
+    activeSession,
+    invoices,
+    emailDrafts,
+  };
+}
+
+export type SeedData = ReturnType<typeof createSeedData>;
+
     {
       id: "client-northwind",
       name: "Northwind Labs",
@@ -159,6 +220,9 @@ export function createSeedData() {
       endTime: "13:00",
       durationHours: 4,
       billingRate: 95,
+      billable: true,
+      invoiced: false,
+      invoiceId: null,
       notes: "Homepage wireframe revisions and review deck prep.",
       status: "completed",
     },
@@ -171,6 +235,9 @@ export function createSeedData() {
       endTime: "15:00",
       durationHours: 5,
       billingRate: 95,
+      billable: true,
+      invoiced: false,
+      invoiceId: null,
       notes: "Design system component migration and QA fixes.",
       status: "completed",
     },
@@ -183,6 +250,9 @@ export function createSeedData() {
       endTime: "12:30",
       durationHours: 4,
       billingRate: 110,
+      billable: true,
+      invoiced: true,
+      invoiceId: "INV-2026-001",
       notes: "Webhook retry handling and observability pass.",
       status: "invoiced",
     },
@@ -195,6 +265,9 @@ export function createSeedData() {
       endTime: "17:00",
       durationHours: 4,
       billingRate: 110,
+      billable: true,
+      invoiced: true,
+      invoiceId: "INV-2026-001",
       notes: "Checkout analytics event mapping and QA.",
       status: "invoiced",
     },
@@ -207,6 +280,9 @@ export function createSeedData() {
       endTime: "12:00",
       durationHours: 3,
       billingRate: 125,
+      billable: true,
+      invoiced: false,
+      invoiceId: null,
       notes: "Launch checklist audit and asset review.",
       status: "completed",
     },
@@ -218,6 +294,9 @@ export function createSeedData() {
       endTime: "16:00",
       durationHours: 2,
       billingRate: 90,
+      billable: true,
+      invoiced: false,
+      invoiceId: null,
       notes: "Standalone stakeholder support call and planning notes.",
       status: "completed",
     },

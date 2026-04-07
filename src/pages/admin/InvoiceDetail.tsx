@@ -1,6 +1,7 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, FileText, RotateCcw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText, RotateCcw, Trash2 } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,7 @@ import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 import { useAppStore } from "@/store/appStore";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
@@ -22,6 +23,7 @@ const statusStyles: Record<string, string> = {
 export default function InvoiceDetail() {
   const { toast } = useToast();
   const { id } = useParams();
+  const navigate = useNavigate();
 
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
@@ -30,6 +32,7 @@ export default function InvoiceDetail() {
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
+  const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const isReadonly = currentUser.role === "client_viewer";
 
   const invoice = invoices.find((item) => item.id === id);
@@ -136,6 +139,41 @@ export default function InvoiceDetail() {
               >
                 <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Mark Unpaid
               </Button>
+            ) : null}
+            {!isReadonly ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10">
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Void Invoice
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Void invoice {invoice.id}?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently delete the invoice and release all {entries.length} linked time{" "}
+                      {entries.length === 1 ? "entry" : "entries"} back to billable status so they can be re-invoiced.
+                      This action cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      onClick={() => {
+                        deleteInvoice(invoice.id);
+                        toast({
+                          title: "Invoice voided",
+                          description: `${invoice.id} was deleted and its time entries were released back to billable status.`,
+                        });
+                        navigate("/admin/invoices");
+                      }}
+                    >
+                      Void Invoice
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             ) : null}
         </div>
       </div>

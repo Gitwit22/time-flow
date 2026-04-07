@@ -79,6 +79,7 @@ export interface AppState {
   commitInvoiceDrafts: (previews: InvoiceDraftPreview[]) => Invoice[];
   commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
+  deleteInvoice: (id: string) => void;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
   resetApp: () => void;
@@ -369,11 +370,23 @@ export const useAppStore = create<AppState>()(
 
         const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
 
+        // Build a map from entryId → invoiceId so every linked entry is properly marked
+        const entryToInvoiceId = new Map<string, string>();
+        previews.forEach((preview, i) => {
+          const invoice = nextInvoices[i];
+          if (invoice) {
+            preview.entryIds.forEach((id) => entryToInvoiceId.set(id, invoice.id));
+          }
+        });
+
         set((current) => ({
           invoices: [...nextInvoices, ...current.invoices],
-          timeEntries: current.timeEntries.map((entry) =>
-            previews.some((preview) => preview.entryIds.includes(entry.id)) ? { ...entry, status: "invoiced" } : entry,
-          ),
+          timeEntries: current.timeEntries.map((entry) => {
+            const invoiceId = entryToInvoiceId.get(entry.id);
+            return invoiceId
+              ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId }
+              : entry;
+          }),
         }));
 
         return nextInvoices;
@@ -405,6 +418,25 @@ export const useAppStore = create<AppState>()(
           }
 
           return { invoices: state.invoices.map((invoice) => (invoice.id === id ? { ...invoice, ...updates } : invoice)) };
+        }),
+      deleteInvoice: (id) =>
+        set((state) => {
+          if (state.currentUser.role !== "contractor") {
+            return state;
+          }
+
+          const invoice = state.invoices.find((inv) => inv.id === id);
+          const linkedEntryIds = new Set(invoice?.entryIds ?? []);
+
+          return {
+            invoices: state.invoices.filter((inv) => inv.id !== id),
+            // Release all linked time entries back to billable/completed status
+            timeEntries: state.timeEntries.map((entry) =>
+              linkedEntryIds.has(entry.id)
+                ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null }
+                : entry,
+            ),
+          };
         }),
       saveEmailDraft: (draft) =>
         set((state) => {

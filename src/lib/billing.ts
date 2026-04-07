@@ -232,9 +232,9 @@ export function buildSingleClientInvoicePreview(
   const candidateEntries = getDedupedEntries(allEntries).filter(
     (entry) =>
       entry.clientId === clientId &&
-      entry.billable &&
-      entry.status !== "running" &&
-      entry.status !== "invoiced" &&
+      entry.billable === true &&
+      entry.status === "completed" &&
+      entry.invoiced !== true &&
       entry.invoiceId === null,
   );
 
