@@ -52,7 +52,7 @@ function ExportSection() {
     downloadExportFile(payload);
     toast({
       title: "Export started",
-      description: `Exporting ${payload.customers.length} customer(s), ${payload.projects.length} project(s), ${payload.timeEntries.length} time entry/entries.`,
+      description: `Exporting ${payload.customers.length} customer(s), ${payload.projects.length} project(s), ${payload.timeEntries.length} time ${payload.timeEntries.length === 1 ? "entry" : "entries"}.`,
     });
   }
 

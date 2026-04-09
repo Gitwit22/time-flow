@@ -286,9 +286,7 @@ export function previewImport(
       customersToCreate.push(customer);
     } else if (strategy === "skip") {
       customersToSkip.push(customer);
-      if (existing) {
-        conflicts.push({ type: "customer", sourceId: customer.id, sourceName: customer.name, existingId: existing.id, existingName: existing.name });
-      }
+      conflicts.push({ type: "customer", sourceId: customer.id, sourceName: customer.name, existingId: existing.id, existingName: existing.name });
     } else if (strategy === "merge") {
       customersToUpdate.push(customer);
     } else {
@@ -425,7 +423,7 @@ function entryFromExport(src: ExportTimeEntry, clientIdMap: Map<string, string>,
     invoiced: src.invoiced,
     invoiceId: null,
     notes: src.notes,
-    status: src.status === "invoiced" ? "completed" : (src.status as TimeEntry["status"]) ?? "completed",
+    status: src.status === "running" || src.status === "completed" ? src.status : "completed",
   };
 }
 
