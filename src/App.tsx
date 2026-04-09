@@ -28,6 +28,7 @@ import InvoiceDetail from "./pages/admin/InvoiceDetail";
 import EmailPrep from "./pages/admin/EmailPrep";
 import Reports from "./pages/admin/Reports";
 import SettingsPage from "./pages/admin/Settings";
+import DataTransferPage from "./pages/admin/DataTransfer";
 
 // Client layout + pages
 import { ClientLayout } from "./components/ClientLayout";
@@ -122,6 +123,14 @@ const App = () => (
               element={
                 <RequireContractor>
                   <SettingsPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="data"
+              element={
+                <RequireContractor>
+                  <DataTransferPage />
                 </RequireContractor>
               }
             />
