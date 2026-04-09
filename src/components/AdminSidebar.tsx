@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -25,6 +25,7 @@ const mainItems = [
 ];
 
 const bottomItems = [
+  { title: "Data Transfer", url: "/admin/data", icon: ArrowLeftRight },
   { title: "Settings", url: "/admin/settings", icon: Settings },
 ];
 
