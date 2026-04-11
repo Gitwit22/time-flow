@@ -14,6 +14,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import SignUp from "./pages/SignUp";
 import InviteAcceptance from "./pages/InviteAcceptance";
+import PlatformLaunch from "./pages/PlatformLaunch";
 import NotFound from "./pages/NotFound";
 
 // Admin layout + pages
@@ -71,6 +72,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<SignUp />} />
           <Route path="/invite" element={<InviteAcceptance />} />
+          <Route path="/launch" element={<PlatformLaunch />} />
 
           {/* Admin */}
           <Route
