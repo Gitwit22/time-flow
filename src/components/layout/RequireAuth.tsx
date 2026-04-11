@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { Navigate } from "react-router-dom";
 
-import { getActiveUser } from "@/lib/auth";
+import { getPlatformSession } from "@/lib/platformApi";
 import type { UserRole } from "@/types";
 
 interface RequireAuthProps {
@@ -10,14 +10,14 @@ interface RequireAuthProps {
 }
 
 export function RequireAuth({ children, allowRole }: RequireAuthProps) {
-  const activeUser = getActiveUser();
+  const session = getPlatformSession();
 
-  if (!activeUser) {
-    return <Navigate to="/login" replace />;
+  if (!session) {
+    return <Navigate to="/launch" replace />;
   }
 
-  if (allowRole && activeUser.role !== allowRole) {
-    return <Navigate to={activeUser.role === "contractor" ? "/admin" : "/client"} replace />;
+  if (allowRole && session.user.role !== allowRole) {
+    return <Navigate to={session.user.role === "contractor" ? "/admin" : "/client"} replace />;
   }
 
   return children;

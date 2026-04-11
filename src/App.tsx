@@ -1,19 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireAuth } from "@/components/layout/RequireAuth";
-import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
+import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 
-// Public pages
-import Landing from "./pages/Landing";
-import Login from "./pages/Login";
-import SignUp from "./pages/SignUp";
-import InviteAcceptance from "./pages/InviteAcceptance";
+// Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
 import NotFound from "./pages/NotFound";
 
@@ -42,19 +38,29 @@ import ClientReports from "./pages/client/Reports";
 
 const queryClient = new QueryClient();
 
+/**
+ * Restores app identity from the platform session on mount.
+ * Replaces the old localStorage-based AuthBootstrapper.
+ */
 function AuthBootstrapper() {
-  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
+  const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
 
   useEffect(() => {
-    const user = getActiveUser();
-    if (!user) {
-      return;
-    }
+    const session = getPlatformSession();
+    if (!session) return;
 
-    setViewerClientContext(user.role === "client_viewer" ? getViewerClientIdForUser(user.id) : undefined, user.role === "client_viewer");
-    syncCurrentUser(toAppIdentity(user));
-  }, [setViewerClientContext, syncCurrentUser]);
+    syncCurrentUser({
+      name: session.user.email.split("@")[0] ?? session.user.email,
+      email: session.user.email,
+      role: session.user.role,
+    });
+
+    setViewerClientContext(
+      session.user.role === "client_viewer" ? session.user.organizationId : undefined,
+      session.user.role === "client_viewer",
+    );
+  }, [syncCurrentUser, setViewerClientContext]);
 
   return null;
 }
@@ -67,12 +73,14 @@ const App = () => (
       <AuthBootstrapper />
       <BrowserRouter>
         <Routes>
-          {/* Public */}
-          <Route path="/" element={<Landing />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<SignUp />} />
-          <Route path="/invite" element={<InviteAcceptance />} />
+          {/* Suite launch entry point */}
           <Route path="/launch" element={<PlatformLaunch />} />
+
+          {/* Legacy public routes → redirect to /launch */}
+          <Route path="/" element={<Navigate to="/launch" replace />} />
+          <Route path="/login" element={<Navigate to="/launch" replace />} />
+          <Route path="/signup" element={<Navigate to="/launch" replace />} />
+          <Route path="/invite" element={<Navigate to="/launch" replace />} />
 
           {/* Admin */}
           <Route

@@ -1,22 +1,24 @@
 /**
- * PlatformLaunch
+ * PlatformLaunch — the only entry point into Timeflow.
  *
- * Entry point when Timeflow is opened from the Nxt Lvl Suite.
- * The suite appends ?token=<launchJWT> to the URL. This page:
- *  1. Reads the token from the query string.
- *  2. Exchanges it for a Timeflow-scoped JWT via the API.
- *  3. Bootstraps the app identity in the Zustand store.
- *  4. Redirects to /admin (contractor) or /client (client_viewer).
+ * Two scenarios:
+ *  A) Suite opens Timeflow with ?token=<launchJWT>
+ *     → consume the token, bootstrap identity, redirect to /admin or /client
+ *  B) User has an existing platform session (e.g. page refresh, return visit)
+ *     → skip consume, re-bootstrap from stored session, redirect immediately
+ *  C) No token and no session → show "open from suite" message
  */
 import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { consumeLaunchToken } from "@/lib/platformApi";
+import { Zap } from "lucide-react";
+import { consumeLaunchToken, getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 
 export default function PlatformLaunch() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const syncCurrentUser = useAppStore((s) => s.syncCurrentUser);
+  const setViewerClientContext = useAppStore((s) => s.setViewerClientContext);
   const [error, setError] = useState<string | null>(null);
   const attempted = useRef(false);
 
@@ -24,40 +26,84 @@ export default function PlatformLaunch() {
     if (attempted.current) return;
     attempted.current = true;
 
+    function bootstrap(email: string, role: "contractor" | "client_viewer", organizationId: string) {
+      syncCurrentUser({
+        name: email.split("@")[0] ?? email,
+        email,
+        role,
+      });
+      setViewerClientContext(
+        role === "client_viewer" ? organizationId : undefined,
+        role === "client_viewer",
+      );
+      navigate(role === "client_viewer" ? "/client" : "/admin", { replace: true });
+    }
+
     const token = searchParams.get("token") ?? searchParams.get("launchToken");
 
+    // Scenario B: already have a valid session, no new token needed
     if (!token) {
-      setError("No launch token found. Please open Timeflow from the Nxt Lvl Suite.");
+      const existing = getPlatformSession();
+      if (existing) {
+        bootstrap(existing.user.email, existing.user.role, existing.user.organizationId);
+        return;
+      }
+      // Scenario C: nothing to work with
+      setError("no_token");
       return;
     }
 
+    // Scenario A: consume the suite launch token
     consumeLaunchToken(token)
       .then((session) => {
-        // Sync identity into the Zustand store so the rest of the app
-        // knows who is logged in without touching localStorage auth.
-        syncCurrentUser({
-          name: session.user.email.split("@")[0] ?? session.user.email,
-          email: session.user.email,
-          role: session.user.role,
-        });
-
-        const destination = session.user.role === "client_viewer" ? "/client" : "/admin";
-        navigate(destination, { replace: true });
+        bootstrap(session.user.email, session.user.role, session.user.organizationId);
       })
       .catch((err: unknown) => {
         const message = err instanceof Error ? err.message : "Authentication failed";
         setError(message);
       });
-  }, [searchParams, navigate, syncCurrentUser]);
+  }, [searchParams, navigate, syncCurrentUser, setViewerClientContext]);
+
+  if (error === "no_token") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="max-w-sm w-full text-center space-y-6">
+          <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-2xl bg-primary">
+            <Zap className="h-7 w-7 text-primary-foreground" />
+          </div>
+          <div className="space-y-2">
+            <h1 className="text-2xl font-heading font-bold">TimeFlow</h1>
+            <p className="text-muted-foreground text-sm">
+              TimeFlow is part of the Nxt Lvl Suite. Open it from your suite dashboard to get started.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Already a member?{" "}
+            <a
+              href="https://ntlops.com"
+              className="underline hover:text-foreground"
+            >
+              Go to ntlops.com
+            </a>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="max-w-md w-full mx-4 p-8 rounded-lg border bg-card text-center space-y-4">
-          <div className="text-destructive text-lg font-semibold">Launch Failed</div>
-          <p className="text-muted-foreground text-sm">{error}</p>
+      <div className="min-h-screen flex items-center justify-center bg-background p-4">
+        <div className="max-w-sm w-full text-center space-y-4">
+          <div className="flex h-14 w-14 mx-auto items-center justify-center rounded-2xl bg-destructive/10">
+            <Zap className="h-7 w-7 text-destructive" />
+          </div>
+          <div className="space-y-1">
+            <p className="font-semibold text-destructive">Launch failed</p>
+            <p className="text-sm text-muted-foreground">{error}</p>
+          </div>
           <p className="text-xs text-muted-foreground">
-            Return to the Nxt Lvl Suite and try launching Timeflow again.
+            Return to the suite and try launching TimeFlow again.
           </p>
         </div>
       </div>
