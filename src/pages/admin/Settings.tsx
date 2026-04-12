@@ -190,8 +190,34 @@ export default function SettingsPage() {
                     : "Your profile settings were updated.",
                 });
               } catch (error) {
-                const description = error instanceof Error ? error.message : "Unable to save profile settings.";
-                toast({ title: "Unable to save profile", description, variant: "destructive" });
+                const message = error instanceof Error ? error.message : "Unable to save profile settings.";
+
+                // Suite launch currently bypasses the legacy local-auth session.
+                // When that session is absent, persist profile changes in the app store.
+                if (message.includes("You must be signed in")) {
+                  const normalizedEmail = profileEmail.trim().toLowerCase();
+                  if (!normalizedEmail) {
+                    toast({
+                      title: "Unable to save profile",
+                      description: "Login cannot be empty.",
+                      variant: "destructive",
+                    });
+                    return;
+                  }
+
+                  updateCurrentUser({
+                    name: profileName.trim() || currentUser.name,
+                    email: normalizedEmail,
+                  });
+
+                  toast({
+                    title: "Profile saved",
+                    description: "Your profile settings were updated in this workspace.",
+                  });
+                  return;
+                }
+
+                toast({ title: "Unable to save profile", description: message, variant: "destructive" });
               }
             }}
           >
