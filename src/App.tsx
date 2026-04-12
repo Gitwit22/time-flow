@@ -8,6 +8,7 @@ import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
+import { AppModeProvider } from "@/context/AppModeContext";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
@@ -40,15 +41,28 @@ const queryClient = new QueryClient();
 
 /**
  * Restores app identity from the platform session on mount.
- * Replaces the old localStorage-based AuthBootstrapper.
+ * When a valid platform session exists, syncs the user profile into the store
+ * and clears any leftover demo-mode data (so demo mutations don't bleed into
+ * the authenticated session).
  */
 function AuthBootstrapper() {
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
+  const resetApp = useAppStore((state) => state.resetApp);
+  const hydrated = useAppStore((state) => state.hydrated);
 
   useEffect(() => {
+    if (!hydrated) return;
+
     const session = getPlatformSession();
     if (!session) return;
+
+    // If the stored user is still the demo placeholder, reset to a clean slate
+    // before applying the real user identity.
+    const storedEmail = useAppStore.getState().currentUser.email;
+    if (!storedEmail || storedEmail === "demo@timeflow.app") {
+      resetApp();
+    }
 
     syncCurrentUser({
       name: session.user.email.split("@")[0] ?? session.user.email,
@@ -60,7 +74,7 @@ function AuthBootstrapper() {
       session.user.role === "client_viewer" ? session.user.organizationId : undefined,
       session.user.role === "client_viewer",
     );
-  }, [syncCurrentUser, setViewerClientContext]);
+  }, [hydrated, syncCurrentUser, setViewerClientContext, resetApp]);
 
   return null;
 }
@@ -72,6 +86,7 @@ const App = () => (
       <Sonner />
       <AuthBootstrapper />
       <BrowserRouter>
+      <AppModeProvider>
         <Routes>
           {/* Suite launch entry point */}
           <Route path="/launch" element={<PlatformLaunch />} />
@@ -165,6 +180,7 @@ const App = () => (
 
           <Route path="*" element={<NotFound />} />
         </Routes>
+      </AppModeProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>

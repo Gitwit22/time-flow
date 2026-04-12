@@ -1,4 +1,4 @@
-import { Bell, Eye, LogOut } from "lucide-react";
+import { Bell, Eye, LogIn, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getActiveUser, logoutActiveUser } from "@/lib/auth";
+import { clearPlatformSession } from "@/lib/platformApi";
+import { getSuiteLoginUrl } from "@/lib/suiteLogin";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
+import { useAppMode } from "@/context/AppModeContext";
 import { selectViewerScope } from "@/store/selectors";
 import type { UserRole } from "@/types";
 
@@ -26,13 +29,14 @@ function getInitials(name: string) {
 
 export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const navigate = useNavigate();
+  const { isDemo } = useAppMode();
   const activeAuthUser = getActiveUser();
   const currentUser = useAppStore((state) => state.currentUser);
   const clients = useAppStore((state) => state.clients);
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
-  const canSwitchRoles = activeAuthUser?.role === "contractor";
+  const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
 
   const handleRoleChange = (role: UserRole) => {
@@ -41,8 +45,13 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   };
 
   const handleLogout = () => {
+    clearPlatformSession();
     logoutActiveUser();
-    navigate("/login", { replace: true });
+    navigate("/launch", { replace: true });
+  };
+
+  const handleLogin = () => {
+    window.location.href = getSuiteLoginUrl(window.location.pathname);
   };
 
   return (
@@ -85,9 +94,15 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
         <Button variant="ghost" size="icon" className="text-muted-foreground">
           <Bell className="h-4 w-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleLogout}>
-          <LogOut className="h-4 w-4" />
-        </Button>
+        {isDemo ? (
+          <Button variant="ghost" size="icon" className="text-amber-400 hover:text-amber-300" onClick={handleLogin} title="Log in to the Suite">
+            <LogIn className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button variant="ghost" size="icon" className="text-muted-foreground" onClick={handleLogout}>
+            <LogOut className="h-4 w-4" />
+          </Button>
+        )}
         <Avatar className="h-8 w-8">
           <AvatarFallback className="bg-primary text-primary-foreground text-xs font-medium">
             {getInitials(currentUser.name)}
