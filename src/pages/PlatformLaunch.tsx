@@ -13,11 +13,10 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { consumeLaunchToken } from "@/lib/platformApi";
 
 export default function PlatformLaunch() {
-  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const consumed = useRef(false);
@@ -30,21 +29,24 @@ export default function PlatformLaunch() {
 
     if (!token) {
       // No token — go straight to admin; AppModeContext resolves auth vs demo.
-      navigate("/admin", { replace: true });
+      window.location.replace("/admin");
       return;
     }
 
     void (async () => {
       try {
         await consumeLaunchToken(token);
-        navigate("/admin", { replace: true });
+        // Full page redirect so AppModeContext re-initializes with the new
+        // platform session already in localStorage (navigate() keeps the same
+        // React tree and AppModeContext never re-reads localStorage).
+        window.location.replace("/admin");
       } catch {
         // Token exchange failed — enter demo mode.
         setError("Launch failed");
-        setTimeout(() => navigate("/admin", { replace: true }), 1500);
+        setTimeout(() => window.location.replace("/admin"), 1500);
       }
     })();
-  }, [navigate, searchParams]);
+  }, [searchParams]);
 
   if (error) {
     return (
