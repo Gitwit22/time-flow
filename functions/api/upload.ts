@@ -9,6 +9,7 @@ interface Env {
 }
 
 const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+const TIMEFLOW_DOCUMENT_PREFIX = "timeflow/documents";
 
 function getAws(env: Env) {
   return new AwsClient({
@@ -52,7 +53,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   // Sanitise the original filename to a safe key segment
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 128);
-  const key = `documents/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeName}`;
+  const key = `${TIMEFLOW_DOCUMENT_PREFIX}/${Date.now()}-${crypto.randomUUID().slice(0, 8)}-${safeName}`;
 
   const aws = getAws(env);
   const objectUrl = buildObjectUrl(env, key);

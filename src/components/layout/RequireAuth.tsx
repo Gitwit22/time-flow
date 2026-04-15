@@ -1,4 +1,5 @@
 import type { ReactElement } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 import { useAppMode } from "@/context/AppModeContext";
 
 /**
@@ -12,7 +13,8 @@ import { useAppMode } from "@/context/AppModeContext";
  * Sensitive write operations are blocked at the action level, not here.
  */
 export function RequireAuth({ children }: { children: ReactElement }) {
-  const { isLoading } = useAppMode();
+  const { isLoading, isAuthenticated } = useAppMode();
+  const location = useLocation();
 
   if (isLoading) {
     return (
@@ -23,6 +25,10 @@ export function RequireAuth({ children }: { children: ReactElement }) {
         </div>
       </div>
     );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
   return children;

@@ -8,8 +8,7 @@
  *      exchange it for a Timeflow-scoped JWT, persist the session, then
  *      redirect to the admin dashboard as an authenticated user.
  *   2. If no token is present:
- *      redirect to /admin immediately. AppModeContext will see no platform
- *      session and resolve to demo mode.
+ *      redirect to /login for direct app authentication.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -28,8 +27,7 @@ export default function PlatformLaunch() {
     const token = searchParams.get("token") ?? searchParams.get("launchToken");
 
     if (!token) {
-      // No token — go straight to admin; AppModeContext resolves auth vs demo.
-      window.location.replace("/admin");
+      window.location.replace("/login");
       return;
     }
 
@@ -41,9 +39,9 @@ export default function PlatformLaunch() {
         // React tree and AppModeContext never re-reads localStorage).
         window.location.replace("/admin");
       } catch {
-        // Token exchange failed — enter demo mode.
+        // Token exchange failed — send user to direct app login.
         setError("Launch failed");
-        setTimeout(() => window.location.replace("/admin"), 1500);
+        setTimeout(() => window.location.replace("/login"), 1500);
       }
     })();
   }, [searchParams]);
@@ -51,7 +49,7 @@ export default function PlatformLaunch() {
   if (error) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
-        <p className="text-sm">Launch failed — entering demo mode…</p>
+        <p className="text-sm">Launch failed — redirecting to login…</p>
       </div>
     );
   }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Eye, Mail, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { ClientDialog } from "@/components/clients/ClientDialog";
@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { generateViewerInvite } from "@/lib/auth";
 import { formatCurrency } from "@/lib/date";
+import { createTimeflowDocument, listTimeflowDocuments, updateTimeflowDocument } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
 import type { Client } from "@/types";
 
@@ -17,13 +18,43 @@ export default function Clients() {
   const clients = useAppStore((state) => state.clients);
   const addClient = useAppStore((state) => state.addClient);
   const updateClient = useAppStore((state) => state.updateClient);
-  const addClientDocument = useAppStore((state) => state.addClientDocument);
-  const updateClientDocument = useAppStore((state) => state.updateClientDocument);
   const deleteClient = useAppStore((state) => state.deleteClient);
   const currentUser = useAppStore((state) => state.currentUser);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const loadedKeyRef = useRef("");
+
+  const clientIdsKey = useMemo(
+    () => [...clients].map((client) => client.id).sort().join("|"),
+    [clients],
+  );
+
+  useEffect(() => {
+    if (!clientIdsKey || loadedKeyRef.current === clientIdsKey) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const byClientId = await listTimeflowDocuments("client");
+        if (cancelled) return;
+
+        loadedKeyRef.current = clientIdsKey;
+        clients.forEach((client) => {
+          updateClient(client.id, { documents: byClientId[client.id] ?? [] });
+        });
+      } catch {
+        // Keep existing in-memory docs if centralized sync is temporarily unavailable.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [clientIdsKey, clients, updateClient]);
 
   const getVisibleContacts = (client: Client) => {
     const contacts = client.contacts?.length
@@ -151,14 +182,17 @@ export default function Clients() {
                     size="sm"
                     onClick={async () => {
                       updateClient(client.id, { companyViewerEnabled: true });
-                      const invite = generateViewerInvite(client.id, currentUser.email);
-                      const inviteUrl = `${window.location.origin}/invite?code=${encodeURIComponent(invite.code)}`;
-
                       try {
+                        const invite = generateViewerInvite(client.id, currentUser.email);
+                        const inviteUrl = `${window.location.origin}/invite?code=${encodeURIComponent(invite.code)}`;
                         await navigator.clipboard.writeText(inviteUrl);
                         toast({ title: "Invite link copied", description: `${client.name} viewer link copied to clipboard.` });
-                      } catch {
-                        toast({ title: "Invite generated", description: `Code for ${client.name}: ${invite.code}` });
+                      } catch (error) {
+                        const message =
+                          error instanceof Error
+                            ? error.message
+                            : "Viewer invites are not available in this deployment.";
+                        toast({ title: "Invite unavailable", description: message, variant: "destructive" });
                       }
                     }}
                   >
@@ -184,8 +218,27 @@ export default function Clients() {
                   currentUserName={currentUser.name}
                   documents={client.documents}
                   readOnly={isReadonly}
-                  onAdd={(document) => addClientDocument(client.id, document)}
-                  onUpdate={(documentId, updates) => updateClientDocument(client.id, documentId, updates)}
+                  onAdd={async (document) => {
+                    const created = document.storageKey
+                      ? await createTimeflowDocument("client", client.id, document)
+                      : { ...document, id: `client-doc-${crypto.randomUUID()}` };
+
+                    updateClient(client.id, { documents: [...client.documents, created] });
+                  }}
+                  onUpdate={async (documentId, updates) => {
+                    const existing = client.documents.find((document) => document.id === documentId);
+                    if (!existing) return;
+
+                    const updated = existing.storageKey
+                      ? await updateTimeflowDocument(documentId, updates)
+                      : { ...existing, ...updates };
+
+                    updateClient(client.id, {
+                      documents: client.documents.map((document) =>
+                        document.id === documentId ? updated : document,
+                      ),
+                    });
+                  }}
                 />
               </div>
             </CardContent>

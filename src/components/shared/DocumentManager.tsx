@@ -17,8 +17,8 @@ interface DocumentManagerProps {
   currentUserName: string;
   readOnly?: boolean;
   maxFileBytes?: number;
-  onAdd: (document: Omit<AttachedDocument, "id">) => void;
-  onUpdate: (documentId: string, updates: Partial<AttachedDocument>) => void;
+  onAdd: (document: Omit<AttachedDocument, "id">) => Promise<void>;
+  onUpdate: (documentId: string, updates: Partial<AttachedDocument>) => Promise<void>;
 }
 
 function readAsDataUrl(file: File) {
@@ -83,6 +83,16 @@ export function DocumentManager({
 
   const [isUploading, setIsUploading] = useState(false);
 
+  const handleUpdateDocument = async (documentId: string, updates: Partial<AttachedDocument>) => {
+    try {
+      await onUpdate(documentId, updates);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The document could not be updated.";
+      toast({ title: "Update failed", description: message, variant: "destructive" });
+      throw error;
+    }
+  };
+
   const handleFileSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
 
@@ -121,11 +131,11 @@ export function DocumentManager({
       if (isCloudAvailable()) {
         // Production: upload to R2 via Pages Function; store the key, not a data URL
         const storageKey = await uploadToCloud(pendingFile);
-        onAdd(createAttachedDocumentDraft(pendingFile, "", currentUserName, pendingTitle, pendingNote, storageKey));
+        await onAdd(createAttachedDocumentDraft(pendingFile, "", currentUserName, pendingTitle, pendingNote, storageKey));
       } else {
         // Dev fallback: store as base64 data URL in localStorage
         const dataUrl = await readAsDataUrl(pendingFile);
-        onAdd(createAttachedDocumentDraft(pendingFile, dataUrl, currentUserName, pendingTitle, pendingNote));
+        await onAdd(createAttachedDocumentDraft(pendingFile, dataUrl, currentUserName, pendingTitle, pendingNote));
       }
       toast({ title: "Document saved", description: `${pendingTitle.trim()} was attached to this ${contextLabel}.` });
       setPendingFile(null);
@@ -197,15 +207,15 @@ export function DocumentManager({
                       <div className="flex gap-2">
                         <Button
                           size="sm"
-                          onClick={() => {
+                          onClick={() => void (async () => {
                             if (!editingTitle.trim()) {
                               return;
                             }
 
-                            onUpdate(document.id, { title: editingTitle.trim() });
+                            await handleUpdateDocument(document.id, { title: editingTitle.trim() });
                             setEditingId(null);
                             setEditingTitle("");
-                          }}
+                          })()}
                         >
                           <Save className="mr-1.5 h-3.5 w-3.5" /> Save
                         </Button>
@@ -251,7 +261,7 @@ export function DocumentManager({
                       >
                         <Pencil className="mr-1.5 h-3.5 w-3.5" /> Rename
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => onUpdate(document.id, { status: "archived" })}>
+                      <Button variant="outline" size="sm" onClick={() => void handleUpdateDocument(document.id, { status: "archived" })}>
                         <Archive className="mr-1.5 h-3.5 w-3.5" /> Archive
                       </Button>
                     </>
@@ -280,7 +290,7 @@ export function DocumentManager({
                   <p className="text-sm text-muted-foreground">Uploaded by {document.uploadedBy} on {formatLongDate(document.uploadedAt)}</p>
                 </div>
                 {!readOnly ? (
-                  <Button variant="outline" size="sm" onClick={() => onUpdate(document.id, { status: "active" })}>
+                  <Button variant="outline" size="sm" onClick={() => void handleUpdateDocument(document.id, { status: "active" })}>
                     <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Restore
                   </Button>
                 ) : null}

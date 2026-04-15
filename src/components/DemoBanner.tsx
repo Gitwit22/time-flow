@@ -6,17 +6,18 @@
 
 import { FlaskConical, LogIn, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
-import { getSuiteLoginUrl } from "@/lib/suiteLogin";
+import { useNavigate } from "react-router-dom";
 import { useAppStore } from "@/store/appStore";
 
 export function DemoBanner() {
+  const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(false);
   const resetApp = useAppStore((state) => state.resetApp);
 
   if (dismissed) return null;
 
   const handleLogin = () => {
-    window.location.href = getSuiteLoginUrl(window.location.pathname);
+    navigate("/login", { replace: true });
   };
 
   const handleReset = () => {

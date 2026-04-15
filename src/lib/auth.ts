@@ -1,313 +1,202 @@
 import type { UserRole } from "@/types";
+import { TIMEFLOW_API_BASE } from "@/lib/platformApi";
 
-const AUTH_STORAGE_KEY = "timeflow-auth-v1";
-const AUTH_SESSION_KEY = "timeflow-auth-session-v1";
+const AUTH_SESSION_KEY = "timeflow-auth-session-v2";
 
 interface AuthUser {
-  id: string;
-  name: string;
-  loginId: string;
-  passwordHash: string;
-  role: UserRole;
-  createdAt: string;
-}
-
-interface ViewerInvite {
-  code: string;
-  clientId: string;
-  createdByLoginId: string;
-  createdAt: string;
-  usedByUserId?: string;
-  usedAt?: string;
-}
-
-interface AuthState {
-  users: AuthUser[];
-  invites: ViewerInvite[];
+	id: string;
+	name: string;
+	loginId: string;
+	role: UserRole;
+	organizationId?: string;
+	programDomain?: string;
+	createdAt: string;
 }
 
 interface AuthSession {
-  userId: string;
-  loggedInAt: string;
+	token: string;
+	user: AuthUser;
+	loggedInAt: string;
 }
 
-function getDefaultState(): AuthState {
-  return {
-    users: [],
-    invites: [],
-  };
+interface BackendAuthUser {
+	id: string;
+	email: string;
+	displayName?: string;
+	role: string;
+	organizationId?: string;
+	programDomain?: string;
 }
 
 function normalizeLoginId(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function readAuthState(): AuthState {
-  if (typeof window === "undefined") {
-    return getDefaultState();
-  }
-
-  const raw = window.localStorage.getItem(AUTH_STORAGE_KEY);
-  if (!raw) {
-    return getDefaultState();
-  }
-
-  try {
-    return JSON.parse(raw) as AuthState;
-  } catch {
-    return getDefaultState();
-  }
-}
-
-function writeAuthState(state: AuthState) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(state));
+	return value.trim().toLowerCase();
 }
 
 function readSession(): AuthSession | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
+	if (typeof window === "undefined") return null;
+	const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
+	if (!raw) return null;
 
-  const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as AuthSession;
-  } catch {
-    return null;
-  }
+	try {
+		return JSON.parse(raw) as AuthSession;
+	} catch {
+		return null;
+	}
 }
 
 function writeSession(session: AuthSession) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+	if (typeof window === "undefined") return;
+	window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
 }
 
 function clearSession() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  window.localStorage.removeItem(AUTH_SESSION_KEY);
+	if (typeof window === "undefined") return;
+	window.localStorage.removeItem(AUTH_SESSION_KEY);
 }
 
-function createId(prefix: string) {
-  return `${prefix}-${crypto.randomUUID()}`;
+function toAuthUser(user: BackendAuthUser): AuthUser {
+	const normalizedRole: UserRole = user.role === "client_viewer" ? "client_viewer" : "contractor";
+	return {
+		id: user.id,
+		name: user.displayName?.trim() || user.email.split("@")[0] || user.email,
+		loginId: normalizeLoginId(user.email),
+		role: normalizedRole,
+		organizationId: user.organizationId,
+		programDomain: user.programDomain,
+		createdAt: new Date().toISOString(),
+	};
 }
 
-function createInviteCode() {
-  const token = crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `TF-${token}`;
+function parseToken(payload: Record<string, unknown>): string | null {
+	const candidate =
+		payload.token ??
+		payload.accessToken ??
+		payload.authToken ??
+		(payload.auth && typeof payload.auth === "object" ? (payload.auth as Record<string, unknown>).token : null) ??
+		(payload.data && typeof payload.data === "object" ? (payload.data as Record<string, unknown>).token : null);
+
+	return typeof candidate === "string" ? candidate : null;
 }
 
-export async function hashPassword(password: string) {
-  if (typeof window !== "undefined" && window.crypto?.subtle) {
-    const data = new TextEncoder().encode(password);
-    const digest = await window.crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(digest))
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-  }
+async function parseJsonResponse<T>(response: Response): Promise<T> {
+	const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+	if (!response.ok) {
+		throw new Error(typeof data.error === "string" ? data.error : "Authentication request failed.");
+	}
+	return data as unknown as T;
+}
 
-  return btoa(password);
+async function authFetch(path: string, init: RequestInit = {}) {
+	return fetch(`${TIMEFLOW_API_BASE}${path}`, {
+		...init,
+		credentials: "include",
+		headers: {
+			"Content-Type": "application/json",
+			...(init.headers ?? {}),
+		},
+	});
+}
+
+async function writeSessionFromAuthResponse(response: Response): Promise<AuthUser> {
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	const userPayload = payload.user as BackendAuthUser | undefined;
+	const token = parseToken(payload);
+
+	if (!userPayload || !token) {
+		throw new Error("Authentication response was incomplete.");
+	}
+
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return user;
 }
 
 export function getActiveUser() {
-  const session = readSession();
-  if (!session) {
-    return null;
-  }
-
-  const state = readAuthState();
-  return state.users.find((user) => user.id === session.userId) ?? null;
+	return readSession()?.user ?? null;
 }
 
-export function getViewerClientIdForUser(userId: string) {
-  const state = readAuthState();
-  return state.invites.find((invite) => invite.usedByUserId === userId)?.clientId;
+export function getActiveAuthToken() {
+	return readSession()?.token ?? null;
+}
+
+// Viewer invite linkage is now server-managed; keep compatibility API.
+export function getViewerClientIdForUser(_userId: string) {
+	return undefined;
 }
 
 export function logoutActiveUser() {
-  clearSession();
+	void authFetch("/api/timeflow/auth/logout", { method: "POST" }).catch(() => undefined);
+	clearSession();
 }
 
 export function clearAuthState() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.localStorage.removeItem(AUTH_STORAGE_KEY);
-  window.localStorage.removeItem(AUTH_SESSION_KEY);
+	clearSession();
+	if (typeof window !== "undefined") {
+		// Legacy keys from pre-API auth flow.
+		window.localStorage.removeItem("timeflow-auth-v1");
+		window.localStorage.removeItem("timeflow-auth-session-v1");
+	}
 }
 
 export function updateActiveUserProfile(updates: { name?: string; loginId?: string }) {
-  const session = readSession();
-  if (!session) {
-    throw new Error("You must be signed in to update profile details.");
-  }
+	const session = readSession();
+	if (!session) {
+		throw new Error("You must be signed in to update profile details.");
+	}
 
-  const state = readAuthState();
-  const userIndex = state.users.findIndex((user) => user.id === session.userId);
-  if (userIndex === -1) {
-    throw new Error("Signed-in user was not found.");
-  }
+	const nextName = updates.name?.trim() || session.user.name;
+	const nextLoginId = updates.loginId ? normalizeLoginId(updates.loginId) : session.user.loginId;
 
-  const currentUser = state.users[userIndex];
-  const nextName = updates.name?.trim() ? updates.name.trim() : currentUser.name;
-  const nextLoginId = updates.loginId ? normalizeLoginId(updates.loginId) : currentUser.loginId;
+	if (!nextLoginId) {
+		throw new Error("Login cannot be empty.");
+	}
 
-  if (!nextLoginId) {
-    throw new Error("Login cannot be empty.");
-  }
-
-  const loginCollision = state.users.some((user) => user.id !== currentUser.id && user.loginId === nextLoginId);
-  if (loginCollision) {
-    throw new Error("An account with this login already exists.");
-  }
-
-  const updatedUser: AuthUser = {
-    ...currentUser,
-    name: nextName,
-    loginId: nextLoginId,
-  };
-
-  writeAuthState({
-    ...state,
-    users: state.users.map((user) => (user.id === updatedUser.id ? updatedUser : user)),
-    invites:
-      currentUser.loginId === updatedUser.loginId
-        ? state.invites
-        : state.invites.map((invite) =>
-            invite.createdByLoginId === currentUser.loginId ? { ...invite, createdByLoginId: updatedUser.loginId } : invite,
-          ),
-  });
-
-  return updatedUser;
+	const nextUser: AuthUser = {
+		...session.user,
+		name: nextName,
+		loginId: nextLoginId,
+	};
+	writeSession({ ...session, user: nextUser });
+	return nextUser;
 }
 
 export async function registerContractor(name: string, loginId: string, password: string) {
-  const normalizedLoginId = normalizeLoginId(loginId);
-  const state = readAuthState();
+	const response = await authFetch("/api/timeflow/auth/register", {
+		method: "POST",
+		body: JSON.stringify({
+			email: normalizeLoginId(loginId),
+			password,
+			displayName: name.trim(),
+		}),
+	});
 
-  const existing = state.users.find((user) => user.loginId === normalizedLoginId);
-  if (existing) {
-    throw new Error("An account with this login already exists.");
-  }
-
-  const passwordHash = await hashPassword(password);
-  const user: AuthUser = {
-    id: createId("user"),
-    name: name.trim(),
-    loginId: normalizedLoginId,
-    passwordHash,
-    role: "contractor",
-    createdAt: new Date().toISOString(),
-  };
-
-  writeAuthState({
-    ...state,
-    users: [...state.users, user],
-  });
-  writeSession({ userId: user.id, loggedInAt: new Date().toISOString() });
-
-  return user;
+	return writeSessionFromAuthResponse(response);
 }
 
 export async function loginWithCredentials(loginId: string, password: string) {
-  const normalizedLoginId = normalizeLoginId(loginId);
-  const state = readAuthState();
-  const user = state.users.find((item) => item.loginId === normalizedLoginId);
+	const response = await authFetch("/api/timeflow/auth/login", {
+		method: "POST",
+		body: JSON.stringify({
+			email: normalizeLoginId(loginId),
+			password,
+		}),
+	});
 
-  if (!user) {
-    throw new Error("Invalid login or password.");
-  }
-
-  const inputHash = await hashPassword(password);
-  if (inputHash !== user.passwordHash) {
-    throw new Error("Invalid login or password.");
-  }
-
-  writeSession({ userId: user.id, loggedInAt: new Date().toISOString() });
-  return user;
+	return writeSessionFromAuthResponse(response);
 }
 
-export function generateViewerInvite(clientId: string, createdByLoginId: string) {
-  const state = readAuthState();
-  const code = createInviteCode();
-
-  const invite: ViewerInvite = {
-    code,
-    clientId,
-    createdByLoginId,
-    createdAt: new Date().toISOString(),
-  };
-
-  writeAuthState({
-    ...state,
-    invites: [invite, ...state.invites],
-  });
-
-  return invite;
+export function generateViewerInvite(_clientId: string, _createdByLoginId: string) {
+	throw new Error("Viewer invite codes now require backend invite configuration.");
 }
 
-export async function acceptViewerInvite(code: string, name: string, password: string) {
-  const normalizedCode = code.trim().toUpperCase();
-  const state = readAuthState();
-  const invite = state.invites.find((item) => item.code === normalizedCode);
-
-  if (!invite) {
-    throw new Error("Invite code not found.");
-  }
-
-  if (invite.usedByUserId) {
-    throw new Error("Invite code has already been used.");
-  }
-
-  const loginId = normalizeLoginId(normalizedCode);
-  const existing = state.users.find((item) => item.loginId === loginId);
-  if (existing) {
-    throw new Error("A viewer account for this invite already exists.");
-  }
-
-  const passwordHash = await hashPassword(password);
-  const user: AuthUser = {
-    id: createId("user"),
-    name: name.trim(),
-    loginId,
-    passwordHash,
-    role: "client_viewer",
-    createdAt: new Date().toISOString(),
-  };
-
-  writeAuthState({
-    users: [...state.users, user],
-    invites: state.invites.map((item) =>
-      item.code === normalizedCode
-        ? {
-            ...item,
-            usedByUserId: user.id,
-            usedAt: new Date().toISOString(),
-          }
-        : item,
-    ),
-  });
-
-  writeSession({ userId: user.id, loggedInAt: new Date().toISOString() });
-  return user;
+export async function acceptViewerInvite(_code: string, _name: string, _password: string) {
+	throw new Error("Viewer invite acceptance is not configured for backend persistence yet.");
 }
 
 export function toAppIdentity(user: AuthUser) {
-  return {
-    name: user.name,
-    email: user.role === "contractor" ? user.loginId : `${user.loginId}@viewer.local`,
-    role: user.role,
-  };
+	return {
+		name: user.name,
+		email: user.loginId,
+		role: user.role,
+	};
 }

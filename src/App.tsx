@@ -6,12 +6,14 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireAuth } from "@/components/layout/RequireAuth";
+import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 import { AppModeProvider } from "@/context/AppModeContext";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
+import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
 // Admin layout + pages
@@ -54,25 +56,37 @@ function AuthBootstrapper() {
   useEffect(() => {
     if (!hydrated) return;
 
-    const session = getPlatformSession();
-    if (!session) return;
+    const platformSession = getPlatformSession();
+    if (platformSession) {
+      // If the stored user is still the demo placeholder, reset to a clean slate
+      // before applying the real user identity.
+      const storedEmail = useAppStore.getState().currentUser.email;
+      if (!storedEmail || storedEmail === "demo@timeflow.app") {
+        resetApp();
+      }
 
-    // If the stored user is still the demo placeholder, reset to a clean slate
-    // before applying the real user identity.
-    const storedEmail = useAppStore.getState().currentUser.email;
-    if (!storedEmail || storedEmail === "demo@timeflow.app") {
-      resetApp();
+      syncCurrentUser({
+        name: platformSession.user.email.split("@")[0] ?? platformSession.user.email,
+        email: platformSession.user.email,
+        role: platformSession.user.role,
+      });
+
+      setViewerClientContext(
+        platformSession.user.role === "client_viewer" ? platformSession.user.organizationId : undefined,
+        platformSession.user.role === "client_viewer",
+      );
+
+      return;
     }
 
-    syncCurrentUser({
-      name: session.user.email.split("@")[0] ?? session.user.email,
-      email: session.user.email,
-      role: session.user.role,
-    });
+    const activeUser = getActiveUser();
+    if (!activeUser) return;
+    const identity = toAppIdentity(activeUser);
+    syncCurrentUser(identity);
 
     setViewerClientContext(
-      session.user.role === "client_viewer" ? session.user.organizationId : undefined,
-      session.user.role === "client_viewer",
+      activeUser.role === "client_viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
+      activeUser.role === "client_viewer",
     );
   }, [hydrated, syncCurrentUser, setViewerClientContext, resetApp]);
 
@@ -88,14 +102,14 @@ const App = () => (
       <BrowserRouter>
       <AppModeProvider>
         <Routes>
-          {/* Suite launch entry point */}
+          {/* Suite launch entry point (optional SSO hand-off) */}
           <Route path="/launch" element={<PlatformLaunch />} />
 
-          {/* Legacy public routes → redirect to /launch */}
-          <Route path="/" element={<Navigate to="/launch" replace />} />
-          <Route path="/login" element={<Navigate to="/launch" replace />} />
-          <Route path="/signup" element={<Navigate to="/launch" replace />} />
-          <Route path="/invite" element={<Navigate to="/launch" replace />} />
+          {/* Direct auth entry points */}
+          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
+          <Route path="/invite" element={<Navigate to="/login?mode=invite" replace />} />
 
           {/* Admin */}
           <Route

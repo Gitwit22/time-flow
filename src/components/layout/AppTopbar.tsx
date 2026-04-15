@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { getActiveUser, logoutActiveUser } from "@/lib/auth";
 import { clearPlatformSession } from "@/lib/platformApi";
-import { getSuiteLoginUrl } from "@/lib/suiteLogin";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { useAppMode } from "@/context/AppModeContext";
@@ -47,11 +46,11 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const handleLogout = () => {
     clearPlatformSession();
     logoutActiveUser();
-    navigate("/launch", { replace: true });
+    navigate("/login", { replace: true });
   };
 
   const handleLogin = () => {
-    window.location.href = getSuiteLoginUrl(window.location.pathname);
+    navigate("/login", { replace: true });
   };
 
   return (
@@ -95,7 +94,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
           <Bell className="h-4 w-4" />
         </Button>
         {isDemo ? (
-          <Button variant="ghost" size="icon" className="text-amber-400 hover:text-amber-300" onClick={handleLogin} title="Log in to the Suite">
+          <Button variant="ghost" size="icon" className="text-amber-400 hover:text-amber-300" onClick={handleLogin} title="Log in to TimeFlow">
             <LogIn className="h-4 w-4" />
           </Button>
         ) : (

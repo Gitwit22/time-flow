@@ -26,7 +26,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ params, env }) => {
   const keyParts = params.key as string[];
   const key = keyParts.join("/");
 
-  if (!key.startsWith("documents/")) {
+  const isTimeflowDocument = key.startsWith("timeflow/documents/");
+  const isLegacyDocument = key.startsWith("documents/");
+
+  if (!isTimeflowDocument && !isLegacyDocument) {
     return new Response("Not found.", { status: 404 });
   }
 

@@ -3,9 +3,8 @@
  *
  * Resolves the current app mode:
  *   "loading"       — Zustand store is still rehydrating from localStorage
- *   "authenticated" — platform session is present (launched from Suite or
- *                     previously authenticated)
- *   "demo"          — no platform session, using seed data
+ *   "authenticated" — platform session or local auth session is present
+ *   "demo"          — no authenticated session
  *
  * This is a thin wrapper over the Zustand store's hydrated flag and
  * getPlatformSession(), making it easy to read mode in any component.
@@ -21,6 +20,7 @@ import {
 } from "react";
 import { useAppStore } from "@/store/appStore";
 import { getPlatformSession } from "@/lib/platformApi";
+import { getActiveUser } from "@/lib/auth";
 
 export type AppMode = "loading" | "authenticated" | "demo";
 
@@ -35,17 +35,15 @@ const AppModeContext = createContext<AppModeContextType | undefined>(undefined);
 
 export function AppModeProvider({ children }: { children: ReactNode }) {
   const hydrated = useAppStore((state) => state.hydrated);
-  // Track whether there is a platform session. We check once on mount since
-  // the session is set synchronously by PlatformLaunch before navigation.
-  const [hasPlatformSession, setHasPlatformSession] = useState<boolean>(
-    () => getPlatformSession() !== null,
+  const [hasAuthSession, setHasAuthSession] = useState<boolean>(
+    () => getPlatformSession() !== null || getActiveUser() !== null,
   );
 
   useEffect(() => {
-    setHasPlatformSession(getPlatformSession() !== null);
+    setHasAuthSession(getPlatformSession() !== null || getActiveUser() !== null);
   }, [hydrated]);
 
-  const mode: AppMode = !hydrated ? "loading" : hasPlatformSession ? "authenticated" : "demo";
+  const mode: AppMode = !hydrated ? "loading" : hasAuthSession ? "authenticated" : "demo";
 
   const value = useMemo<AppModeContextType>(
     () => ({

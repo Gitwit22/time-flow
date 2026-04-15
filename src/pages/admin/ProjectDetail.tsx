@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
+import { createTimeflowDocument, listTimeflowDocuments, updateTimeflowDocument } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
 
 function formatEnumLabel(value: string) {
@@ -26,8 +27,6 @@ export default function ProjectDetailPage() {
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
-  const addProjectDocument = useAppStore((state) => state.addProjectDocument);
-  const updateProjectDocument = useAppStore((state) => state.updateProjectDocument);
   const updateProject = useAppStore((state) => state.updateProject);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
 
@@ -49,6 +48,28 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     setNoteDraft(project?.notes ?? "");
   }, [project?.id, project?.notes]);
+
+  useEffect(() => {
+    if (!project?.id) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const byProjectId = await listTimeflowDocuments("project");
+        if (cancelled) return;
+        updateProject(project.id, { documents: byProjectId[project.id] ?? [] });
+      } catch {
+        // Keep local fallback state if centralized load fails.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [project?.id, updateProject]);
 
   if (!project || !metrics) {
     return (
@@ -242,8 +263,27 @@ export default function ProjectDetailPage() {
                 currentUserName={currentUser.name}
                 documents={project.documents}
                 readOnly={isReadonly}
-                onAdd={(document) => addProjectDocument(project.id, document)}
-                onUpdate={(documentId, updates) => updateProjectDocument(project.id, documentId, updates)}
+                onAdd={async (document) => {
+                  const created = document.storageKey
+                    ? await createTimeflowDocument("project", project.id, document)
+                    : { ...document, id: `project-doc-${crypto.randomUUID()}` };
+
+                  updateProject(project.id, { documents: [...project.documents, created] });
+                }}
+                onUpdate={async (documentId, updates) => {
+                  const existing = project.documents.find((document) => document.id === documentId);
+                  if (!existing) return;
+
+                  const updated = existing.storageKey
+                    ? await updateTimeflowDocument(documentId, updates)
+                    : { ...existing, ...updates };
+
+                  updateProject(project.id, {
+                    documents: project.documents.map((document) =>
+                      document.id === documentId ? updated : document,
+                    ),
+                  });
+                }}
               />
             </CardContent>
           </Card>
