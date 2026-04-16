@@ -1,5 +1,5 @@
 import { FormEvent, useMemo, useState } from "react";
-import { Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -56,14 +56,6 @@ export default function Login() {
   const fromPath =
     (location.state as { from?: string } | null)?.from ??
     getNextPath(existingLocalUser?.role ?? "contractor");
-
-  if (existingPlatformSession) {
-    return <Navigate to="/admin" replace />;
-  }
-
-  if (existingLocalUser) {
-    return <Navigate to={getNextPath(existingLocalUser.role)} replace />;
-  }
 
   async function handleSignIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

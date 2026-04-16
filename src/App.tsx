@@ -118,7 +118,7 @@ const App = () => (
           <Route path="/launch" element={<PlatformLaunch />} />
 
           {/* Direct auth entry points */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
+          <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
           <Route path="/invite" element={<Navigate to="/login?mode=invite" replace />} />
