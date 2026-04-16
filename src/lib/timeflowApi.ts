@@ -121,6 +121,7 @@ export function toSettings(r: ApiRecord): AppSettings {
   return {
     businessName: (r.businessName as string) || "",
     defaultClientId: (r.defaultClientId as string) ?? undefined,
+    invoiceFrequency: ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly"),
     invoiceNotes: (r.invoiceNotes as string) || "",
     paymentInstructions: (r.paymentInstructions as string) || "",
     invoiceLogoDataUrl: (r.invoiceLogoDataUrl as string) ?? undefined,

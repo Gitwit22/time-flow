@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [emailTemplate, setEmailTemplate] = useState("");
   const [invoiceLogoDataUrl, setInvoiceLogoDataUrl] = useState<string | undefined>(undefined);
   const [invoiceBannerDataUrl, setInvoiceBannerDataUrl] = useState<string | undefined>(undefined);
+  const [periodFrequency, setPeriodFrequency] = useState<typeof settings.invoiceFrequency>("monthly");
+  const [periodWeekStartsOn, setPeriodWeekStartsOn] = useState<typeof settings.periodWeekStartsOn>(1);
   const [periodTargetHours, setPeriodTargetHours] = useState(0);
   const [periodTargetEarnings, setPeriodTargetEarnings] = useState(0);
 
@@ -50,6 +52,8 @@ export default function SettingsPage() {
     setEmailTemplate(settings.emailTemplate);
     setInvoiceLogoDataUrl(settings.invoiceLogoDataUrl);
     setInvoiceBannerDataUrl(settings.invoiceBannerDataUrl);
+    setPeriodFrequency(settings.invoiceFrequency);
+    setPeriodWeekStartsOn(settings.periodWeekStartsOn);
     setPeriodTargetHours(settings.periodTargetHours);
     setPeriodTargetEarnings(settings.periodTargetEarnings);
   }, [
@@ -57,10 +61,12 @@ export default function SettingsPage() {
     currentUser.name,
     settings.businessName,
     settings.emailTemplate,
+    settings.invoiceFrequency,
     settings.invoiceBannerDataUrl,
     settings.invoiceLogoDataUrl,
     settings.invoiceNotes,
     settings.paymentInstructions,
+    settings.periodWeekStartsOn,
     settings.periodTargetHours,
     settings.periodTargetEarnings,
   ]);
@@ -226,8 +232,8 @@ export default function SettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs">Period Type</Label>
               <Select
-                value={currentUser.invoiceFrequency}
-                onValueChange={(value) => updateCurrentUser({ invoiceFrequency: value as typeof currentUser.invoiceFrequency })}
+                value={periodFrequency}
+                onValueChange={(value) => setPeriodFrequency(value as typeof settings.invoiceFrequency)}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -242,8 +248,8 @@ export default function SettingsPage() {
             <div className="space-y-1.5">
               <Label className="text-xs">Period Starts On</Label>
               <Select
-                value={String(settings.periodWeekStartsOn)}
-                onValueChange={(value) => updateSettings({ periodWeekStartsOn: Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6 })}
+                value={String(periodWeekStartsOn)}
+                onValueChange={(value) => setPeriodWeekStartsOn(Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6)}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -290,7 +296,13 @@ export default function SettingsPage() {
           <Button
             size="sm"
             onClick={() => {
-              updateSettings({ periodTargetHours, periodTargetEarnings });
+              updateSettings({
+                invoiceFrequency: periodFrequency,
+                periodWeekStartsOn,
+                periodTargetHours,
+                periodTargetEarnings,
+              });
+              updateCurrentUser({ invoiceFrequency: periodFrequency });
               toast({ title: "Pay period saved", description: "Period settings were updated." });
             }}
           >

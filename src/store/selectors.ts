@@ -73,11 +73,12 @@ interface DashboardMetricsInput {
   projects: AppState["projects"];
   timeEntries: AppState["timeEntries"];
   activeSession: AppState["activeSession"];
-  settings: Pick<AppState["settings"], "periodWeekStartsOn">;
+  settings: Pick<AppState["settings"], "invoiceFrequency" | "periodWeekStartsOn">;
 }
 
 export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDate = new Date()) {
-  const billingPeriod = getBillingPeriod(referenceDate, input.currentUser.invoiceFrequency, input.settings.periodWeekStartsOn);
+  const billingFrequency = input.settings.invoiceFrequency ?? input.currentUser.invoiceFrequency;
+  const billingPeriod = getBillingPeriod(referenceDate, billingFrequency, input.settings.periodWeekStartsOn);
   const billingSummary = getBillingSummary(input.timeEntries, input.clients, input.projects, {
     end: billingPeriod.end,
     invoices: input.invoices,

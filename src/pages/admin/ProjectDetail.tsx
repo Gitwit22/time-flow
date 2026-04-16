@@ -75,7 +75,7 @@ export default function ProjectDetailPage() {
     return (
       <div className="space-y-6 max-w-6xl">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/admin/projects">
+          <Link to="/platform/projects">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Projects
           </Link>
@@ -93,7 +93,7 @@ export default function ProjectDetailPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/admin/projects">
+            <Link to="/platform/projects">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Projects
             </Link>
@@ -306,7 +306,7 @@ export default function ProjectDetailPage() {
                       <div className="flex items-center gap-3">
                         <p className="font-medium">{formatCurrency(invoice.totalAmount)}</p>
                         <Button variant="outline" size="sm" asChild>
-                          <Link to={`/admin/invoices/${invoice.id}`}>
+                          <Link to={`/platform/invoices/${invoice.id}`}>
                             <Eye className="mr-1.5 h-3.5 w-3.5" /> View invoice
                           </Link>
                         </Button>

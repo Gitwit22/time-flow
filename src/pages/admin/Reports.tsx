@@ -22,7 +22,8 @@ export default function Reports() {
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
-  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency, settings.periodWeekStartsOn);
+  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
+  const billingPeriod = getBillingPeriod(new Date(), billingFrequency, settings.periodWeekStartsOn);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
   const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const weeklyHours = getWeeklyHours(timeEntries);

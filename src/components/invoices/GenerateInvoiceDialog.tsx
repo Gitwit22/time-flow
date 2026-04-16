@@ -130,15 +130,16 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-2xl">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[92vh] w-[calc(100vw-2rem)] max-w-4xl flex-col overflow-hidden p-0">
+        <DialogHeader className="shrink-0 px-6 pb-0 pt-6">
           <DialogTitle className="font-heading">
             {step === "configure" ? "Generate Invoice" : "Review & Confirm"}
           </DialogTitle>
         </DialogHeader>
 
-        {step === "configure" ? (
-          <div className="space-y-5">
+        <div className="flex-1 overflow-y-auto px-6 pb-6 pt-4">
+          {step === "configure" ? (
+            <div className="space-y-5">
             {/* Client */}
             <div className="space-y-1.5">
               <Label>Client</Label>
@@ -212,105 +213,106 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                 Some entries were excluded because no billing rate is configured for that client or project.
               </div>
             )}
-          </div>
-        ) : (
-          /* Review step */
-          <div className="space-y-4">
-            {finalPreview ? (
-              <>
-                <div className="flex items-center justify-between text-sm text-muted-foreground">
-                  <span>
-                    {selectedClient?.name} —{" "}
-                    {billingMode === "range"
-                      ? `${formatLongDate(rangeStart)} → ${formatLongDate(rangeEnd)}`
-                      : "All outstanding"}
-                  </span>
-                  <span className="status-badge-accent">
-                    {finalPreview.entryIds.length} entr{finalPreview.entryIds.length === 1 ? "y" : "ies"}
-                  </span>
-                </div>
+            </div>
+          ) : (
+            /* Review step */
+            <div className="space-y-4">
+              {finalPreview ? (
+                <>
+                  <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+                    <span className="min-w-0">
+                      {selectedClient?.name} —{" "}
+                      {billingMode === "range"
+                        ? `${formatLongDate(rangeStart)} → ${formatLongDate(rangeEnd)}`
+                        : "All outstanding"}
+                    </span>
+                    <span className="status-badge-accent self-start sm:self-auto">
+                      {finalPreview.entryIds.length} entr{finalPreview.entryIds.length === 1 ? "y" : "ies"}
+                    </span>
+                  </div>
 
-                {/* Entry list */}
-                <div className="max-h-64 overflow-y-auto rounded-lg border divide-y">
-                  {finalPreview.lineItems.map((item) => {
-                    const entryId = item.timeEntryIds[0] ?? item.id;
-                    const isSelected = !deselectedIds.has(entryId);
-                    return (
-                      <div
-                        key={item.id}
-                        className={`flex items-center gap-3 px-3 py-2.5 transition-opacity ${!isSelected ? "opacity-40" : ""}`}
-                      >
-                        <Checkbox
-                          id={`entry-${entryId}`}
-                          checked={isSelected}
-                          onCheckedChange={(checked) => handleToggleEntry(entryId, !!checked)}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">{item.description}</p>
-                          <p className="text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
+                  <div className="max-h-[40vh] overflow-y-auto rounded-lg border divide-y">
+                    {finalPreview.lineItems.map((item) => {
+                      const entryId = item.timeEntryIds[0] ?? item.id;
+                      const isSelected = !deselectedIds.has(entryId);
+                      return (
+                        <div
+                          key={item.id}
+                          className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}
+                        >
+                          <Checkbox
+                            id={`entry-${entryId}`}
+                            checked={isSelected}
+                            onCheckedChange={(checked) => handleToggleEntry(entryId, !!checked)}
+                            className="mt-1"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium leading-5 break-words">{item.description}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {formatHours(item.hours)} × {formatCurrency(item.rate)}/hr
+                            </p>
+                          </div>
                         </div>
-                        <div className="text-right shrink-0">
-                          <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {formatHours(item.hours)} × {formatCurrency(item.rate)}/hr
-                          </p>
-                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
+                    <div className="grid gap-1.5 sm:max-w-xs">
+                      <Label>Due date</Label>
+                      <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                    </div>
+
+                    <div className="space-y-2 rounded-lg border p-4">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Total hours</span>
+                        <span className="font-medium">{formatHours(finalPreview.totalHours)}</span>
                       </div>
-                    );
-                  })}
-                </div>
-
-                {/* Totals */}
-                <div className="rounded-lg border p-4 space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Total hours</span>
-                    <span className="font-medium">{formatHours(finalPreview.totalHours)}</span>
-                  </div>
-                  {finalPreview.hasMixedRates ? (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rate</span>
-                      <span className="font-medium text-amber-600">Mixed rates</span>
+                      {finalPreview.hasMixedRates ? (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rate</span>
+                          <span className="font-medium text-amber-600">Mixed rates</span>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rate</span>
+                          <span className="font-medium">{formatCurrency(finalPreview.hourlyRate)}/hr</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Subtotal</span>
+                        <span className="font-medium">{formatCurrency(finalPreview.subtotal)}</span>
+                      </div>
+                      {finalPreview.taxRate > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Tax ({(finalPreview.taxRate * 100).toFixed(0)}%)</span>
+                          <span className="font-medium">{formatCurrency(finalPreview.taxAmount)}</span>
+                        </div>
+                      )}
+                      <Separator />
+                      <div className="flex justify-between">
+                        <span className="font-semibold">Total</span>
+                        <span className="text-lg font-semibold">{formatCurrency(finalPreview.totalAmount)}</span>
+                      </div>
                     </div>
-                  ) : (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Rate</span>
-                      <span className="font-medium">{formatCurrency(finalPreview.hourlyRate)}/hr</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Subtotal</span>
-                    <span className="font-medium">{formatCurrency(finalPreview.subtotal)}</span>
                   </div>
-                  {finalPreview.taxRate > 0 && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Tax ({(finalPreview.taxRate * 100).toFixed(0)}%)</span>
-                      <span className="font-medium">{formatCurrency(finalPreview.taxAmount)}</span>
-                    </div>
-                  )}
-                  <Separator />
-                  <div className="flex justify-between">
-                    <span className="font-semibold">Total</span>
-                    <span className="font-semibold text-lg">{formatCurrency(finalPreview.totalAmount)}</span>
-                  </div>
-                </div>
+                </>
+              ) : (
+                <EmptyState
+                  icon={FileText}
+                  title="No entries selected"
+                  description="All entries have been removed. Go back to adjust your selection."
+                />
+              )}
+            </div>
+          )}
+        </div>
 
-                {/* Due date */}
-                <div className="grid sm:max-w-xs gap-1.5">
-                  <Label>Due date</Label>
-                  <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-                </div>
-              </>
-            ) : (
-              <EmptyState
-                icon={FileText}
-                title="No entries selected"
-                description="All entries have been removed. Go back to adjust your selection."
-              />
-            )}
-          </div>
-        )}
-
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t px-6 py-4">
           {step === "configure" ? (
             <>
               <Button variant="outline" onClick={() => handleOpenChange(false)}>

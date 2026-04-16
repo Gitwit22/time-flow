@@ -19,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 type LoginTab = "signin" | "signup";
 
 function getNextPath(role: "contractor" | "client_viewer") {
-  return role === "client_viewer" ? "/client" : "/admin";
+  return role === "client_viewer" ? "/client" : "/platform";
 }
 
 export default function Login() {
@@ -92,7 +92,7 @@ export default function Login() {
       markAuthenticated();
       setViewerClientContext(undefined, false);
       await hydrateFromApi();
-      navigate("/admin", { replace: true });
+      navigate("/platform", { replace: true });
     } catch (error) {
       toast({
         title: "Unable to create account",

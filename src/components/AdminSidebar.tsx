@@ -15,18 +15,18 @@ import {
 import { useAppStore } from "@/store/appStore";
 
 const mainItems = [
-  { title: "Dashboard", url: "/admin", icon: LayoutDashboard },
-  { title: "Time Tracker", url: "/admin/time", icon: Clock },
-  { title: "Clients", url: "/admin/clients", icon: Users },
-  { title: "Projects", url: "/admin/projects", icon: BriefcaseBusiness },
-  { title: "Invoices", url: "/admin/invoices", icon: FileText },
-  { title: "Email Prep", url: "/admin/email", icon: Mail },
-  { title: "Reports", url: "/admin/reports", icon: BarChart3 },
+  { title: "Dashboard", url: "/platform", icon: LayoutDashboard },
+  { title: "Time Tracker", url: "/platform/time", icon: Clock },
+  { title: "Clients", url: "/platform/clients", icon: Users },
+  { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
+  { title: "Invoices", url: "/platform/invoices", icon: FileText },
+  { title: "Email Prep", url: "/platform/email", icon: Mail },
+  { title: "Reports", url: "/platform/reports", icon: BarChart3 },
 ];
 
 const bottomItems = [
-  { title: "Data Transfer", url: "/admin/data", icon: ArrowLeftRight },
-  { title: "Settings", url: "/admin/settings", icon: Settings },
+  { title: "Data Transfer", url: "/platform/data", icon: ArrowLeftRight },
+  { title: "Settings", url: "/platform/settings", icon: Settings },
 ];
 
 export function AdminSidebar() {
@@ -53,7 +53,7 @@ export function AdminSidebar() {
           {!collapsed && (
             <div>
               <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "TimeFlow"}</h2>
-              <p className="text-xs text-sidebar-muted">Contractor Hub</p>
+              <p className="text-xs text-sidebar-muted">Workspace</p>
             </div>
           )}
         </div>
@@ -67,7 +67,7 @@ export function AdminSidebar() {
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
-                      end={item.url === "/admin"}
+                      end={item.url === "/platform"}
                       className="hover:bg-sidebar-accent"
                       activeClassName="bg-sidebar-accent text-sidebar-primary font-medium"
                     >

@@ -42,6 +42,38 @@ type ClientDraft = Omit<Client, "id">;
 type ProjectDraft = Omit<Project, "id">;
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
 
+const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
+
+type PersistedPayPeriodSettings = Pick<
+  AppSettings,
+  "invoiceFrequency" | "periodWeekStartsOn" | "periodTargetHours" | "periodTargetEarnings"
+>;
+
+function readPersistedPayPeriodSettings(): Partial<PersistedPayPeriodSettings> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(PAY_PERIOD_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    return JSON.parse(raw) as Partial<PersistedPayPeriodSettings>;
+  } catch {
+    return {};
+  }
+}
+
+function writePersistedPayPeriodSettings(settings: PersistedPayPeriodSettings) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(PAY_PERIOD_STORAGE_KEY, JSON.stringify(settings));
+}
+
 function resolveViewerClientId(clients: Client[], settings: AppSettings, preferredClientId?: string) {
   if (preferredClientId && clients.some((client) => client.id === preferredClientId)) {
     return preferredClientId;
@@ -131,6 +163,7 @@ const defaultSettings: AppSettings = {
   businessName: "",
   invoiceNotes: "",
   paymentInstructions: "",
+  invoiceFrequency: "monthly",
   companyViewerAccess: false,
   emailTemplate: "",
   periodWeekStartsOn: 1,
@@ -162,6 +195,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   hydrateFromApi: async () => {
     try {
       const { clients, projects, timeEntries, invoices, settings } = await apiHydrateAll();
+      const mergedSettings = { ...settings, ...readPersistedPayPeriodSettings() };
       const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
       const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
       const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
@@ -171,7 +205,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         projects: normalizedProjects,
         timeEntries: normalizedEntries,
         invoices: normalizedInvoices,
-        settings,
+        settings: mergedSettings,
         hydrated: true,
       });
     } catch (err) {
@@ -208,11 +242,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
   updateSettings: (updates) => {
     if (get().currentUser.role !== "contractor") return;
     const prev = get().settings;
-    set((state) => ({ settings: { ...state.settings, ...updates } }));
-    void apiSaveSettings(updates).catch((err) => {
-      set({ settings: prev });
-      toast.error(err instanceof Error ? err.message : "Failed to save settings");
+    const nextSettings = { ...prev, ...updates };
+    writePersistedPayPeriodSettings({
+      invoiceFrequency: nextSettings.invoiceFrequency,
+      periodWeekStartsOn: nextSettings.periodWeekStartsOn,
+      periodTargetHours: nextSettings.periodTargetHours,
+      periodTargetEarnings: nextSettings.periodTargetEarnings,
     });
+    set({ settings: nextSettings });
+    void apiSaveSettings(updates)
+      .then((savedSettings) => {
+        const mergedSettings = { ...savedSettings, ...readPersistedPayPeriodSettings() };
+        set({ settings: mergedSettings });
+      })
+      .catch((err) => {
+        set({ settings: prev });
+        toast.error(err instanceof Error ? err.message : "Failed to save settings");
+      });
   },
 
   addClient: (client) => {

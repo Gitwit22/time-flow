@@ -153,7 +153,7 @@ export default function ProjectsPage() {
                     <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
                   </div>
                   <Button variant="outline" size="sm" asChild>
-                    <Link to={`/admin/projects/${project.id}`}>
+                    <Link to={`/platform/projects/${project.id}`}>
                       Open <ChevronRight className="ml-1 h-3.5 w-3.5" />
                     </Link>
                   </Button>

@@ -41,7 +41,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
 
   const handleRoleChange = (role: UserRole) => {
     setRole(role);
-    navigate(role === "contractor" ? "/admin" : "/client");
+    navigate(role === "contractor" ? "/platform" : "/client");
   };
 
   const handleLogout = () => {

@@ -144,7 +144,7 @@ export default function InvoiceCenter() {
                     <td className="py-3 px-4 text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" asChild>
-                          <Link to={`/admin/invoices/${inv.id}`}>
+                          <Link to={`/platform/invoices/${inv.id}`}>
                             <Eye className="h-3.5 w-3.5" />
                           </Link>
                         </Button>

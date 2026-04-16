@@ -36,10 +36,11 @@ export default function TimeTracker() {
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
 
   const isReadonly = currentUser.role === "client_viewer";
+  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
 
   const filteredEntries = useMemo(() => {
     const now = new Date();
-    const period = getBillingPeriod(now, currentUser.invoiceFrequency, settings.periodWeekStartsOn);
+    const period = getBillingPeriod(now, billingFrequency, settings.periodWeekStartsOn);
     const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
     const weekEnd = endOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
@@ -69,7 +70,7 @@ export default function TimeTracker() {
           return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
       })
       .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`));
-        }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, statusFilter, timeEntries]);
+        }, [billingFrequency, clientFilter, clients, dateFilter, projectFilter, projects, searchQuery, settings.periodWeekStartsOn, statusFilter, timeEntries]);
 
   const handleAddManual = () => {
     if (isReadonly) {

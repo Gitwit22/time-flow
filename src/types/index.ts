@@ -131,6 +131,7 @@ export interface Invoice {
 export interface AppSettings {
   businessName: string;
   defaultClientId?: string;
+  invoiceFrequency: "weekly" | "biweekly" | "monthly";
   invoiceNotes: string;
   paymentInstructions: string;
   invoiceLogoDataUrl?: string;

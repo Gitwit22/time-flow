@@ -6,7 +6,7 @@
  * Behavior:
  *   1. If a ?token= or ?launchToken= param is present (Suite hand-off):
  *      exchange it for a Timeflow-scoped JWT, persist the session, then
- *      redirect to the admin dashboard as an authenticated user.
+ *      redirect to the main TimeFlow workspace as an authenticated user.
  *   2. If no token is present:
  *      redirect to /login for direct app authentication.
  */
@@ -37,7 +37,7 @@ export default function PlatformLaunch() {
         // Full page redirect so AppModeContext re-initializes with the new
         // platform session already in localStorage (navigate() keeps the same
         // React tree and AppModeContext never re-reads localStorage).
-        window.location.replace("/admin");
+        window.location.replace("/platform");
       } catch {
         // Token exchange failed — send user to direct app login.
         setError("Launch failed");

@@ -41,7 +41,7 @@ export default function InvoiceDetail() {
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/admin/invoices">
+          <Link to="/platform/invoices">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Invoices
           </Link>
@@ -71,7 +71,7 @@ export default function InvoiceDetail() {
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/admin/invoices">
+          <Link to="/platform/invoices">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Invoices
           </Link>
@@ -99,7 +99,7 @@ export default function InvoiceDetail() {
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
           </Button>
             <Button size="sm" variant="outline" asChild>
-            <Link to="/admin/email">
+            <Link to="/platform/email">
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Create Email Draft
             </Link>
           </Button>
@@ -166,7 +166,7 @@ export default function InvoiceDetail() {
                           title: "Invoice voided",
                           description: `${invoice.id} was deleted and its time entries were released back to billable status.`,
                         });
-                        navigate("/admin/invoices");
+                        navigate("/platform/invoices");
                       }}
                     >
                       Void Invoice

@@ -37,9 +37,9 @@ export default function AdminDashboard() {
         projects,
         timeEntries,
         activeSession,
-        settings: { periodWeekStartsOn: settings.periodWeekStartsOn },
+        settings: { invoiceFrequency: settings.invoiceFrequency, periodWeekStartsOn: settings.periodWeekStartsOn },
       }),
-    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, settings.periodWeekStartsOn, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, settings.invoiceFrequency, settings.periodWeekStartsOn, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -121,7 +121,7 @@ export default function AdminDashboard() {
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
           <CardTitle className="text-base font-heading">Recent Time Entries</CardTitle>
           <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
-            <Link to="/admin/time">
+            <Link to="/platform/time">
               View all <ArrowRight className="ml-1 h-3 w-3" />
             </Link>
           </Button>

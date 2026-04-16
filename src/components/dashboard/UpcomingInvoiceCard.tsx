@@ -29,7 +29,7 @@ export function UpcomingInvoiceCard({ clientId }: UpcomingInvoiceCardProps) {
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <CardTitle className="text-base font-heading">Upcoming Invoice</CardTitle>
         <Button variant="ghost" size="sm" className="text-muted-foreground" asChild>
-          <Link to={currentUser.role === "client_viewer" ? "/client/invoices" : "/admin/invoices"}>
+          <Link to={currentUser.role === "client_viewer" ? "/client/invoices" : "/platform/invoices"}>
             View all <ArrowRight className="ml-1 h-3 w-3" />
           </Link>
         </Button>

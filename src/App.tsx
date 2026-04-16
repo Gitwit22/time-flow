@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -16,7 +16,7 @@ import PlatformLaunch from "./pages/PlatformLaunch";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 
-// Admin layout + pages
+// Contractor workspace layout + pages
 import { AdminLayout } from "./components/AdminLayout";
 import AdminDashboard from "./pages/admin/Dashboard";
 import TimeTracker from "./pages/admin/TimeTracker";
@@ -40,6 +40,13 @@ import ClientAccount from "./pages/client/Account";
 import ClientReports from "./pages/client/Reports";
 
 const queryClient = new QueryClient();
+
+function LegacyAdminRedirect() {
+  const location = useLocation();
+  const nextPath = location.pathname.replace(/^\/admin(?=\/|$)/, "/platform") || "/platform";
+
+  return <Navigate to={`${nextPath}${location.search}${location.hash}`} replace />;
+}
 
 /**
  * Restores app identity from the platform session on mount.
@@ -123,9 +130,9 @@ const App = () => (
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
           <Route path="/invite" element={<Navigate to="/login?mode=invite" replace />} />
 
-          {/* Admin */}
+          {/* Contractor workspace */}
           <Route
-            path="/admin"
+            path="/platform"
             element={
               <RequireAuth>
                 <AdminLayout />
@@ -186,6 +193,9 @@ const App = () => (
               }
             />
           </Route>
+
+          <Route path="/admin" element={<LegacyAdminRedirect />} />
+          <Route path="/admin/*" element={<LegacyAdminRedirect />} />
 
           {/* Client Portal */}
           <Route

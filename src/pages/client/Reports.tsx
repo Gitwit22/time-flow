@@ -21,7 +21,8 @@ export default function ClientReports() {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
-  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency, settings.periodWeekStartsOn);
+  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
+  const billingPeriod = getBillingPeriod(new Date(), billingFrequency, settings.periodWeekStartsOn);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
   const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const weeklyHours = getWeeklyHours(timeEntries);
