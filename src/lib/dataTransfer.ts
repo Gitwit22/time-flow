@@ -408,9 +408,19 @@ function projectFromExport(src: ExportProject, clientIdMap: Map<string, string>)
   };
 }
 
-function entryFromExport(src: ExportTimeEntry, clientIdMap: Map<string, string>, projectIdMap: Map<string, string>): Omit<TimeEntry, "id"> {
+function entryFromExport(
+  src: ExportTimeEntry,
+  clientIdMap: Map<string, string>,
+  projectIdMap: Map<string, string>,
+  existingProjectIds: Set<string>,
+): Omit<TimeEntry, "id"> {
   const resolvedClientId = clientIdMap.get(src.clientId) ?? src.clientId;
-  const resolvedProjectId = src.projectId ? (projectIdMap.get(src.projectId) ?? src.projectId) : undefined;
+  // Prefer a mapped project ID; fall back to the raw ID only if it already
+  // exists in the DB (partial exports). Otherwise null it to avoid a
+  // foreign-key violation.
+  const resolvedProjectId = src.projectId
+    ? (projectIdMap.get(src.projectId) ?? (existingProjectIds.has(src.projectId) ? src.projectId : undefined))
+    : undefined;
   return {
     clientId: resolvedClientId,
     projectId: resolvedProjectId,
@@ -554,9 +564,10 @@ export function executeImport(
   }
 
   // 3. Time entries
+  const existingProjectIds = new Set(actions.getProjects().map((p) => p.id));
   for (const entry of preview.entriesToCreate) {
     try {
-      actions.addTimeEntry(entryFromExport(entry, clientIdMap, projectIdMap));
+      actions.addTimeEntry(entryFromExport(entry, clientIdMap, projectIdMap, existingProjectIds));
       result.entriesImported++;
     } catch (err) {
       result.failed++;
