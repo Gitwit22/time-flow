@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
+import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
   apiCreateClient,
   apiUpdateClient,
@@ -200,12 +201,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
       const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
       const normalizedInvoices = invoices.map((inv) => normalizeInvoiceRecord(inv, normalizedEntries));
+      const restoredSession = readPersistedActiveSession();
       set({
         clients: normalizedClients,
         projects: normalizedProjects,
         timeEntries: normalizedEntries,
         invoices: normalizedInvoices,
         settings: mergedSettings,
+        ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
       });
     } catch (err) {
@@ -321,7 +324,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       projects: state.projects.filter((p) => p.clientId !== id),
       timeEntries: state.timeEntries.filter((e) => e.clientId !== id),
       invoices: state.invoices.filter((inv) => inv.clientId !== id),
-      activeSession: state.activeSession.clientId === id ? { isActive: false } : state.activeSession,
+      activeSession: state.activeSession.clientId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
       viewerClientId:
         state.viewerClientId === id
           ? state.viewerClientLocked
@@ -363,7 +366,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({
       projects: state.projects.filter((p) => p.id !== id),
       timeEntries: state.timeEntries.map((e) => (e.projectId === id ? { ...e, projectId: undefined } : e)),
-      activeSession: state.activeSession.projectId === id ? { isActive: false } : state.activeSession,
+      activeSession: state.activeSession.projectId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
     }));
     void apiDeleteProject(id).catch((err) => {
       set(snapshot);
@@ -398,23 +401,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (state.activeSession.isActive || !clientId || state.currentUser.role === "client_viewer") return false;
 
-    set({
-      activeSession: {
-        isActive: true,
-        clientId,
-        projectId,
-        billingRate: projectId ? state.projects.find((p) => p.id === projectId)?.hourlyRate : state.clients.find((c) => c.id === clientId)?.hourlyRate,
-        startedAt: new Date().toISOString(),
-        notes: notes?.trim(),
-      },
-    });
+    const session: WorkSession = {
+      isActive: true,
+      clientId,
+      projectId,
+      billingRate: projectId ? state.projects.find((p) => p.id === projectId)?.hourlyRate : state.clients.find((c) => c.id === clientId)?.hourlyRate,
+      startedAt: new Date().toISOString(),
+      notes: notes?.trim(),
+    };
+
+    set({ activeSession: session });
+    persistActiveSession(session);
 
     return true;
   },
 
   updateActiveSession: (updates) => {
     if (get().currentUser.role !== "contractor") return;
-    set((state) => ({ activeSession: { ...state.activeSession, ...updates } }));
+    set((state) => {
+      const next = { ...state.activeSession, ...updates };
+      persistActiveSession(next);
+      return { activeSession: next };
+    });
   },
 
   stopSession: () => {
@@ -448,6 +456,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       timeEntries: [normalizedEntry, ...current.timeEntries],
       activeSession: { isActive: false },
     }));
+    clearPersistedActiveSession();
 
     void apiCreateTimeEntry(normalizedEntry).catch((err) => {
       set((current) => ({ timeEntries: current.timeEntries.filter((e) => e.id !== id) }));
@@ -660,10 +669,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
 
-  resetApp: () =>
+  resetApp: () => {
+    clearPersistedActiveSession();
     set({
       ...emptyState,
       authStatus: "unauthenticated",
       hydrated: true,
-    }),
+    });
+  },
 }));

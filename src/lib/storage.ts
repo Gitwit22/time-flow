@@ -1,6 +1,6 @@
-import { createJSONStorage } from "zustand/middleware";
+import type { WorkSession } from "@/types";
 
-export const APP_STORAGE_KEY = "timeflow-app-store-v2";
+const ACTIVE_SESSION_KEY = "timeflow-active-session";
 
 const noopStorage: Storage = {
   getItem: () => null,
@@ -11,7 +11,7 @@ const noopStorage: Storage = {
   length: 0,
 };
 
-export function getBrowserStorage() {
+function getBrowserStorage() {
   if (typeof window === "undefined") {
     return noopStorage;
   }
@@ -19,4 +19,25 @@ export function getBrowserStorage() {
   return window.localStorage;
 }
 
-export const appStorage = createJSONStorage(() => getBrowserStorage());
+export function persistActiveSession(session: WorkSession) {
+  try {
+    getBrowserStorage().setItem(ACTIVE_SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // storage full — non-critical
+  }
+}
+
+export function clearPersistedActiveSession() {
+  getBrowserStorage().removeItem(ACTIVE_SESSION_KEY);
+}
+
+export function readPersistedActiveSession(): WorkSession | null {
+  try {
+    const raw = getBrowserStorage().getItem(ACTIVE_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as WorkSession;
+    return parsed?.isActive ? parsed : null;
+  } catch {
+    return null;
+  }
+}
