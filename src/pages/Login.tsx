@@ -130,7 +130,7 @@ export default function Login() {
                     id="signin-login"
                     value={loginId}
                     onChange={(event) => setLoginId(event.target.value)}
-                    placeholder="nxtlvltechllc@gmail.com"
+                    placeholder="user@example.com"
                     autoComplete="username"
                     required
                   />
