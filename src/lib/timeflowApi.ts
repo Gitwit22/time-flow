@@ -138,8 +138,8 @@ export function toSettings(r: ApiRecord): AppSettings {
 export const apiListClients = () =>
   apiRequest<ApiRecord[]>("GET", "/clients").then((rs) => rs.map(toClient));
 
-export const apiCreateClient = (id: string, data: Omit<Client, "id" | "documents">) =>
-  apiRequest<ApiRecord>("POST", "/clients", { id, ...data }).then(toClient);
+export const apiCreateClient = (data: Pick<Client, "id"> & Omit<Client, "documents">) =>
+  apiRequest<ApiRecord>("POST", "/clients", data).then(toClient);
 
 export const apiUpdateClient = (id: string, data: Partial<Omit<Client, "id" | "documents">>) =>
   apiRequest<ApiRecord>("PUT", `/clients/${id}`, data).then(toClient);
@@ -152,8 +152,8 @@ export const apiDeleteClient = (id: string) =>
 export const apiListProjects = () =>
   apiRequest<ApiRecord[]>("GET", "/projects").then((rs) => rs.map(toProject));
 
-export const apiCreateProject = (id: string, data: Omit<Project, "id" | "documents">) =>
-  apiRequest<ApiRecord>("POST", "/projects", { id, ...data }).then(toProject);
+export const apiCreateProject = (data: Pick<Project, "id"> & Omit<Project, "documents">) =>
+  apiRequest<ApiRecord>("POST", "/projects", data).then(toProject);
 
 export const apiUpdateProject = (id: string, data: Partial<Omit<Project, "id" | "documents">>) =>
   apiRequest<ApiRecord>("PUT", `/projects/${id}`, data).then(toProject);
@@ -166,8 +166,8 @@ export const apiDeleteProject = (id: string) =>
 export const apiListTimeEntries = () =>
   apiRequest<ApiRecord[]>("GET", "/time-entries").then((rs) => rs.map(toTimeEntry));
 
-export const apiCreateTimeEntry = (id: string, data: Omit<TimeEntry, "id">) =>
-  apiRequest<ApiRecord>("POST", "/time-entries", { id, ...data }).then(toTimeEntry);
+export const apiCreateTimeEntry = (data: Pick<TimeEntry, "id"> & Omit<TimeEntry, "id">) =>
+  apiRequest<ApiRecord>("POST", "/time-entries", data).then(toTimeEntry);
 
 export const apiUpdateTimeEntry = (id: string, data: Partial<Omit<TimeEntry, "id">>) =>
   apiRequest<ApiRecord>("PUT", `/time-entries/${id}`, data).then(toTimeEntry);
