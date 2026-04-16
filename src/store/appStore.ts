@@ -133,6 +133,9 @@ const defaultSettings: AppSettings = {
   paymentInstructions: "",
   companyViewerAccess: false,
   emailTemplate: "",
+  periodWeekStartsOn: 1,
+  periodTargetHours: 0,
+  periodTargetEarnings: 0,
 };
 
 const emptyState = {

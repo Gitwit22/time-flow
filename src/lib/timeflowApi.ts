@@ -127,6 +127,9 @@ export function toSettings(r: ApiRecord): AppSettings {
     invoiceBannerDataUrl: (r.invoiceBannerDataUrl as string) ?? undefined,
     companyViewerAccess: r.companyViewerAccess === true,
     emailTemplate: (r.emailTemplate as string) || "",
+    periodWeekStartsOn: ((r.periodWeekStartsOn as number) ?? 1) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
+    periodTargetHours: (r.periodTargetHours as number) ?? 0,
+    periodTargetEarnings: (r.periodTargetEarnings as number) ?? 0,
   };
 }
 
@@ -190,7 +193,6 @@ export const apiUpdateInvoice = (id: string, data: Partial<Invoice>) =>
 
 export const apiDeleteInvoice = (id: string) =>
   apiRequest<void>("DELETE", `/invoices/${id}`);
-++ b
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
