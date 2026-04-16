@@ -18,6 +18,7 @@ import type { TimeEntry } from "@/types";
 export default function TimeTracker() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
@@ -38,10 +39,10 @@ export default function TimeTracker() {
 
   const filteredEntries = useMemo(() => {
     const now = new Date();
-    const period = getBillingPeriod(now, currentUser.invoiceFrequency);
+    const period = getBillingPeriod(now, currentUser.invoiceFrequency, settings.periodWeekStartsOn);
     const todayStart = startOfDay(now);
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
+    const weekStart = startOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
+    const weekEnd = endOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
 
     return [...timeEntries]
       .filter((entry) => {

@@ -2,55 +2,43 @@
  * AppModeContext — Timeflow
  *
  * Resolves the current app mode:
- *   "loading"       — Zustand store is still rehydrating from localStorage
- *   "authenticated" — platform session or local auth session is present
- *   "demo"          — no authenticated session
- *
- * This is a thin wrapper over the Zustand store's hydrated flag and
- * getPlatformSession(), making it easy to read mode in any component.
+ *   "loading"         — auth not resolved yet, or authenticated data still loading
+ *   "authenticated"   — session is valid and app data is loaded
+ *   "unauthenticated" — no active session
  */
 
-import {
-  createContext,
-  useContext,
-  useMemo,
-  useState,
-  useEffect,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useAppStore } from "@/store/appStore";
-import { getPlatformSession } from "@/lib/platformApi";
-import { getActiveUser } from "@/lib/auth";
 
-export type AppMode = "loading" | "authenticated" | "demo";
+export type AppMode = "loading" | "authenticated" | "unauthenticated";
 
 interface AppModeContextType {
   mode: AppMode;
   isLoading: boolean;
   isAuthenticated: boolean;
-  isDemo: boolean;
+  // Kept for backward compatibility with existing components.
+  isDemo: false;
 }
 
 const AppModeContext = createContext<AppModeContextType | undefined>(undefined);
 
 export function AppModeProvider({ children }: { children: ReactNode }) {
+  const authStatus = useAppStore((state) => state.authStatus);
   const hydrated = useAppStore((state) => state.hydrated);
-  const [hasAuthSession, setHasAuthSession] = useState<boolean>(
-    () => getPlatformSession() !== null || getActiveUser() !== null,
-  );
 
-  useEffect(() => {
-    setHasAuthSession(getPlatformSession() !== null || getActiveUser() !== null);
-  }, [hydrated]);
-
-  const mode: AppMode = !hydrated ? "loading" : hasAuthSession ? "authenticated" : "demo";
+  const mode: AppMode =
+    authStatus === "unknown" || (authStatus === "authenticated" && !hydrated)
+      ? "loading"
+      : authStatus === "authenticated"
+        ? "authenticated"
+        : "unauthenticated";
 
   const value = useMemo<AppModeContextType>(
     () => ({
       mode,
       isLoading: mode === "loading",
       isAuthenticated: mode === "authenticated",
-      isDemo: mode === "demo",
+      isDemo: false,
     }),
     [mode],
   );

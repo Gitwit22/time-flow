@@ -18,6 +18,7 @@ import type { TimeEntry } from "@/types";
 export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const invoices = useAppStore((state) => state.invoices);
@@ -36,8 +37,9 @@ export default function AdminDashboard() {
         projects,
         timeEntries,
         activeSession,
+        settings: { periodWeekStartsOn: settings.periodWeekStartsOn },
       }),
-    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, settings.periodWeekStartsOn, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);

@@ -30,6 +30,8 @@ export default function Login() {
 
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
+  const markAuthenticated = useAppStore((state) => state.markAuthenticated);
+  const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
 
   const existingPlatformSession = getPlatformSession();
   const existingLocalUser = getActiveUser();
@@ -70,10 +72,12 @@ export default function Login() {
       const user = await loginWithCredentials(loginId, password);
       const identity = toAppIdentity(user);
       syncCurrentUser(identity);
+      markAuthenticated();
       setViewerClientContext(
         user.role === "client_viewer" ? getViewerClientIdForUser(user.id) : undefined,
         user.role === "client_viewer",
       );
+      await hydrateFromApi();
       navigate(fromPath, { replace: true });
     } catch (error) {
       toast({
@@ -93,7 +97,9 @@ export default function Login() {
       const user = await registerContractor(signupName, signupLoginId, signupPassword);
       const identity = toAppIdentity(user);
       syncCurrentUser(identity);
+      markAuthenticated();
       setViewerClientContext(undefined, false);
+      await hydrateFromApi();
       navigate("/admin", { replace: true });
     } catch (error) {
       toast({

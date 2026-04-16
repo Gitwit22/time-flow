@@ -15,12 +15,13 @@ import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 
 export default function ClientDashboard() {
   const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const { activeClient, clients, invoices, projects, timeEntries, viewerClientId } = useAppStore(useShallow(selectViewerScope));
   const recentEntries = [...timeEntries]
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
     .slice(0, 5);
   const recentInvoices = [...invoices].slice(0, 4);
-  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency);
+  const billingPeriod = getBillingPeriod(new Date(), currentUser.invoiceFrequency, settings.periodWeekStartsOn);
   const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
   const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
   const todaysHours = getTodaysHours(timeEntries, new Date());

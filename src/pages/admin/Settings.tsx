@@ -38,6 +38,8 @@ export default function SettingsPage() {
   const [emailTemplate, setEmailTemplate] = useState("");
   const [invoiceLogoDataUrl, setInvoiceLogoDataUrl] = useState<string | undefined>(undefined);
   const [invoiceBannerDataUrl, setInvoiceBannerDataUrl] = useState<string | undefined>(undefined);
+  const [periodTargetHours, setPeriodTargetHours] = useState(0);
+  const [periodTargetEarnings, setPeriodTargetEarnings] = useState(0);
 
   useEffect(() => {
     setProfileName(currentUser.name);
@@ -48,6 +50,8 @@ export default function SettingsPage() {
     setEmailTemplate(settings.emailTemplate);
     setInvoiceLogoDataUrl(settings.invoiceLogoDataUrl);
     setInvoiceBannerDataUrl(settings.invoiceBannerDataUrl);
+    setPeriodTargetHours(settings.periodTargetHours);
+    setPeriodTargetEarnings(settings.periodTargetEarnings);
   }, [
     currentUser.email,
     currentUser.name,
@@ -57,6 +61,8 @@ export default function SettingsPage() {
     settings.invoiceLogoDataUrl,
     settings.invoiceNotes,
     settings.paymentInstructions,
+    settings.periodTargetHours,
+    settings.periodTargetEarnings,
   ]);
 
   async function handleBrandingAssetChange(event: ChangeEvent<HTMLInputElement>, asset: "logo" | "banner") {
@@ -138,22 +144,6 @@ export default function SettingsPage() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Invoice Frequency</Label>
-              <Select
-                value={currentUser.invoiceFrequency}
-                onValueChange={(value) => updateCurrentUser({ invoiceFrequency: value as typeof currentUser.invoiceFrequency })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="biweekly">Biweekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1.5">
               <Label className="text-xs">Default Client</Label>
               <Select value={settings.defaultClientId ?? "none"} onValueChange={(value) => updateSettings({ defaultClientId: value === "none" ? undefined : value })}>
                 <SelectTrigger>
@@ -226,12 +216,94 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
+      {/* Pay Period */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">Pay Period</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Period Type</Label>
+              <Select
+                value={currentUser.invoiceFrequency}
+                onValueChange={(value) => updateCurrentUser({ invoiceFrequency: value as typeof currentUser.invoiceFrequency })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekly">Weekly</SelectItem>
+                  <SelectItem value="biweekly">Bi-Weekly</SelectItem>
+                  <SelectItem value="monthly">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Period Starts On</Label>
+              <Select
+                value={String(settings.periodWeekStartsOn)}
+                onValueChange={(value) => updateSettings({ periodWeekStartsOn: Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6 })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0">Sunday</SelectItem>
+                  <SelectItem value="1">Monday</SelectItem>
+                  <SelectItem value="2">Tuesday</SelectItem>
+                  <SelectItem value="3">Wednesday</SelectItem>
+                  <SelectItem value="4">Thursday</SelectItem>
+                  <SelectItem value="5">Friday</SelectItem>
+                  <SelectItem value="6">Saturday</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Target Hours per Period</Label>
+              <Input
+                type="number"
+                min={0}
+                step={0.5}
+                value={periodTargetHours}
+                onChange={(event) => setPeriodTargetHours(Number(event.target.value || 0))}
+                placeholder="0 = no target"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Target Earnings per Period ($)</Label>
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                value={periodTargetEarnings}
+                onChange={(event) => setPeriodTargetEarnings(Number(event.target.value || 0))}
+                placeholder="0 = no target"
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            The period start day applies to weekly and bi-weekly periods. Monthly periods always start on the 1st.
+          </p>
+          <Button
+            size="sm"
+            onClick={() => {
+              updateSettings({ periodTargetHours, periodTargetEarnings });
+              toast({ title: "Pay period saved", description: "Period settings were updated." });
+            }}
+          >
+            Save Pay Period
+          </Button>
+        </CardContent>
+      </Card>
+
       {/* Business Info */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-heading">Business Info</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
+        </CardHeader>        <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
               <Label className="text-xs">Business Name</Label>

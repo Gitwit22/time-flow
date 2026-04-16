@@ -131,7 +131,7 @@ export function buildInvoiceDraftSummary(
   referenceDate = new Date(),
   clientId?: string,
 ): InvoiceDraftSummary {
-  const billingPeriod = getBillingPeriod(referenceDate, currentUser.invoiceFrequency);
+  const billingPeriod = getBillingPeriod(referenceDate, currentUser.invoiceFrequency, settings.periodWeekStartsOn);
   const dueDate = getInvoiceDueDate(billingPeriod.end, currentUser.invoiceDueDays);
   const summary = getBillingSummary(entries, clients, projects, {
     clientId,

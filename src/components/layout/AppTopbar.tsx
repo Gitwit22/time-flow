@@ -34,6 +34,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const clients = useAppStore((state) => state.clients);
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
+  const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
@@ -46,6 +47,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const handleLogout = () => {
     clearPlatformSession();
     logoutActiveUser();
+    markUnauthenticated();
     navigate("/login", { replace: true });
   };
 

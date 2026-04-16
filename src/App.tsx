@@ -50,45 +50,57 @@ const queryClient = new QueryClient();
 function AuthBootstrapper() {
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
-  const resetApp = useAppStore((state) => state.resetApp);
-  const hydrated = useAppStore((state) => state.hydrated);
+  const markAuthenticated = useAppStore((state) => state.markAuthenticated);
+  const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
+  const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
+  const authStatus = useAppStore((state) => state.authStatus);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (authStatus !== "unknown") return;
 
     const platformSession = getPlatformSession();
     if (platformSession) {
-      // If the stored user is still the demo placeholder, reset to a clean slate
-      // before applying the real user identity.
-      const storedEmail = useAppStore.getState().currentUser.email;
-      if (!storedEmail || storedEmail === "demo@timeflow.app") {
-        resetApp();
-      }
-
       syncCurrentUser({
         name: platformSession.user.email.split("@")[0] ?? platformSession.user.email,
         email: platformSession.user.email,
         role: platformSession.user.role,
       });
+      markAuthenticated();
 
       setViewerClientContext(
         platformSession.user.role === "client_viewer" ? platformSession.user.organizationId : undefined,
         platformSession.user.role === "client_viewer",
       );
 
+      void hydrateFromApi();
+
       return;
     }
 
     const activeUser = getActiveUser();
-    if (!activeUser) return;
+    if (!activeUser) {
+      markUnauthenticated();
+      return;
+    }
+
     const identity = toAppIdentity(activeUser);
     syncCurrentUser(identity);
+    markAuthenticated();
 
     setViewerClientContext(
       activeUser.role === "client_viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
       activeUser.role === "client_viewer",
     );
-  }, [hydrated, syncCurrentUser, setViewerClientContext, resetApp]);
+
+    void hydrateFromApi();
+  }, [
+    authStatus,
+    hydrateFromApi,
+    markAuthenticated,
+    markUnauthenticated,
+    setViewerClientContext,
+    syncCurrentUser,
+  ]);
 
   return null;
 }

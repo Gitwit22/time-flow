@@ -137,6 +137,12 @@ export interface AppSettings {
   invoiceBannerDataUrl?: string;
   companyViewerAccess: boolean;
   emailTemplate: string;
+  /** Day the work week / period starts on. 0 = Sunday, 1 = Monday (default), …, 6 = Saturday */
+  periodWeekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  /** Target billable hours for the current period (0 = no target set) */
+  periodTargetHours: number;
+  /** Target earnings for the current period (0 = no target set) */
+  periodTargetEarnings: number;
 }
 
 export interface EmailDraft {

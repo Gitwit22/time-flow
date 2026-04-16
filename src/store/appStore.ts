@@ -1,14 +1,43 @@
 import { create } from "zustand";
-import { persist } from "zustand/middleware";
+import { toast } from "sonner";
 
-import { createSeedData } from "@/data/seed";
-import { normalizeAttachedDocumentRecord } from "@/lib/documents";
 import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
-import { APP_STORAGE_KEY, appStorage } from "@/lib/storage";
-import type { AppSettings, AttachedDocument, Client, EmailDraft, Invoice, InvoiceDraftPreview, Project, TimeEntry, UserProfile, UserRole, WorkSession } from "@/types";
+import {
+  apiCreateClient,
+  apiUpdateClient,
+  apiDeleteClient,
+  apiCreateProject,
+  apiUpdateProject,
+  apiDeleteProject,
+  apiCreateTimeEntry,
+  apiUpdateTimeEntry,
+  apiDeleteTimeEntry,
+  apiBulkUpdateTimeEntries,
+  apiCreateInvoice,
+  apiUpdateInvoice,
+  apiDeleteInvoice,
+  apiSaveSettings,
+  apiHydrateAll,
+} from "@/lib/timeflowApi";
+import type {
+  AppSettings,
+  AttachedDocument,
+  Client,
+  EmailDraft,
+  Invoice,
+  InvoiceDraftPreview,
+  Project,
+  TimeEntry,
+  UserProfile,
+  UserRole,
+  WorkSession,
+} from "@/types";
 
-type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & { durationHours?: number; status?: TimeEntry["status"] };
+type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & {
+  durationHours?: number;
+  status?: TimeEntry["status"];
+};
 type ClientDraft = Omit<Client, "id">;
 type ProjectDraft = Omit<Project, "id">;
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
@@ -30,10 +59,7 @@ function createId(prefix: string) {
 }
 
 function calculateDurationHours(startTime: string, endTime?: string) {
-  if (!endTime) {
-    return 0;
-  }
-
+  if (!endTime) return 0;
   const [startHours, startMinutes] = startTime.split(":").map(Number);
   const [endHours, endMinutes] = endTime.split(":").map(Number);
   const start = startHours * 60 + startMinutes;
@@ -42,6 +68,7 @@ function calculateDurationHours(startTime: string, endTime?: string) {
 }
 
 export interface AppState {
+  authStatus: "unknown" | "authenticated" | "unauthenticated";
   hydrated: boolean;
   currentUser: UserProfile;
   viewerClientId?: string;
@@ -53,6 +80,9 @@ export interface AppState {
   activeSession: WorkSession;
   invoices: Invoice[];
   emailDrafts: Record<string, EmailDraft>;
+  markAuthenticated: () => void;
+  markUnauthenticated: () => void;
+  hydrateFromApi: () => Promise<void>;
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
@@ -86,436 +116,505 @@ export interface AppState {
   resetApp: () => void;
 }
 
-const seedData = createSeedData();
+const defaultUser: UserProfile = {
+  id: "",
+  name: "",
+  email: "",
+  role: "contractor",
+  hourlyRate: 0,
+  invoiceFrequency: "monthly",
+  invoiceDueDays: 30,
+  currency: "USD",
+};
 
-export const useAppStore = create<AppState>()(
-  persist(
-    (set, get) => ({
-      hydrated: false,
-      ...seedData,
-      viewerClientId: undefined,
-      viewerClientLocked: false,
-      setHydrated: (hydrated) => set({ hydrated }),
-      setRole: (role) =>
-        set((state) => ({
-          currentUser: { ...state.currentUser, role },
-          viewerClientId:
-            role === "client_viewer"
-              ? resolveViewerClientId(state.clients, state.settings, state.viewerClientId)
-              : state.viewerClientId,
-          viewerClientLocked: role === "client_viewer" ? state.viewerClientLocked : false,
-        })),
-      setViewerClientContext: (clientId, locked = false) =>
-        set((state) => ({
-          viewerClientId: locked ? clientId : resolveViewerClientId(state.clients, state.settings, clientId),
-          viewerClientLocked: locked,
-        })),
-      syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
-      updateCurrentUser: (updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+const defaultSettings: AppSettings = {
+  businessName: "",
+  invoiceNotes: "",
+  paymentInstructions: "",
+  companyViewerAccess: false,
+  emailTemplate: "",
+};
 
-        set((state) => ({ currentUser: { ...state.currentUser, ...updates } }));
+const emptyState = {
+  authStatus: "unknown" as const,
+  hydrated: false,
+  currentUser: defaultUser,
+  viewerClientId: undefined as string | undefined,
+  viewerClientLocked: false,
+  settings: defaultSettings,
+  clients: [] as Client[],
+  projects: [] as Project[],
+  timeEntries: [] as TimeEntry[],
+  activeSession: { isActive: false } as WorkSession,
+  invoices: [] as Invoice[],
+  emailDrafts: {} as Record<string, EmailDraft>,
+};
+
+export const useAppStore = create<AppState>()((set, get) => ({
+  ...emptyState,
+
+  markAuthenticated: () => set({ authStatus: "authenticated" }),
+  markUnauthenticated: () => set({ authStatus: "unauthenticated", hydrated: true }),
+
+  hydrateFromApi: async () => {
+    try {
+      const { clients, projects, timeEntries, invoices, settings } = await apiHydrateAll();
+      const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
+      const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
+      const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
+      const normalizedInvoices = invoices.map((inv) => normalizeInvoiceRecord(inv, normalizedEntries));
+      set({
+        clients: normalizedClients,
+        projects: normalizedProjects,
+        timeEntries: normalizedEntries,
+        invoices: normalizedInvoices,
+        settings,
+        hydrated: true,
+      });
+    } catch (err) {
+      set({ hydrated: true });
+      toast.error(err instanceof Error ? err.message : "Failed to load data from server");
+    }
+  },
+
+  setHydrated: (hydrated) => set({ hydrated }),
+
+  setRole: (role) =>
+    set((state) => ({
+      currentUser: { ...state.currentUser, role },
+      viewerClientId:
+        role === "client_viewer"
+          ? resolveViewerClientId(state.clients, state.settings, state.viewerClientId)
+          : state.viewerClientId,
+      viewerClientLocked: role === "client_viewer" ? state.viewerClientLocked : false,
+    })),
+
+  setViewerClientContext: (clientId, locked = false) =>
+    set((state) => ({
+      viewerClientId: locked ? clientId : resolveViewerClientId(state.clients, state.settings, clientId),
+      viewerClientLocked: locked,
+    })),
+
+  syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
+
+  updateCurrentUser: (updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({ currentUser: { ...state.currentUser, ...updates } }));
+  },
+
+  updateSettings: (updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().settings;
+    set((state) => ({ settings: { ...state.settings, ...updates } }));
+    void apiSaveSettings(updates).catch((err) => {
+      set({ settings: prev });
+      toast.error(err instanceof Error ? err.message : "Failed to save settings");
+    });
+  },
+
+  addClient: (client) => {
+    if (get().currentUser.role !== "contractor") return;
+    const id = crypto.randomUUID();
+    const newClient: Client = { ...client, id, documents: [] };
+    set((state) => ({ clients: [...state.clients, newClient] }));
+    void apiCreateClient(newClient).catch((err) => {
+      set((state) => ({ clients: state.clients.filter((c) => c.id !== id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to save client");
+    });
+  },
+
+  addClientDocument: (clientId, document) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({
+      clients: state.clients.map((client) =>
+        client.id === clientId ? { ...client, documents: [...client.documents, { ...document, id: createId("client-doc") }] } : client,
+      ),
+    }));
+  },
+
+  updateClientDocument: (clientId, documentId, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({
+      clients: state.clients.map((client) =>
+        client.id === clientId
+          ? {
+              ...client,
+              documents: client.documents.map((doc) => (doc.id === documentId ? { ...doc, ...updates } : doc)),
+            }
+          : client,
+      ),
+    }));
+  },
+
+  updateClient: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().clients.find((c) => c.id === id);
+    set((state) => ({ clients: state.clients.map((c) => (c.id === id ? { ...c, ...updates } : c)) }));
+    void apiUpdateClient(id, updates).catch((err) => {
+      if (prev) set((state) => ({ clients: state.clients.map((c) => (c.id === id ? prev : c)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to update client");
+    });
+  },
+
+  deleteClient: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const s = get();
+    const snapshot = {
+      clients: s.clients,
+      projects: s.projects,
+      timeEntries: s.timeEntries,
+      invoices: s.invoices,
+      activeSession: s.activeSession,
+      viewerClientId: s.viewerClientId,
+    };
+    set((state) => ({
+      clients: state.clients.filter((c) => c.id !== id),
+      projects: state.projects.filter((p) => p.clientId !== id),
+      timeEntries: state.timeEntries.filter((e) => e.clientId !== id),
+      invoices: state.invoices.filter((inv) => inv.clientId !== id),
+      activeSession: state.activeSession.clientId === id ? { isActive: false } : state.activeSession,
+      viewerClientId:
+        state.viewerClientId === id
+          ? state.viewerClientLocked
+            ? undefined
+            : resolveViewerClientId(state.clients.filter((c) => c.id !== id), state.settings)
+          : state.viewerClientId,
+    }));
+    void apiDeleteClient(id).catch((err) => {
+      set(snapshot);
+      toast.error(err instanceof Error ? err.message : "Failed to delete client");
+    });
+  },
+
+  addProject: (project) => {
+    if (get().currentUser.role !== "contractor") return;
+    const id = crypto.randomUUID();
+    const newProject: Project = { ...project, id, documents: [] };
+    set((state) => ({ projects: [...state.projects, newProject] }));
+    void apiCreateProject(newProject).catch((err) => {
+      set((state) => ({ projects: state.projects.filter((p) => p.id !== id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to save project");
+    });
+  },
+
+  updateProject: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().projects.find((p) => p.id === id);
+    set((state) => ({ projects: state.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)) }));
+    void apiUpdateProject(id, updates).catch((err) => {
+      if (prev) set((state) => ({ projects: state.projects.map((p) => (p.id === id ? prev : p)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to update project");
+    });
+  },
+
+  deleteProject: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const s = get();
+    const snapshot = { projects: s.projects, timeEntries: s.timeEntries, activeSession: s.activeSession };
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      timeEntries: state.timeEntries.map((e) => (e.projectId === id ? { ...e, projectId: undefined } : e)),
+      activeSession: state.activeSession.projectId === id ? { isActive: false } : state.activeSession,
+    }));
+    void apiDeleteProject(id).catch((err) => {
+      set(snapshot);
+      toast.error(err instanceof Error ? err.message : "Failed to delete project");
+    });
+  },
+
+  addProjectDocument: (projectId, document) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId ? { ...project, documents: [...project.documents, { ...document, id: createId("project-doc") }] } : project,
+      ),
+    }));
+  },
+
+  updateProjectDocument: (projectId, documentId, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({
+      projects: state.projects.map((project) =>
+        project.id === projectId
+          ? {
+              ...project,
+              documents: project.documents.map((doc) => (doc.id === documentId ? { ...doc, ...updates } : doc)),
+            }
+          : project,
+      ),
+    }));
+  },
+
+  startSession: (clientId, notes, projectId) => {
+    const state = get();
+    if (state.activeSession.isActive || !clientId || state.currentUser.role === "client_viewer") return false;
+
+    set({
+      activeSession: {
+        isActive: true,
+        clientId,
+        projectId,
+        billingRate: projectId ? state.projects.find((p) => p.id === projectId)?.hourlyRate : state.clients.find((c) => c.id === clientId)?.hourlyRate,
+        startedAt: new Date().toISOString(),
+        notes: notes?.trim(),
       },
-      updateSettings: (updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+    });
 
-        set((state) => ({ settings: { ...state.settings, ...updates } }));
+    return true;
+  },
+
+  updateActiveSession: (updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({ activeSession: { ...state.activeSession, ...updates } }));
+  },
+
+  stopSession: () => {
+    const state = get();
+    if (state.currentUser.role !== "contractor" || !state.activeSession.isActive || !state.activeSession.startedAt || !state.activeSession.clientId) {
+      return null;
+    }
+
+    const startedAt = new Date(state.activeSession.startedAt);
+    const endedAt = new Date();
+    const durationHours = Number((((endedAt.getTime() - startedAt.getTime()) / 1000 / 60 / 60)).toFixed(2));
+    const id = crypto.randomUUID();
+    const entry: TimeEntry = {
+      id,
+      clientId: state.activeSession.clientId,
+      projectId: state.activeSession.projectId,
+      date: startedAt.toISOString().slice(0, 10),
+      startTime: startedAt.toTimeString().slice(0, 5),
+      endTime: endedAt.toTimeString().slice(0, 5),
+      durationHours,
+      billingRate: state.activeSession.billingRate,
+      notes: state.activeSession.notes?.trim() || "Tracked work session",
+      status: "completed",
+      billable: true,
+      invoiced: false,
+      invoiceId: null,
+    };
+    const normalizedEntry = normalizeTimeEntryRecord(entry, state.clients, state.projects);
+
+    set((current) => ({
+      timeEntries: [normalizedEntry, ...current.timeEntries],
+      activeSession: { isActive: false },
+    }));
+
+    void apiCreateTimeEntry(normalizedEntry).catch((err) => {
+      set((current) => ({ timeEntries: current.timeEntries.filter((e) => e.id !== id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to save time entry");
+    });
+
+    return normalizedEntry;
+  },
+
+  addTimeEntry: (entry) => {
+    const state = get();
+    if (state.currentUser.role !== "contractor") return;
+
+    const id = crypto.randomUUID();
+    const nextEntry = normalizeTimeEntryRecord(
+      {
+        id,
+        ...entry,
+        durationHours: entry.durationHours ?? calculateDurationHours(entry.startTime, entry.endTime),
+        status: entry.status ?? "completed",
+        billable: entry.billable ?? true,
+        invoiced: entry.invoiced ?? false,
+        invoiceId: entry.invoiceId ?? null,
       },
-      addClient: (client) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
+      state.clients,
+      state.projects,
+    );
+
+    set((current) => ({ timeEntries: [nextEntry, ...current.timeEntries] }));
+
+    void apiCreateTimeEntry(nextEntry).catch((err) => {
+      set((current) => ({ timeEntries: current.timeEntries.filter((e) => e.id !== id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to save time entry");
+    });
+  },
+
+  updateTimeEntry: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().timeEntries.find((e) => e.id === id);
+    set((state) => ({
+      timeEntries: state.timeEntries.map((entry) => {
+        if (entry.id !== id) return entry;
+        const nextEntry = { ...entry, ...updates };
+        if ((updates.startTime || updates.endTime) && nextEntry.endTime) {
+          nextEntry.durationHours = calculateDurationHours(nextEntry.startTime, nextEntry.endTime);
         }
+        return normalizeTimeEntryRecord(nextEntry, state.clients, state.projects);
+      }),
+    }));
+    void apiUpdateTimeEntry(id, updates).catch((err) => {
+      if (prev) set((state) => ({ timeEntries: state.timeEntries.map((e) => (e.id === id ? prev : e)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to update time entry");
+    });
+  },
 
-        set((state) => ({ clients: [...state.clients, { ...client, id: createId("client") }] }));
-      },
-      addClientDocument: (clientId, document) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+  deleteTimeEntry: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().timeEntries;
+    set((state) => ({ timeEntries: state.timeEntries.filter((e) => e.id !== id) }));
+    void apiDeleteTimeEntry(id).catch((err) => {
+      set({ timeEntries: prev });
+      toast.error(err instanceof Error ? err.message : "Failed to delete time entry");
+    });
+  },
 
-        set((state) => ({
-          clients: state.clients.map((client) =>
-            client.id === clientId ? { ...client, documents: [...client.documents, { ...document, id: createId("client-doc") }] } : client,
-          ),
-        }));
-      },
-      updateClientDocument: (clientId, documentId, updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+  markTimeEntryInvoiced: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().timeEntries;
+    set((state) => ({
+      timeEntries: state.timeEntries.map((e) => (e.id === id ? { ...e, status: "invoiced" as const, invoiced: true } : e)),
+    }));
+    void apiUpdateTimeEntry(id, { status: "invoiced", invoiced: true }).catch((err) => {
+      set({ timeEntries: prev });
+      toast.error(err instanceof Error ? err.message : "Failed to update time entry");
+    });
+  },
 
-        set((state) => ({
-          clients: state.clients.map((client) =>
-            client.id === clientId
-              ? {
-                  ...client,
-                  documents: client.documents.map((document) => (document.id === documentId ? { ...document, ...updates } : document)),
-                }
-              : client,
-          ),
-        }));
-      },
-      updateClient: (id, updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+  unmarkTimeEntryInvoiced: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().timeEntries;
+    set((state) => ({
+      timeEntries: state.timeEntries.map((e) =>
+        e.id === id ? { ...e, status: "completed" as const, invoiced: false, invoiceId: null } : e,
+      ),
+    }));
+    void apiUpdateTimeEntry(id, { status: "completed", invoiced: false, invoiceId: null }).catch((err) => {
+      set({ timeEntries: prev });
+      toast.error(err instanceof Error ? err.message : "Failed to update time entry");
+    });
+  },
 
-        set((state) => ({ clients: state.clients.map((client) => (client.id === id ? { ...client, ...updates } : client)) }));
-      },
-      deleteClient: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
+  commitInvoiceDrafts: (previews) => {
+    if (!previews.length) return [];
+    const state = get();
+    if (state.currentUser.role !== "contractor") return [];
 
-          return {
-            clients: state.clients.filter((client) => client.id !== id),
-            projects: state.projects.filter((project) => project.clientId !== id),
-            timeEntries: state.timeEntries.filter((entry) => entry.clientId !== id),
-            invoices: state.invoices.filter((invoice) => invoice.clientId !== id),
-            activeSession: state.activeSession.clientId === id ? { isActive: false } : state.activeSession,
-            viewerClientId:
-              state.viewerClientId === id
-                ? (state.viewerClientLocked ? undefined : resolveViewerClientId(state.clients.filter((client) => client.id !== id), state.settings))
-                : state.viewerClientId,
-          };
-        }),
-      addProject: (project) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
 
-        set((state) => ({ projects: [...state.projects, { ...project, id: createId("project") }] }));
-      },
-      updateProject: (id, updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+    const entryToInvoiceId = new Map<string, string>();
+    previews.forEach((preview, i) => {
+      const invoice = nextInvoices[i];
+      if (invoice) preview.entryIds.forEach((eid) => entryToInvoiceId.set(eid, invoice.id));
+    });
 
-        set((state) => ({ projects: state.projects.map((project) => (project.id === id ? { ...project, ...updates } : project)) }));
-      },
-      deleteProject: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
+    set((current) => ({
+      invoices: [...nextInvoices, ...current.invoices],
+      timeEntries: current.timeEntries.map((entry) => {
+        const invoiceId = entryToInvoiceId.get(entry.id);
+        return invoiceId ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId } : entry;
+      }),
+    }));
 
-          return {
-            projects: state.projects.filter((project) => project.id !== id),
-            timeEntries: state.timeEntries.map((entry) => (entry.projectId === id ? { ...entry, projectId: undefined } : entry)),
-            activeSession: state.activeSession.projectId === id ? { isActive: false } : state.activeSession,
-          };
-        }),
-      addProjectDocument: (projectId, document) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
-
-        set((state) => ({
-          projects: state.projects.map((project) =>
-            project.id === projectId ? { ...project, documents: [...project.documents, { ...document, id: createId("project-doc") }] } : project,
-          ),
-        }));
-      },
-      updateProjectDocument: (projectId, documentId, updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
-
-        set((state) => ({
-          projects: state.projects.map((project) =>
-            project.id === projectId
-              ? {
-                  ...project,
-                  documents: project.documents.map((document) => (document.id === documentId ? { ...document, ...updates } : document)),
-                }
-              : project,
-          ),
-        }));
-      },
-      startSession: (clientId, notes, projectId) => {
-        const state = get();
-
-        if (state.activeSession.isActive || !clientId || state.currentUser.role === "client_viewer") {
-          return false;
-        }
-
-        set({
-          activeSession: {
-            isActive: true,
-            clientId,
-            projectId,
-            billingRate: projectId ? state.projects.find((project) => project.id === projectId)?.hourlyRate : state.clients.find((client) => client.id === clientId)?.hourlyRate,
-            startedAt: new Date().toISOString(),
-            notes: notes?.trim(),
-          },
+    nextInvoices.forEach((invoice, i) => {
+      const preview = previews[i];
+      if (!preview) return;
+      void apiCreateInvoice(invoice.id, preview).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to save invoice");
+      });
+      if (preview.entryIds.length > 0) {
+        void apiBulkUpdateTimeEntries(preview.entryIds, {
+          invoiced: true,
+          invoiceId: invoice.id,
+          status: "invoiced",
+        }).catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to update time entries");
         });
+      }
+    });
 
-        return true;
+    return nextInvoices;
+  },
+
+  commitSingleInvoice: (preview) => {
+    const state = get();
+    if (state.currentUser.role !== "contractor") return null;
+
+    const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
+    if (!invoice) return null;
+
+    set((current) => ({
+      invoices: [invoice, ...current.invoices],
+      timeEntries: current.timeEntries.map((entry) =>
+        preview.entryIds.includes(entry.id) ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId: invoice.id } : entry,
+      ),
+    }));
+
+    void apiCreateInvoice(invoice.id, preview).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to save invoice");
+    });
+    if (preview.entryIds.length > 0) {
+      void apiBulkUpdateTimeEntries(preview.entryIds, {
+        invoiced: true,
+        invoiceId: invoice.id,
+        status: "invoiced",
+      }).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to update time entries");
+      });
+    }
+
+    return invoice;
+  },
+
+  updateInvoice: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().invoices.find((inv) => inv.id === id);
+    set((state) => ({ invoices: state.invoices.map((inv) => (inv.id === id ? { ...inv, ...updates } : inv)) }));
+    void apiUpdateInvoice(id, updates).catch((err) => {
+      if (prev) set((state) => ({ invoices: state.invoices.map((inv) => (inv.id === id ? prev : inv)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to update invoice");
+    });
+  },
+
+  deleteInvoice: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const s = get();
+    const invoice = s.invoices.find((inv) => inv.id === id);
+    const linkedEntryIds = new Set(invoice?.entryIds ?? []);
+    const prevInvoices = s.invoices;
+    const prevEntries = s.timeEntries;
+    set((state) => ({
+      invoices: state.invoices.filter((inv) => inv.id !== id),
+      timeEntries: state.timeEntries.map((entry) =>
+        linkedEntryIds.has(entry.id) ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null } : entry,
+      ),
+    }));
+    void apiDeleteInvoice(id).catch((err) => {
+      set({ invoices: prevInvoices, timeEntries: prevEntries });
+      toast.error(err instanceof Error ? err.message : "Failed to delete invoice");
+    });
+  },
+
+  saveEmailDraft: (draft) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({ emailDrafts: { ...state.emailDrafts, [draft.invoiceId]: draft } }));
+  },
+
+  markEmailDraftReady: (invoiceId, ready) => {
+    if (get().currentUser.role !== "contractor") return;
+    set((state) => ({
+      emailDrafts: {
+        ...state.emailDrafts,
+        [invoiceId]: {
+          ...state.emailDrafts[invoiceId],
+          invoiceId,
+          subject: state.emailDrafts[invoiceId]?.subject ?? "",
+          body: state.emailDrafts[invoiceId]?.body ?? "",
+          readyToSend: ready,
+        },
       },
-      updateActiveSession: (updates) => {
-        if (get().currentUser.role !== "contractor") {
-          return;
-        }
+    }));
+  },
 
-        set((state) => ({ activeSession: { ...state.activeSession, ...updates } }));
-      },
-      stopSession: () => {
-        const state = get();
-
-        if (state.currentUser.role !== "contractor" || !state.activeSession.isActive || !state.activeSession.startedAt || !state.activeSession.clientId) {
-          return null;
-        }
-
-        const startedAt = new Date(state.activeSession.startedAt);
-        const endedAt = new Date();
-        const durationHours = Number((((endedAt.getTime() - startedAt.getTime()) / 1000 / 60 / 60)).toFixed(2));
-        const entry: TimeEntry = {
-          id: createId("entry"),
-          clientId: state.activeSession.clientId,
-          projectId: state.activeSession.projectId,
-          date: startedAt.toISOString().slice(0, 10),
-          startTime: startedAt.toTimeString().slice(0, 5),
-          endTime: endedAt.toTimeString().slice(0, 5),
-          durationHours,
-          billingRate: state.activeSession.billingRate,
-          notes: state.activeSession.notes?.trim() || "Tracked work session",
-          status: "completed",
-        };
-        const normalizedEntry = normalizeTimeEntryRecord(entry, state.clients, state.projects);
-
-        set((current) => ({
-          timeEntries: [normalizedEntry, ...current.timeEntries],
-          activeSession: { isActive: false },
-        }));
-
-        return normalizedEntry;
-      },
-      addTimeEntry: (entry) => {
-        const state = get();
-        if (state.currentUser.role !== "contractor") {
-          return;
-        }
-
-        const nextEntry = normalizeTimeEntryRecord(
-          {
-            id: createId("entry"),
-            ...entry,
-            durationHours: entry.durationHours ?? calculateDurationHours(entry.startTime, entry.endTime),
-            status: entry.status ?? "completed",
-          },
-          state.clients,
-          state.projects,
-        );
-
-        set((current) => ({
-          timeEntries: [
-            nextEntry,
-            ...current.timeEntries,
-          ],
-        }));
-      },
-      updateTimeEntry: (id, updates) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return {
-            timeEntries: state.timeEntries.map((entry) => {
-              if (entry.id !== id) {
-                return entry;
-              }
-
-              const nextEntry = { ...entry, ...updates };
-
-              if ((updates.startTime || updates.endTime) && nextEntry.endTime) {
-                nextEntry.durationHours = calculateDurationHours(nextEntry.startTime, nextEntry.endTime);
-              }
-
-              return normalizeTimeEntryRecord(nextEntry, state.clients, state.projects);
-            }),
-          };
-        }),
-      deleteTimeEntry: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return { timeEntries: state.timeEntries.filter((entry) => entry.id !== id) };
-        }),
-      markTimeEntryInvoiced: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return {
-            timeEntries: state.timeEntries.map((entry) =>
-              entry.id === id ? { ...entry, status: "invoiced" as const, invoiced: true } : entry,
-            ),
-          };
-        }),
-      unmarkTimeEntryInvoiced: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return {
-            timeEntries: state.timeEntries.map((entry) =>
-              entry.id === id
-                ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null }
-                : entry,
-            ),
-          };
-        }),
-      commitInvoiceDrafts: (previews) => {
-        if (!previews.length) {
-          return [];
-        }
-
-        const state = get();
-        if (state.currentUser.role !== "contractor") {
-          return [];
-        }
-
-        const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
-
-        // Build a map from entryId → invoiceId so every linked entry is properly marked
-        const entryToInvoiceId = new Map<string, string>();
-        previews.forEach((preview, i) => {
-          const invoice = nextInvoices[i];
-          if (invoice) {
-            preview.entryIds.forEach((id) => entryToInvoiceId.set(id, invoice.id));
-          }
-        });
-
-        set((current) => ({
-          invoices: [...nextInvoices, ...current.invoices],
-          timeEntries: current.timeEntries.map((entry) => {
-            const invoiceId = entryToInvoiceId.get(entry.id);
-            return invoiceId
-              ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId }
-              : entry;
-          }),
-        }));
-
-        return nextInvoices;
-      },
-      commitSingleInvoice: (preview) => {
-        const state = get();
-        if (state.currentUser.role !== "contractor") {
-          return null;
-        }
-
-        const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
-        if (!invoice) return null;
-
-        set((current) => ({
-          invoices: [invoice, ...current.invoices],
-          timeEntries: current.timeEntries.map((entry) =>
-            preview.entryIds.includes(entry.id)
-              ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId: invoice.id }
-              : entry,
-          ),
-        }));
-
-        return invoice;
-      },
-      updateInvoice: (id, updates) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return { invoices: state.invoices.map((invoice) => (invoice.id === id ? { ...invoice, ...updates } : invoice)) };
-        }),
-      deleteInvoice: (id) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          const invoice = state.invoices.find((inv) => inv.id === id);
-          const linkedEntryIds = new Set(invoice?.entryIds ?? []);
-
-          return {
-            invoices: state.invoices.filter((inv) => inv.id !== id),
-            // Release all linked time entries back to billable/completed status
-            timeEntries: state.timeEntries.map((entry) =>
-              linkedEntryIds.has(entry.id)
-                ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null }
-                : entry,
-            ),
-          };
-        }),
-      saveEmailDraft: (draft) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return { emailDrafts: { ...state.emailDrafts, [draft.invoiceId]: draft } };
-        }),
-      markEmailDraftReady: (invoiceId, ready) =>
-        set((state) => {
-          if (state.currentUser.role !== "contractor") {
-            return state;
-          }
-
-          return {
-            emailDrafts: {
-              ...state.emailDrafts,
-              [invoiceId]: {
-                ...state.emailDrafts[invoiceId],
-                invoiceId,
-                subject: state.emailDrafts[invoiceId]?.subject ?? "",
-                body: state.emailDrafts[invoiceId]?.body ?? "",
-                readyToSend: ready,
-              },
-            },
-          };
-        }),
-      resetApp: () => set({ ...createSeedData(), hydrated: true, viewerClientId: undefined, viewerClientLocked: false }),
+  resetApp: () =>
+    set({
+      ...emptyState,
+      authStatus: "unauthenticated",
+      hydrated: true,
     }),
-    {
-      name: APP_STORAGE_KEY,
-      storage: appStorage,
-      onRehydrateStorage: () => (state) => state?.setHydrated(true),
-      merge: (persistedState, currentState) => {
-        const persisted = (persistedState as Partial<AppState>) ?? {};
-        const clients = (persisted.clients ?? currentState.clients).map((client) => ({
-          ...client,
-          documents: (client.documents ?? []).map((document) => normalizeAttachedDocumentRecord(document)),
-        }));
-        const projects = (persisted.projects ?? currentState.projects).map((project) => ({
-          ...project,
-          documents: (project.documents ?? []).map((document) => normalizeAttachedDocumentRecord(document)),
-        }));
-        const timeEntries = (persisted.timeEntries ?? currentState.timeEntries).map((entry) => normalizeTimeEntryRecord(entry, clients, projects));
-
-        return {
-          ...currentState,
-          ...persisted,
-          clients,
-          projects,
-          timeEntries,
-          viewerClientId: (persisted as Partial<AppState>).viewerClientId,
-          viewerClientLocked: (persisted as Partial<AppState>).viewerClientLocked ?? false,
-          settings: {
-            ...currentState.settings,
-            ...(persisted.settings ?? {}),
-          },
-          invoices: (persisted.invoices ?? currentState.invoices).map((invoice) => normalizeInvoiceRecord(invoice, timeEntries)),
-          hydrated: true,
-        };
-      },
-    },
-  ),
-);
+}));

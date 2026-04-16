@@ -79,7 +79,7 @@ export function getElapsedSeconds(startedAt?: string, now = new Date()) {
   return differenceInSeconds(now, parseISO(startedAt));
 }
 
-export function getBillingPeriod(referenceDate: Date, frequency: "weekly" | "biweekly" | "monthly") {
+export function getBillingPeriod(referenceDate: Date, frequency: "weekly" | "biweekly" | "monthly", weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1) {
   if (frequency === "monthly") {
     return {
       start: startOfMonth(referenceDate),
@@ -87,22 +87,22 @@ export function getBillingPeriod(referenceDate: Date, frequency: "weekly" | "biw
     };
   }
 
-  const currentWeekStart = startOfWeek(referenceDate, { weekStartsOn: 1 });
+  const currentWeekStart = startOfWeek(referenceDate, { weekStartsOn });
 
   if (frequency === "weekly") {
     return {
       start: currentWeekStart,
-      end: endOfWeek(referenceDate, { weekStartsOn: 1 }),
+      end: endOfWeek(referenceDate, { weekStartsOn }),
     };
   }
 
-  const yearAnchor = startOfWeek(startOfYear(referenceDate), { weekStartsOn: 1 });
-  const weekOffset = differenceInCalendarWeeks(currentWeekStart, yearAnchor, { weekStartsOn: 1 });
+  const yearAnchor = startOfWeek(startOfYear(referenceDate), { weekStartsOn });
+  const weekOffset = differenceInCalendarWeeks(currentWeekStart, yearAnchor, { weekStartsOn });
   const start = weekOffset % 2 === 0 ? currentWeekStart : subWeeks(currentWeekStart, 1);
 
   return {
     start,
-    end: endOfWeek(addWeeks(start, 1), { weekStartsOn: 1 }),
+    end: endOfWeek(addWeeks(start, 1), { weekStartsOn }),
   };
 }
 

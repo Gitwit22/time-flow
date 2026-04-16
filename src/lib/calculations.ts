@@ -1,8 +1,8 @@
-import { eachWeekOfInterval, endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths, subWeeks } from "date-fns";
+import { eachWeekOfInterval, endOfMonth, endOfWeek, format, isWithinInterval, parseISO, startOfMonth, subMonths, subWeeks } from "date-fns";
 
 import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { getBillingPeriod, toIsoDate } from "@/lib/date";
-import type { AppSettings, Client, Invoice, TimeEntry, UserProfile, WorkSession } from "@/types";
+import type { AppSettings, Client, Invoice, Project, TimeEntry, UserProfile, WorkSession } from "@/types";
 
 function getTrackedEntries(entries: TimeEntry[]) {
   const seenEntryIds = new Set<string>();
@@ -59,12 +59,14 @@ export function getUpcomingInvoice(
   currentUser: UserProfile,
   settings: AppSettings,
   clients: Client[],
+  projects: Project[],
   invoices: Invoice[],
   referenceDate = new Date(),
 ) {
   const invoiceDraftSummary = buildInvoiceDraftSummary(
     entries,
     clients,
+    projects,
     currentUser,
     settings,
     invoices,
@@ -89,21 +91,8 @@ export function getWeeklyHours(entries: TimeEntry[], referenceDate = new Date())
 
   return eachWeekOfInterval({ start, end: referenceDate }, { weekStartsOn: 1 }).map((weekStart) => ({
     week: format(weekStart, "MMM d"),
-    hours: getPeriodHours(entries, weekStart, subWeeks(weekStart, -1)),
+    hours: getPeriodHours(entries, weekStart, endOfWeek(weekStart, { weekStartsOn: 1 })),
   }));
-}
-
-export function getMonthlyEarnings(entries: TimeEntry[], rate: number, referenceDate = new Date()) {
-  return Array.from({ length: 6 }).map((_, index) => {
-    const monthDate = subMonths(referenceDate, 5 - index);
-    const start = startOfMonth(monthDate);
-    const end = endOfMonth(monthDate);
-
-    return {
-      month: format(monthDate, "MMM"),
-      earnings: getPeriodEarnings(entries, rate, start, end),
-    };
-  });
 }
 
 export function getInvoiceStatusCounts(invoices: Invoice[], referenceDate = new Date()) {
