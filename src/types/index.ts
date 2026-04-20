@@ -94,10 +94,13 @@ export interface InvoiceLineItem {
 
 export interface WorkSession {
   isActive: boolean;
+  isPaused?: boolean;
   clientId?: string;
   projectId?: string;
   billingRate?: number;
   startedAt?: string;
+  pausedAt?: string;
+  pausedDurationSeconds?: number;
   notes?: string;
 }
 

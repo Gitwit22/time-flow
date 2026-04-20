@@ -87,7 +87,12 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
   const todayHours = getTodaysHours(input.timeEntries, referenceDate);
   const periodHours = getPeriodHours(input.timeEntries, billingPeriod.start, billingPeriod.end);
   const status = getActiveStatus(input.activeSession);
-  const statusSince = input.activeSession.startedAt ? `Since ${formatClockTime(input.activeSession.startedAt)}` : "No active session";
+  const statusSince =
+    input.activeSession.isPaused && input.activeSession.pausedAt
+      ? `Paused at ${formatClockTime(input.activeSession.pausedAt)}`
+      : input.activeSession.startedAt
+        ? `Since ${formatClockTime(input.activeSession.startedAt)}`
+        : "No active session";
 
   const recentEntries = [...input.timeEntries]
     .filter((entry) => entry.status !== "running")
