@@ -13,7 +13,10 @@ const PLATFORM_USER_KEY = "timeflow-platform-user";
 export const TIMEFLOW_API_BASE =
   (typeof import.meta !== "undefined" && (import.meta as Record<string, unknown>).env
     ? ((import.meta as Record<string, unknown>).env as Record<string, string>).VITE_API_BASE_URL
-    : undefined) || "https://community-chronicle.onrender.com";
+    : undefined) ||
+  (typeof window !== "undefined" && window.location.hostname.includes("localhost")
+    ? "http://localhost:4000"
+    : "");
 
 export interface PlatformUser {
   id: string;

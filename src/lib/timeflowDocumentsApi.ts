@@ -118,3 +118,25 @@ export async function updateTimeflowDocument(
   const data = (await response.json()) as { document: AttachedDocument };
   return data.document;
 }
+
+export async function uploadTimeflowDocumentFile(file: File): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const response = await apiFetch("/api/timeflow/documents/upload", {
+    method: "POST",
+    headers: buildHeaders(false),
+    body: form,
+  });
+
+  const data = (await response.json()) as { key?: string };
+  if (!data.key) {
+    throw new Error("Upload succeeded but no storage key was returned.");
+  }
+
+  return data.key;
+}
+
+export function getTimeflowDocumentDownloadUrl(documentId: string): string {
+  return `${TIMEFLOW_API_BASE}/api/timeflow/documents/${encodeURIComponent(documentId)}/download`;
+}

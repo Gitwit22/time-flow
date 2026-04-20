@@ -9,7 +9,13 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { generateViewerInvite } from "@/lib/auth";
 import { formatCurrency } from "@/lib/date";
-import { createTimeflowDocument, listTimeflowDocuments, updateTimeflowDocument } from "@/lib/timeflowDocumentsApi";
+import {
+  createTimeflowDocument,
+  getTimeflowDocumentDownloadUrl,
+  listTimeflowDocuments,
+  updateTimeflowDocument,
+  uploadTimeflowDocumentFile,
+} from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
 import type { Client } from "@/types";
 
@@ -218,6 +224,8 @@ export default function Clients() {
                   currentUserName={currentUser.name}
                   documents={client.documents}
                   readOnly={isReadonly}
+                  uploadFile={uploadTimeflowDocumentFile}
+                  getDocumentHref={(document) => (document.storageKey ? getTimeflowDocumentDownloadUrl(document.id) : document.dataUrl || "")}
                   onAdd={async (document) => {
                     const created = document.storageKey
                       ? await createTimeflowDocument("client", client.id, document)

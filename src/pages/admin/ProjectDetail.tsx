@@ -12,7 +12,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
-import { createTimeflowDocument, listTimeflowDocuments, updateTimeflowDocument } from "@/lib/timeflowDocumentsApi";
+import {
+  createTimeflowDocument,
+  getTimeflowDocumentDownloadUrl,
+  listTimeflowDocuments,
+  updateTimeflowDocument,
+  uploadTimeflowDocumentFile,
+} from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
 
 function formatEnumLabel(value: string) {
@@ -263,6 +269,8 @@ export default function ProjectDetailPage() {
                 currentUserName={currentUser.name}
                 documents={project.documents}
                 readOnly={isReadonly}
+                uploadFile={uploadTimeflowDocumentFile}
+                getDocumentHref={(document) => (document.storageKey ? getTimeflowDocumentDownloadUrl(document.id) : document.dataUrl || "")}
                 onAdd={async (document) => {
                   const created = document.storageKey
                     ? await createTimeflowDocument("project", project.id, document)

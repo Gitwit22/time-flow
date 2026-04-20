@@ -17,6 +17,8 @@ interface DocumentManagerProps {
   currentUserName: string;
   readOnly?: boolean;
   maxFileBytes?: number;
+  uploadFile?: (file: File) => Promise<string>;
+  getDocumentHref?: (document: AttachedDocument) => string;
   onAdd: (document: Omit<AttachedDocument, "id">) => Promise<void>;
   onUpdate: (documentId: string, updates: Partial<AttachedDocument>) => Promise<void>;
 }
@@ -68,6 +70,8 @@ export function DocumentManager({
   currentUserName,
   readOnly,
   maxFileBytes = isCloudAvailable() ? 10 * 1024 * 1024 : 1024 * 1024,
+  uploadFile,
+  getDocumentHref,
   onAdd,
   onUpdate,
 }: DocumentManagerProps) {
@@ -128,7 +132,10 @@ export function DocumentManager({
 
     setIsUploading(true);
     try {
-      if (isCloudAvailable()) {
+      if (uploadFile) {
+        const storageKey = await uploadFile(pendingFile);
+        await onAdd(createAttachedDocumentDraft(pendingFile, "", currentUserName, pendingTitle, pendingNote, storageKey));
+      } else if (isCloudAvailable()) {
         // Production: upload to R2 via Pages Function; store the key, not a data URL
         const storageKey = await uploadToCloud(pendingFile);
         await onAdd(createAttachedDocumentDraft(pendingFile, "", currentUserName, pendingTitle, pendingNote, storageKey));
@@ -234,7 +241,7 @@ export function DocumentManager({
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" asChild>
                     <a
-                      href={document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
+                      href={getDocumentHref ? getDocumentHref(document) : document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
                       target="_blank"
                       rel="noreferrer"
                     >
@@ -243,7 +250,7 @@ export function DocumentManager({
                   </Button>
                   <Button variant="outline" size="sm" asChild>
                     <a
-                      href={document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
+                      href={getDocumentHref ? getDocumentHref(document) : document.storageKey ? `/api/file/${document.storageKey}` : document.dataUrl}
                       download={document.originalFilename}
                     >
                       <Download className="mr-1.5 h-3.5 w-3.5" /> Download
