@@ -14,6 +14,7 @@ import {
   startOfYear,
   subWeeks,
 } from "date-fns";
+import type { WorkSession } from "@/types";
 
 export function toDate(value: string | Date) {
   return value instanceof Date ? value : parseISO(value);
@@ -77,6 +78,17 @@ export function getElapsedSeconds(startedAt?: string, now = new Date()) {
   }
 
   return differenceInSeconds(now, parseISO(startedAt));
+}
+
+export function getTrackedSessionSeconds(session: Pick<WorkSession, "startedAt" | "isPaused" | "pausedAt" | "pausedDurationSeconds">, now = new Date()) {
+  if (!session.startedAt) {
+    return 0;
+  }
+
+  const sessionEnd = session.isPaused && session.pausedAt ? parseISO(session.pausedAt) : now;
+  const grossSeconds = differenceInSeconds(sessionEnd, parseISO(session.startedAt));
+  const pausedSeconds = session.pausedDurationSeconds ?? 0;
+  return Math.max(0, grossSeconds - pausedSeconds);
 }
 
 export function getBillingPeriod(referenceDate: Date, frequency: "weekly" | "biweekly" | "monthly", weekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6 = 1) {

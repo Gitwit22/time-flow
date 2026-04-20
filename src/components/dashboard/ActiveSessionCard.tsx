@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Play, Square } from "lucide-react";
+import { Pause, Play, Square } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { getElapsedSeconds, formatClockTime, formatDurationFromSeconds } from "@/lib/date";
+import { getElapsedSeconds, getTrackedSessionSeconds, formatClockTime, formatDurationFromSeconds } from "@/lib/date";
 import { getProjectBudgetSnapshot, getProjectWarningMessage } from "@/lib/projects";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
@@ -25,7 +25,8 @@ export function ActiveSessionCard() {
   const [selectedClientId, setSelectedClientId] = useState(settings.defaultClientId ?? clients[0]?.id ?? "");
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id ?? "");
   const [draftNotes, setDraftNotes] = useState(activeSession.notes ?? "");
-  const [elapsedSeconds, setElapsedSeconds] = useState(getElapsedSeconds(activeSession.startedAt));
+  const [elapsedSeconds, setElapsedSeconds] = useState(getTrackedSessionSeconds(activeSession));
+  const { isActive, startedAt, isPaused, pausedAt, pausedDurationSeconds } = activeSession;
 
   useEffect(() => {
     if (!selectedClientId && clients[0]?.id) {
@@ -44,18 +45,23 @@ export function ActiveSessionCard() {
   }, [activeSession.notes]);
 
   useEffect(() => {
-    if (!activeSession.isActive) {
+    if (!isActive) {
       setElapsedSeconds(0);
       return;
     }
 
-    setElapsedSeconds(getElapsedSeconds(activeSession.startedAt));
+    const sessionSnapshot = { startedAt, isPaused, pausedAt, pausedDurationSeconds };
+    setElapsedSeconds(getTrackedSessionSeconds(sessionSnapshot));
+    if (isPaused) {
+      return;
+    }
+
     const timer = window.setInterval(() => {
-      setElapsedSeconds(getElapsedSeconds(activeSession.startedAt));
+      setElapsedSeconds(getTrackedSessionSeconds(sessionSnapshot));
     }, 1000);
 
     return () => window.clearInterval(timer);
-  }, [activeSession.isActive, activeSession.startedAt]);
+  }, [isActive, isPaused, pausedAt, pausedDurationSeconds, startedAt]);
 
   const activeClient = useMemo(() => {
     const trackedClientId = activeSession.clientId ?? selectedClientId;
@@ -70,6 +76,9 @@ export function ActiveSessionCard() {
     [activeProject, clients, projects, timeEntries],
   );
   const projectWarning = activeProject && projectSnapshot ? getProjectWarningMessage(activeProject, projectSnapshot) : null;
+  const sessionStatusDotClass = activeSession.isPaused ? "bg-amber-500" : "bg-success animate-pulse-dot";
+  const sessionStatusTextClass = activeSession.isPaused ? "text-amber-600" : "text-success";
+  const sessionStatusLabel = activeSession.isPaused ? "On break" : `Tracking ${activeClient?.name ?? "client work"}`;
 
   const isReadonly = currentUser.role === "client_viewer";
 
@@ -115,6 +124,26 @@ export function ActiveSessionCard() {
     toast({ title: "Session saved", description: `${entry.durationHours.toFixed(2)} hours were added to your time log.` });
   };
 
+  const handlePauseToggle = () => {
+    if (!activeSession.isActive || isReadonly) {
+      return;
+    }
+
+    if (activeSession.isPaused) {
+      const resumedPausedSeconds = getElapsedSeconds(activeSession.pausedAt);
+      updateActiveSession({
+        isPaused: false,
+        pausedAt: undefined,
+        pausedDurationSeconds: (activeSession.pausedDurationSeconds ?? 0) + Math.max(0, resumedPausedSeconds),
+      });
+      toast({ title: "Break ended", description: "Time tracking has resumed." });
+      return;
+    }
+
+    updateActiveSession({ isPaused: true, pausedAt: new Date().toISOString() });
+    toast({ title: "Break started", description: "Your timer is paused until you resume." });
+  };
+
   return (
     <Card className={activeSession.isActive ? "border-accent/30" : ""}>
       <CardHeader className="pb-3">
@@ -125,11 +154,15 @@ export function ActiveSessionCard() {
           <>
             <div className="text-center py-3">
               <div className="mb-2 flex items-center justify-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full bg-success animate-pulse-dot" />
-                <span className="text-sm font-medium text-success">Tracking {activeClient?.name ?? "client work"}</span>
+                <span className={`h-2.5 w-2.5 rounded-full ${sessionStatusDotClass}`} />
+                <span className={`text-sm font-medium ${sessionStatusTextClass}`}>{sessionStatusLabel}</span>
               </div>
               <p className="text-3xl font-bold font-heading">{formatDurationFromSeconds(elapsedSeconds)}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Started at {activeSession.startedAt ? formatClockTime(activeSession.startedAt) : "--"}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {activeSession.isPaused
+                  ? `Paused at ${activeSession.pausedAt ? formatClockTime(activeSession.pausedAt) : "--"}`
+                  : `Started at ${activeSession.startedAt ? formatClockTime(activeSession.startedAt) : "--"}`}
+              </p>
             </div>
             <Textarea
               value={draftNotes}
@@ -141,15 +174,21 @@ export function ActiveSessionCard() {
               className="h-24 resize-none"
               disabled={isReadonly}
             />
-            <Button
-              className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              size="lg"
-              onClick={handleClockOut}
-              disabled={isReadonly}
-            >
-              <Square className="mr-2 h-4 w-4" />
-              Clock Out
-            </Button>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <Button variant="outline" size="lg" onClick={handlePauseToggle} disabled={isReadonly}>
+                {activeSession.isPaused ? <Play className="mr-2 h-4 w-4" /> : <Pause className="mr-2 h-4 w-4" />}
+                {activeSession.isPaused ? "Resume" : "Pause Break"}
+              </Button>
+              <Button
+                className="w-full bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                size="lg"
+                onClick={handleClockOut}
+                disabled={isReadonly}
+              >
+                <Square className="mr-2 h-4 w-4" />
+                Clock Out
+              </Button>
+            </div>
           </>
         ) : (
           <>

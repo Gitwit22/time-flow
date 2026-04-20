@@ -47,7 +47,11 @@ export function getPeriodEarnings(entries: TimeEntry[], rate: number, start?: st
 }
 
 export function getActiveStatus(session: WorkSession) {
-  return session.isActive ? "Clocked In" : "Ready";
+  if (!session.isActive) {
+    return "Ready";
+  }
+
+  return session.isPaused ? "On Break" : "Clocked In";
 }
 
 export function getClientName(clientId: string, clients: Client[]) {

@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { toast } from "sonner";
 
 import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
+import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
@@ -403,10 +404,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     const session: WorkSession = {
       isActive: true,
+      isPaused: false,
       clientId,
       projectId,
       billingRate: projectId ? state.projects.find((p) => p.id === projectId)?.hourlyRate : state.clients.find((c) => c.id === clientId)?.hourlyRate,
       startedAt: new Date().toISOString(),
+      pausedDurationSeconds: 0,
       notes: notes?.trim(),
     };
 
@@ -433,7 +436,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     const startedAt = new Date(state.activeSession.startedAt);
     const endedAt = new Date();
-    const durationHours = Number((((endedAt.getTime() - startedAt.getTime()) / 1000 / 60 / 60)).toFixed(2));
+    const activeTrackedSeconds = getTrackedSessionSeconds(state.activeSession, endedAt);
+    const durationHours = Number((activeTrackedSeconds / 60 / 60).toFixed(2));
     const id = crypto.randomUUID();
     const entry: TimeEntry = {
       id,
