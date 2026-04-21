@@ -45,6 +45,13 @@ export interface Client {
   hourlyRate?: number;
   companyViewerEnabled: boolean;
   documents: AttachedDocument[];
+  /** Workspace this client belongs to.  Absent on legacy records. */
+  workspaceId?: string;
+  // Copy-provenance — only present when this record was produced by a migration.
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface Project {
@@ -61,6 +68,13 @@ export interface Project {
   endDate?: string;
   notes: string;
   documents: AttachedDocument[];
+  /** Workspace this project belongs to.  Absent on legacy records. */
+  workspaceId?: string;
+  // Copy-provenance — only present when this record was produced by a migration.
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface TimeEntry {
@@ -77,6 +91,13 @@ export interface TimeEntry {
   invoiceId: string | null;
   notes: string;
   status: "running" | "completed" | "invoiced";
+  /** Workspace this entry belongs to.  Absent on legacy records. */
+  workspaceId?: string;
+  // Copy-provenance — only present when this record was produced by a migration.
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export type InvoiceBillingMode = "range" | "outstanding";
@@ -129,6 +150,13 @@ export interface Invoice {
   status: "draft" | "issued" | "sent" | "paid";
   issuedAt?: string;
   paidAt?: string;
+  /** Workspace this invoice belongs to.  Absent on legacy records. */
+  workspaceId?: string;
+  // Copy-provenance — only present when this record was produced by a migration.
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface AppSettings {
