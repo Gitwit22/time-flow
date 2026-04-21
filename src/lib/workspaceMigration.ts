@@ -112,7 +112,7 @@ export function copyTimeEntry(
     ...entry,
     id: newId("te"),
     clientId: clientIdMap.get(entry.clientId) ?? entry.clientId,
-    projectId: entry.projectId ? (projectIdMap.get(entry.projectId) ?? entry.projectId) : undefined,
+    projectId: entry.projectId ? projectIdMap.get(entry.projectId) : undefined,
     workspaceId: targetWorkspaceId,
     // Reset invoice linkage — the copied entry starts fresh in the new workspace
     invoiced: false,

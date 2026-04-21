@@ -13,6 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAppStore } from "@/store/appStore";
+import { WorkspaceSwitcher } from "@/components/workspace/WorkspaceSwitcher";
 
 const mainItems = [
   { title: "Dashboard", url: "/platform", icon: LayoutDashboard },
@@ -50,12 +51,9 @@ export function AdminSidebar() {
               <Zap className="h-5 w-5 text-sidebar-primary-foreground" />
             </div>
           )}
-          {!collapsed && (
-            <div>
-              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "TimeFlow"}</h2>
-              <p className="text-xs text-sidebar-muted">Workspace</p>
-            </div>
-          )}
+          <div className="min-w-0 flex-1">
+            <WorkspaceSwitcher collapsed={collapsed} />
+          </div>
         </div>
       </SidebarHeader>
       <SidebarContent>
