@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { updateActiveUserProfile } from "@/lib/auth";
 import { useAppStore } from "@/store/appStore";
+import { WorkspaceSettingsPanel } from "@/components/workspace/WorkspaceSettingsPanel";
 
 const MAX_BRANDING_FILE_BYTES = 750 * 1024;
 
@@ -466,6 +467,8 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      <WorkspaceSettingsPanel />
     </div>
   );
 }

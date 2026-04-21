@@ -1,7 +1,9 @@
 import { getBillingSummary } from "@/lib/billing";
 import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculations";
 import { formatClockTime, getBillingPeriod } from "@/lib/date";
+import { getUserRoleInWorkspace } from "@/lib/workspace";
 import type { AppState } from "@/store/appStore";
+import type { Workspace, WorkspaceMember, WorkspaceMemberRole } from "@/types/workspace";
 
 function resolveScopedViewerClientId(state: AppState) {
   if (state.currentUser.role !== "client_viewer") {
@@ -110,4 +112,107 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     recentEntries,
     unratedEntryCount: billingSummary.missingRateEntries.length,
   };
+}
+
+// ─── Workspace-aware selectors ────────────────────────────────────────────────
+
+/**
+ * Return the currently active Workspace record, or undefined when no
+ * workspace has been bootstrapped yet.
+ *
+ * [WORKSPACE-BRANCH] workspace switcher UI: display this in the nav bar
+ *   to show the user which workspace is active.
+ */
+export function selectActiveWorkspace(state: AppState): Workspace | undefined {
+  if (!state.activeWorkspaceId) return undefined;
+  return state.workspaces.find(
+    (ws) => ws.id === state.activeWorkspaceId && ws.status === "active",
+  );
+}
+
+/**
+ * Return all workspaces the current user owns or belongs to, filtered to
+ * only active workspaces.
+ *
+ * [WORKSPACE-BRANCH] workspace switcher UI: render the list of workspaces
+ *   the user can switch between.
+ */
+export function selectAccessibleWorkspaces(state: AppState): Workspace[] {
+  const userId = state.currentUser.id;
+  const memberWorkspaceIds = new Set(
+    state.workspaceMembers
+      .filter((m) => m.userId === userId)
+      .map((m) => m.workspaceId),
+  );
+  return state.workspaces.filter(
+    (ws) => ws.status === "active" && (ws.ownerUserId === userId || memberWorkspaceIds.has(ws.id)),
+  );
+}
+
+/**
+ * Return the calling user's role in the currently active workspace.
+ * Returns undefined when there is no active workspace or the user has no
+ * membership (e.g. during initial bootstrap).
+ *
+ * [WORKSPACE-BRANCH] company UI: use this to drive permission gating
+ *   throughout the app once team roles are exposed in the UI.
+ */
+export function selectActiveWorkspaceRole(state: AppState): WorkspaceMemberRole | undefined {
+  if (!state.activeWorkspaceId) return undefined;
+  return getUserRoleInWorkspace(
+    state.workspaceMembers,
+    state.activeWorkspaceId,
+    state.currentUser.id,
+  );
+}
+
+/**
+ * Return all membership records for the active workspace.
+ *
+ * [WORKSPACE-BRANCH] company UI: render the team-members list from this.
+ */
+export function selectActiveWorkspaceMembers(state: AppState): WorkspaceMember[] {
+  if (!state.activeWorkspaceId) return [];
+  return state.workspaceMembers.filter((m) => m.workspaceId === state.activeWorkspaceId);
+}
+
+/**
+ * Return clients that belong to the active workspace.
+ *
+ * When no workspace is active (legacy / pre-bootstrap state) all clients
+ * are returned so existing behaviour is preserved.
+ *
+ * [WORKSPACE-BRANCH] workspace-aware queries: switch from the raw
+ *   state.clients array to this selector once workspaceId is reliably
+ *   set on all records.
+ */
+export function selectWorkspaceClients(state: AppState) {
+  if (!state.activeWorkspaceId) return state.clients;
+  return state.clients.filter(
+    (c) => !c.workspaceId || c.workspaceId === state.activeWorkspaceId,
+  );
+}
+
+/** Return projects scoped to the active workspace (falls back to all). */
+export function selectWorkspaceProjects(state: AppState) {
+  if (!state.activeWorkspaceId) return state.projects;
+  return state.projects.filter(
+    (p) => !p.workspaceId || p.workspaceId === state.activeWorkspaceId,
+  );
+}
+
+/** Return time entries scoped to the active workspace (falls back to all). */
+export function selectWorkspaceTimeEntries(state: AppState) {
+  if (!state.activeWorkspaceId) return state.timeEntries;
+  return state.timeEntries.filter(
+    (e) => !e.workspaceId || e.workspaceId === state.activeWorkspaceId,
+  );
+}
+
+/** Return invoices scoped to the active workspace (falls back to all). */
+export function selectWorkspaceInvoices(state: AppState) {
+  if (!state.activeWorkspaceId) return state.invoices;
+  return state.invoices.filter(
+    (inv) => !inv.workspaceId || inv.workspaceId === state.activeWorkspaceId,
+  );
 }

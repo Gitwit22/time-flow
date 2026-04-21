@@ -10,6 +10,7 @@ import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/au
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 import { AppModeProvider } from "@/context/AppModeContext";
+import { WorkspaceProvider } from "@/context/WorkspaceContext";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
@@ -120,6 +121,10 @@ const App = () => (
       <AuthBootstrapper />
       <BrowserRouter>
       <AppModeProvider>
+        {/* WorkspaceProvider wraps the whole app so any component can call useWorkspace().
+            [WORKSPACE-BRANCH] workspace switcher UI: add <WorkspaceSwitcher> inside
+            AdminLayout's nav bar once the UI is ready. */}
+        <WorkspaceProvider>
         <Routes>
           {/* Suite launch entry point (optional SSO hand-off) */}
           <Route path="/launch" element={<PlatformLaunch />} />
@@ -216,6 +221,7 @@ const App = () => (
 
           <Route path="*" element={<NotFound />} />
         </Routes>
+        </WorkspaceProvider>
       </AppModeProvider>
       </BrowserRouter>
     </TooltipProvider>

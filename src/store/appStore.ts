@@ -6,6 +6,26 @@ import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
+  buildWorkspace as buildWorkspaceHelper,
+  buildOwnerMembership,
+} from "@/lib/workspace";
+import {
+  buildMigration,
+  runWorkspaceMigration,
+  updateMigrationStatus,
+} from "@/lib/workspaceMigration";
+import {
+  clearActiveWorkspaceId,
+  persistActiveWorkspaceId,
+  persistWorkspaceMembers,
+  persistWorkspaceMigrations,
+  persistWorkspaces,
+  readActiveWorkspaceId,
+  readWorkspaceMembers,
+  readWorkspaceMigrations,
+  readWorkspaces,
+} from "@/lib/workspaceStorage";
+import {
   apiCreateClient,
   apiUpdateClient,
   apiDeleteClient,
@@ -35,6 +55,13 @@ import type {
   UserRole,
   WorkSession,
 } from "@/types";
+import type {
+  Workspace,
+  WorkspaceMember,
+  WorkspaceMigration,
+  WorkspaceMigrableDataType,
+  WorkspaceType,
+} from "@/types/workspace";
 
 type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & {
   durationHours?: number;
@@ -114,6 +141,28 @@ export interface AppState {
   activeSession: WorkSession;
   invoices: Invoice[];
   emailDrafts: Record<string, EmailDraft>;
+
+  // ─── Workspace state ───────────────────────────────────────────────────────
+  /**
+   * All workspaces the current user belongs to (loaded from localStorage).
+   * Empty until bootstrapDefaultWorkspace() has run after first hydration.
+   */
+  workspaces: Workspace[];
+  /** All workspace membership records across all workspaces. */
+  workspaceMembers: WorkspaceMember[];
+  /** All migration runs initiated by the current user. */
+  workspaceMigrations: WorkspaceMigration[];
+  /**
+   * The ID of the currently active workspace.
+   * null  → not yet bootstrapped (treat as "all data", i.e. legacy behavior).
+   * set   → workspace-aware queries should filter by this ID.
+   *
+   * [WORKSPACE-BRANCH] workspace switcher UI: bind to this value and call
+   *   setActiveWorkspace() when the user picks a different workspace.
+   */
+  activeWorkspaceId: string | null;
+
+  // ─── Existing actions ──────────────────────────────────────────────────────
   markAuthenticated: () => void;
   markUnauthenticated: () => void;
   hydrateFromApi: () => Promise<void>;
@@ -148,6 +197,57 @@ export interface AppState {
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
   resetApp: () => void;
+
+  // ─── Workspace actions ─────────────────────────────────────────────────────
+  /**
+   * Ensure a default solo workspace exists for the current user.
+   * Safe to call multiple times — idempotent.
+   * Called automatically at the end of hydrateFromApi().
+   */
+  bootstrapDefaultWorkspace: () => string;
+  /**
+   * Switch the UI to a different workspace.
+   * All data queries will then use the new workspaceId.
+   *
+   * [WORKSPACE-BRANCH] workspace switcher UI: call this from the switcher.
+   */
+  setActiveWorkspace: (id: string) => void;
+  /**
+   * Create a new workspace (solo or company) and make it active.
+   *
+   * @returns The newly created Workspace record.
+   *
+   * [WORKSPACE-BRANCH] company UI: call this from the "New Workspace" flow.
+   */
+  createWorkspace: (name: string, type: WorkspaceType) => Workspace;
+  /**
+   * Create a company workspace forked from an existing workspace, then
+   * run a copy-based migration for the selected data types.
+   *
+   * The source workspace is NEVER modified.
+   *
+   * @returns The newly created Workspace and its migration record.
+   *
+   * [WORKSPACE-BRANCH] migration wizard UI: call this from the wizard's
+   *   final "Confirm & Copy" step.
+   */
+  createWorkspaceFromExisting: (
+    sourceWorkspaceId: string,
+    name: string,
+    type: WorkspaceType,
+    selectedDataTypes: WorkspaceMigrableDataType[],
+  ) => { workspace: Workspace; migration: WorkspaceMigration };
+  /**
+   * Archive a workspace (soft-delete).
+   * Preserves all data; the workspace can be un-archived in the future.
+   * Must be called explicitly — migrations never archive the source.
+   */
+  archiveWorkspace: (id: string) => void;
+  /**
+   * Permanently mark a workspace as deleted.
+   * Must be called explicitly by the user.
+   */
+  deleteWorkspace: (id: string) => void;
 }
 
 const defaultUser: UserProfile = {
@@ -186,6 +286,11 @@ const emptyState = {
   activeSession: { isActive: false } as WorkSession,
   invoices: [] as Invoice[],
   emailDrafts: {} as Record<string, EmailDraft>,
+  // Workspace state — loaded from localStorage on creation
+  workspaces: readWorkspaces(),
+  workspaceMembers: readWorkspaceMembers(),
+  workspaceMigrations: readWorkspaceMigrations(),
+  activeWorkspaceId: readActiveWorkspaceId(),
 };
 
 export const useAppStore = create<AppState>()((set, get) => ({
@@ -212,6 +317,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
       });
+      // Bootstrap the default workspace for existing users.
+      // This is idempotent — safe to call on every login.
+      get().bootstrapDefaultWorkspace();
     } catch (err) {
       set({ hydrated: true });
       toast.error(err instanceof Error ? err.message : "Failed to load data from server");
@@ -675,10 +783,181 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   resetApp: () => {
     clearPersistedActiveSession();
+    clearActiveWorkspaceId();
     set({
       ...emptyState,
       authStatus: "unauthenticated",
       hydrated: true,
+      // Workspace state is wiped on sign-out so the next user starts fresh.
+      workspaces: [],
+      workspaceMembers: [],
+      workspaceMigrations: [],
+      activeWorkspaceId: null,
     });
+  },
+
+  // ─── Workspace actions ───────────────────────────────────────────────────────
+
+  bootstrapDefaultWorkspace: () => {
+    const state = get();
+    const userId = state.currentUser.id;
+
+    // If there's already an active workspace for this user, do nothing.
+    const existingOwned = state.workspaces.find(
+      (ws) => ws.ownerUserId === userId && ws.status === "active",
+    );
+    if (existingOwned) {
+      // Ensure activeWorkspaceId is set even if it wasn't persisted.
+      if (!state.activeWorkspaceId) {
+        persistActiveWorkspaceId(existingOwned.id);
+        set({ activeWorkspaceId: existingOwned.id });
+      }
+      return existingOwned.id;
+    }
+
+    // Create the default solo workspace and owner membership.
+    const workspaceName =
+      state.settings.businessName?.trim() ||
+      state.currentUser.name?.trim() ||
+      "My Workspace";
+    const workspace = buildWorkspaceHelper(userId, workspaceName, "solo");
+    const membership = buildOwnerMembership(workspace.id, userId);
+
+    const nextWorkspaces = [...state.workspaces, workspace];
+    const nextMembers = [...state.workspaceMembers, membership];
+
+    persistWorkspaces(nextWorkspaces);
+    persistWorkspaceMembers(nextMembers);
+    persistActiveWorkspaceId(workspace.id);
+
+    set({
+      workspaces: nextWorkspaces,
+      workspaceMembers: nextMembers,
+      activeWorkspaceId: workspace.id,
+    });
+
+    return workspace.id;
+  },
+
+  setActiveWorkspace: (id) => {
+    const state = get();
+    const workspace = state.workspaces.find((ws) => ws.id === id);
+    if (!workspace || workspace.status !== "active") return;
+    persistActiveWorkspaceId(id);
+    set({ activeWorkspaceId: id });
+  },
+
+  createWorkspace: (name, type) => {
+    const state = get();
+    const userId = state.currentUser.id;
+    const workspace = buildWorkspaceHelper(userId, name, type);
+    const membership = buildOwnerMembership(workspace.id, userId);
+
+    const nextWorkspaces = [...state.workspaces, workspace];
+    const nextMembers = [...state.workspaceMembers, membership];
+
+    persistWorkspaces(nextWorkspaces);
+    persistWorkspaceMembers(nextMembers);
+    persistActiveWorkspaceId(workspace.id);
+
+    set({
+      workspaces: nextWorkspaces,
+      workspaceMembers: nextMembers,
+      activeWorkspaceId: workspace.id,
+    });
+
+    return workspace;
+  },
+
+  createWorkspaceFromExisting: (sourceWorkspaceId, name, type, selectedDataTypes) => {
+    const state = get();
+    const userId = state.currentUser.id;
+
+    // Build a pending migration record first so we have the ID to embed in the workspace.
+    const pendingMigration = buildMigration(sourceWorkspaceId, "", userId, selectedDataTypes);
+
+    // Create the target workspace, linked back to its source.
+    const workspace = buildWorkspaceHelper(userId, name, type, sourceWorkspaceId, pendingMigration.id);
+    const membership = buildOwnerMembership(workspace.id, userId);
+
+    // Patch the migration with the real target workspace ID.
+    const migration: WorkspaceMigration = { ...pendingMigration, targetWorkspaceId: workspace.id };
+
+    // Run the copy migration.
+    const runningMigration = { ...migration, status: "running" as const };
+    let copiedClients: Client[] = [];
+    let copiedProjects: ReturnType<typeof runWorkspaceMigration>["projects"] = [];
+    let copiedTimeEntries: ReturnType<typeof runWorkspaceMigration>["timeEntries"] = [];
+    let copiedInvoices: ReturnType<typeof runWorkspaceMigration>["invoices"] = [];
+    let completedMigration: WorkspaceMigration;
+
+    try {
+      const result = runWorkspaceMigration(runningMigration, {
+        clients: state.clients,
+        projects: state.projects,
+        timeEntries: state.timeEntries,
+        invoices: state.invoices,
+      });
+      copiedClients = result.clients;
+      copiedProjects = result.projects;
+      copiedTimeEntries = result.timeEntries;
+      copiedInvoices = result.invoices;
+      completedMigration = updateMigrationStatus(runningMigration, "completed");
+    } catch (err) {
+      completedMigration = updateMigrationStatus(
+        runningMigration,
+        "failed",
+        err instanceof Error ? err.message : "Migration failed",
+      );
+    }
+
+    const nextWorkspaces = [...state.workspaces, workspace];
+    const nextMembers = [...state.workspaceMembers, membership];
+    const nextMigrations = [...state.workspaceMigrations, completedMigration];
+
+    persistWorkspaces(nextWorkspaces);
+    persistWorkspaceMembers(nextMembers);
+    persistWorkspaceMigrations(nextMigrations);
+    persistActiveWorkspaceId(workspace.id);
+
+    set({
+      workspaces: nextWorkspaces,
+      workspaceMembers: nextMembers,
+      workspaceMigrations: nextMigrations,
+      activeWorkspaceId: workspace.id,
+      clients: [...state.clients, ...copiedClients],
+      projects: [...state.projects, ...copiedProjects],
+      timeEntries: [...state.timeEntries, ...copiedTimeEntries],
+      invoices: [...state.invoices, ...copiedInvoices],
+    });
+
+    return { workspace, migration: completedMigration };
+  },
+
+  archiveWorkspace: (id) => {
+    const state = get();
+    const nextWorkspaces = state.workspaces.map((ws) =>
+      ws.id === id
+        ? { ...ws, status: "archived" as const, archivedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        : ws,
+    );
+    persistWorkspaces(nextWorkspaces);
+    // If the user archived the active workspace, clear the active pointer.
+    const nextActiveId = state.activeWorkspaceId === id ? null : state.activeWorkspaceId;
+    if (nextActiveId === null) clearActiveWorkspaceId();
+    set({ workspaces: nextWorkspaces, activeWorkspaceId: nextActiveId });
+  },
+
+  deleteWorkspace: (id) => {
+    const state = get();
+    const nextWorkspaces = state.workspaces.map((ws) =>
+      ws.id === id
+        ? { ...ws, status: "deleted" as const, deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+        : ws,
+    );
+    persistWorkspaces(nextWorkspaces);
+    const nextActiveId = state.activeWorkspaceId === id ? null : state.activeWorkspaceId;
+    if (nextActiveId === null) clearActiveWorkspaceId();
+    set({ workspaces: nextWorkspaces, activeWorkspaceId: nextActiveId });
   },
 }));
