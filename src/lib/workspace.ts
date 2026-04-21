@@ -73,6 +73,9 @@ export function buildCompanyWorkspace(
 /**
  * Build any workspace type by providing the type explicitly.
  * Convenience wrapper used by the store.
+ *
+ * Note: `sourceWorkspaceId` and `createdFromMigrationId` are only meaningful
+ * for company workspaces and are intentionally ignored when type is 'solo'.
  */
 export function buildWorkspace(
   ownerUserId: string,
@@ -81,9 +84,10 @@ export function buildWorkspace(
   sourceWorkspaceId?: string,
   createdFromMigrationId?: string,
 ): Workspace {
-  return type === "solo"
-    ? buildSoloWorkspace(ownerUserId, name)
-    : buildCompanyWorkspace(ownerUserId, name, sourceWorkspaceId, createdFromMigrationId);
+  if (type === "solo") {
+    return buildSoloWorkspace(ownerUserId, name);
+  }
+  return buildCompanyWorkspace(ownerUserId, name, sourceWorkspaceId, createdFromMigrationId);
 }
 
 /**

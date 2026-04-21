@@ -788,7 +788,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ...emptyState,
       authStatus: "unauthenticated",
       hydrated: true,
-      // Re-read from localStorage after clearing so fresh state is correct
+      // Workspace state is wiped on sign-out so the next user starts fresh.
       workspaces: [],
       workspaceMembers: [],
       workspaceMigrations: [],
