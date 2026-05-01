@@ -4,6 +4,7 @@ export type ProjectBillingType = "hourly_uncapped" | "hourly_capped" | "fixed_fe
 export type ProjectCapHandling = "allow_overage" | "warn_only" | "block_billable";
 export type AttachedDocumentStatus = "active" | "archived";
 export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
+export type ExpenseBillingTarget = "client" | "project";
 
 export interface UserProfile {
   id: string;
@@ -84,6 +85,7 @@ export interface Expense {
   id: string;
   amount: number;
   category: "travel" | "software" | "meals" | "supplies" | "other";
+  billTo?: ExpenseBillingTarget;
   clientId?: string;
   date: string;
   description: string;

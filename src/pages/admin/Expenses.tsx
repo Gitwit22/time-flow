@@ -56,8 +56,9 @@ export default function ExpensesPage() {
         const query = searchQuery.toLowerCase();
         const clientName = clients.find((client) => client.id === expense.clientId)?.name ?? "";
         const projectName = projects.find((project) => project.id === expense.projectId)?.name ?? "";
+        const billedTarget = (expense.billTo ?? (expense.projectId ? "project" : "client")).toLowerCase();
 
-        return [expense.description, expense.notes, clientName, projectName, expense.category].some((value) => value.toLowerCase().includes(query));
+        return [expense.description, expense.notes, clientName, projectName, expense.category, billedTarget].some((value) => value.toLowerCase().includes(query));
       })
       .sort((left, right) => right.date.localeCompare(left.date));
   }, [clientFilter, clients, expenses, projects, searchQuery, selectedPeriod]);
@@ -188,6 +189,7 @@ export default function ExpensesPage() {
                     <th className="px-4 py-3 text-left font-medium">Expense Date</th>
                     <th className="px-4 py-3 text-left font-medium">Description</th>
                     <th className="px-4 py-3 text-left font-medium">Category</th>
+                    <th className="px-4 py-3 text-left font-medium">Billed To</th>
                     <th className="px-4 py-3 text-left font-medium">Client / Project</th>
                     <th className="px-4 py-3 text-left font-medium">Pay Period</th>
                     <th className="px-4 py-3 text-right font-medium">Amount</th>
@@ -199,6 +201,7 @@ export default function ExpensesPage() {
                     const clientName = clients.find((client) => client.id === expense.clientId)?.name;
                     const projectName = projects.find((project) => project.id === expense.projectId)?.name;
                     const period = getPayPeriodForDate(expense.date, payPeriodSettings);
+                    const billedTarget = expense.billTo ?? (expense.projectId ? "project" : "client");
 
                     return (
                       <tr key={expense.id} className="border-b last:border-0">
@@ -208,6 +211,7 @@ export default function ExpensesPage() {
                           {expense.notes ? <p className="text-xs text-muted-foreground">{expense.notes}</p> : null}
                         </td>
                         <td className="px-4 py-3 capitalize">{expense.category}</td>
+                        <td className="px-4 py-3 capitalize">{billedTarget}</td>
                         <td className="px-4 py-3 text-muted-foreground">{projectName ? `${projectName} · ${clientName ?? "No client"}` : clientName ?? "Unlinked"}</td>
                         <td className="px-4 py-3">{period.label}</td>
                         <td className="px-4 py-3 text-right font-medium">{formatCurrency(expense.amount)}</td>

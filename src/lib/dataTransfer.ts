@@ -49,6 +49,7 @@ export interface ExportExpense {
   id: string;
   amount: number;
   category: Expense["category"];
+  billTo?: Expense["billTo"];
   clientId?: string;
   date: string;
   description: string;
@@ -129,6 +130,7 @@ function toExportExpense(expense: Expense): ExportExpense {
     id: expense.id,
     amount: expense.amount,
     category: expense.category,
+    billTo: expense.billTo,
     clientId: expense.clientId,
     date: expense.date,
     description: expense.description,
@@ -529,6 +531,7 @@ function expenseFromExport(
   existingClientIds: Set<string>,
   existingProjectIds: Set<string>,
 ): Omit<Expense, "id"> {
+  const billTo = src.billTo ?? (src.projectId ? "project" : "client");
   const resolvedClientId = src.clientId
     ? (clientIdMap.get(src.clientId) ?? (existingClientIds.has(src.clientId) ? src.clientId : undefined))
     : undefined;
@@ -538,6 +541,7 @@ function expenseFromExport(
 
   return {
     amount: src.amount,
+    billTo,
     category: src.category,
     clientId: resolvedClientId,
     date: src.date,
@@ -545,7 +549,7 @@ function expenseFromExport(
     excludedFromPayPeriod: src.excludedFromPayPeriod,
     includedInPayPeriod: src.includedInPayPeriod,
     notes: src.notes,
-    projectId: resolvedProjectId,
+    projectId: billTo === "project" ? resolvedProjectId : undefined,
   };
 }
 

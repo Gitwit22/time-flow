@@ -90,7 +90,7 @@ function readPersistedExpenses(): Expense[] {
       return [];
     }
 
-    return JSON.parse(raw) as Expense[];
+    return (JSON.parse(raw) as Expense[]).map(normalizeExpenseRecord);
   } catch {
     return [];
   }
@@ -102,6 +102,15 @@ function writePersistedExpenses(expenses: Expense[]) {
   }
 
   window.localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses));
+}
+
+function normalizeExpenseRecord(expense: Expense): Expense {
+  const billTo = expense.billTo ?? (expense.projectId ? "project" : "client");
+  if (billTo === "project") {
+    return { ...expense, billTo };
+  }
+
+  return { ...expense, billTo, projectId: undefined };
 }
 
 function clearPersistedExpenses() {
@@ -582,7 +591,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (get().currentUser.role !== "contractor") return;
 
     set((state) => {
-      const expenses = [{ id: crypto.randomUUID(), ...expense }, ...state.expenses];
+      const expenses = [normalizeExpenseRecord({ id: crypto.randomUUID(), ...expense }), ...state.expenses];
       writePersistedExpenses(expenses);
       return { expenses };
     });
@@ -592,7 +601,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (get().currentUser.role !== "contractor") return;
 
     set((state) => {
-      const expenses = state.expenses.map((expense) => (expense.id === id ? { ...expense, ...updates } : expense));
+      const expenses = state.expenses.map((expense) => (expense.id === id ? normalizeExpenseRecord({ ...expense, ...updates }) : expense));
       writePersistedExpenses(expenses);
       return { expenses };
     });

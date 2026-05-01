@@ -21,6 +21,7 @@ interface ExpenseDialogProps {
 function createInitialExpense(): Omit<Expense, "id"> {
   return {
     amount: 0,
+    billTo: "client",
     category: "other",
     clientId: undefined,
     date: toDateOnlyString(new Date()),
@@ -33,10 +34,24 @@ function createInitialExpense(): Omit<Expense, "id"> {
 }
 
 export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, projects }: ExpenseDialogProps) {
-  const [form, setForm] = useState<Omit<Expense, "id">>(expense ? { ...expense } : createInitialExpense());
+  const [form, setForm] = useState<Omit<Expense, "id">>(
+    expense
+      ? {
+          ...expense,
+          billTo: expense.billTo ?? (expense.projectId ? "project" : "client"),
+        }
+      : createInitialExpense(),
+  );
 
   useEffect(() => {
-    setForm(expense ? { ...expense } : createInitialExpense());
+    setForm(
+      expense
+        ? {
+            ...expense,
+            billTo: expense.billTo ?? (expense.projectId ? "project" : "client"),
+          }
+        : createInitialExpense(),
+    );
   }, [expense, open]);
 
   const availableProjects = useMemo(() => {
@@ -82,48 +97,77 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Client</Label>
-            <Select value={form.clientId ?? "none"} onValueChange={(value) => setForm((current) => ({ ...current, clientId: value === "none" ? undefined : value, projectId: value === "none" ? undefined : current.projectId }))}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No client</SelectItem>
-                {clients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label className="text-xs">Project</Label>
+            <Label className="text-xs">Bill Expense To</Label>
             <Select
-              value={form.projectId ?? "none"}
-              onValueChange={(value) => {
-                if (value === "none") {
-                  setForm((current) => ({ ...current, projectId: undefined }));
-                  return;
-                }
-
-                const project = projects.find((item) => item.id === value);
-                setForm((current) => ({ ...current, projectId: value, clientId: project?.clientId ?? current.clientId }));
-              }}
+              value={form.billTo ?? "client"}
+              onValueChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  billTo: value as Expense["billTo"],
+                  projectId: value === "client" ? undefined : current.projectId,
+                }))
+              }
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">No project</SelectItem>
-                {availableProjects.map((project) => (
-                  <SelectItem key={project.id} value={project.id}>
-                    {project.name}
-                  </SelectItem>
-                ))}
+                <SelectItem value="client">Client</SelectItem>
+                <SelectItem value="project">Project</SelectItem>
               </SelectContent>
             </Select>
           </div>
+          {form.billTo === "project" ? (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs">Project</Label>
+              <Select
+                value={form.projectId ?? "none"}
+                onValueChange={(value) => {
+                  if (value === "none") {
+                    setForm((current) => ({ ...current, projectId: undefined }));
+                    return;
+                  }
+
+                  const project = projects.find((item) => item.id === value);
+                  setForm((current) => ({ ...current, projectId: value, clientId: project?.clientId ?? current.clientId }));
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select project</SelectItem>
+                  {availableProjects.map((project) => (
+                    <SelectItem key={project.id} value={project.id}>
+                      {project.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : (
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label className="text-xs">Client</Label>
+              <Select
+                value={form.clientId ?? "none"}
+                onValueChange={(value) =>
+                  setForm((current) => ({ ...current, clientId: value === "none" ? undefined : value, projectId: undefined }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select client</SelectItem>
+                  {clients.map((client) => (
+                    <SelectItem key={client.id} value={client.id}>
+                      {client.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Notes</Label>
             <Textarea className="min-h-24 resize-none" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
@@ -133,7 +177,11 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={() => onSubmit(form)}>
+          <Button
+            className="bg-accent text-accent-foreground hover:bg-accent/90"
+            disabled={form.billTo === "project" ? !form.projectId : !form.clientId}
+            onClick={() => onSubmit(form)}
+          >
             {expense ? "Save expense" : "Add expense"}
           </Button>
         </DialogFooter>
