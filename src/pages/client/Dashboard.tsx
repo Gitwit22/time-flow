@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Link } from "react-router-dom";
 import { getBillingSummary } from "@/lib/billing";
-import { getBillingPeriod } from "@/lib/date";
+import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { getPeriodHours, getTodaysHours } from "@/lib/calculations";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
@@ -22,9 +22,16 @@ export default function ClientDashboard() {
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
     .slice(0, 5);
   const recentInvoices = [...invoices].slice(0, 4);
-  const billingPeriod = getBillingPeriod(new Date(), billingFrequency, settings.periodWeekStartsOn);
-  const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
+  const billingPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? billingFrequency,
+      payPeriodStartDate: settings.payPeriodStartDate,
+      periodWeekStartsOn: settings.periodWeekStartsOn,
+    },
+    new Date(),
+  );
+  const periodHours = getPeriodHours(timeEntries, billingPeriod.startDate, billingPeriod.endDate);
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.startDate, end: billingPeriod.endDate });
   const todaysHours = getTodaysHours(timeEntries, new Date());
 
   return (
@@ -42,7 +49,7 @@ export default function ClientDashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard title="Status" value="Read-only" subtitle="Viewer access" icon={Eye} iconClassName="bg-muted text-muted-foreground" />
         <SummaryCard title="Today's Hours" value={formatHours(todaysHours)} subtitle="Logged today" icon={Clock} iconClassName="bg-accent/10 text-accent" />
-        <SummaryCard title="Period Hours" value={formatHours(periodHours)} subtitle={formatPeriodLabel(billingPeriod.start, billingPeriod.end)} icon={Calendar} iconClassName="bg-primary/10 text-primary" />
+        <SummaryCard title="Period Hours" value={formatHours(periodHours)} subtitle={formatPeriodLabel(billingPeriod.startDate, billingPeriod.endDate)} icon={Calendar} iconClassName="bg-primary/10 text-primary" />
         <SummaryCard title="Period Earnings" value={formatCurrency(periodBilling.totalAmount)} subtitle={periodBilling.missingRateEntries.length ? `${periodBilling.missingRateEntries.length} entries missing rates` : "Based on rated client work"} icon={DollarSign} iconClassName="bg-success/10 text-success" />
       </div>
 

@@ -1,6 +1,7 @@
 import { getBillingSummary } from "@/lib/billing";
 import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculations";
-import { formatClockTime, getBillingPeriod } from "@/lib/date";
+import { formatClockTime } from "@/lib/date";
+import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import type { AppState } from "@/store/appStore";
 
 function resolveScopedViewerClientId(state: AppState) {
@@ -73,19 +74,36 @@ interface DashboardMetricsInput {
   projects: AppState["projects"];
   timeEntries: AppState["timeEntries"];
   activeSession: AppState["activeSession"];
-  settings: Pick<AppState["settings"], "invoiceFrequency" | "periodWeekStartsOn">;
+  expenses: AppState["expenses"];
+  settings: Pick<AppState["settings"], "invoiceFrequency" | "payPeriodFrequency" | "payPeriodStartDate" | "periodWeekStartsOn">;
 }
 
 export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDate = new Date()) {
-  const billingFrequency = input.settings.invoiceFrequency ?? input.currentUser.invoiceFrequency;
-  const billingPeriod = getBillingPeriod(referenceDate, billingFrequency, input.settings.periodWeekStartsOn);
+  const billingPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: input.settings.payPeriodFrequency ?? input.settings.invoiceFrequency ?? input.currentUser.invoiceFrequency,
+      payPeriodStartDate: input.settings.payPeriodStartDate,
+      periodWeekStartsOn: input.settings.periodWeekStartsOn,
+    },
+    referenceDate,
+  );
   const billingSummary = getBillingSummary(input.timeEntries, input.clients, input.projects, {
-    end: billingPeriod.end,
+    end: billingPeriod.endDate,
     invoices: input.invoices,
-    start: billingPeriod.start,
+    start: billingPeriod.startDate,
+  });
+  const payPeriodSummary = summarizePayPeriod({
+    entries: billingSummary.lines.map((line) => ({
+      amount: line.amount,
+      date: line.entry.date,
+      durationHours: line.entry.durationHours,
+    })),
+    expenses: input.expenses,
+    invoices: input.invoices,
+    period: billingPeriod,
   });
   const todayHours = getTodaysHours(input.timeEntries, referenceDate);
-  const periodHours = getPeriodHours(input.timeEntries, billingPeriod.start, billingPeriod.end);
+  const periodHours = getPeriodHours(input.timeEntries, billingPeriod.startDate, billingPeriod.endDate);
   const status = getActiveStatus(input.activeSession);
   const statusSince =
     input.activeSession.isPaused && input.activeSession.pausedAt
@@ -104,9 +122,13 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     statusSince,
     todayHours,
     periodHours,
-    periodEarnings: billingSummary.totalAmount,
-    periodStart: billingPeriod.start,
-    periodEnd: billingPeriod.end,
+    periodEarnings: payPeriodSummary.timeEarnings,
+    periodExpenses: payPeriodSummary.expenseTotal,
+    periodInvoiceTotal: payPeriodSummary.invoiceTotal,
+    periodNet: payPeriodSummary.netAmount,
+    periodStart: billingPeriod.startDate,
+    periodEnd: billingPeriod.endDate,
+    payPeriodConfigured: Boolean(input.settings.payPeriodStartDate),
     recentEntries,
     unratedEntryCount: billingSummary.missingRateEntries.length,
   };

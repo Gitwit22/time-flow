@@ -11,7 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getBillingPeriod } from "@/lib/date";
+import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
 
@@ -36,11 +36,16 @@ export default function TimeTracker() {
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
 
   const isReadonly = currentUser.role === "client_viewer";
-  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
-
   const filteredEntries = useMemo(() => {
     const now = new Date();
-    const period = getBillingPeriod(now, billingFrequency, settings.periodWeekStartsOn);
+    const period = getCurrentPayPeriod(
+      {
+        payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+        payPeriodStartDate: settings.payPeriodStartDate,
+        periodWeekStartsOn: settings.periodWeekStartsOn,
+      },
+      now,
+    );
     const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
     const weekEnd = endOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
@@ -65,12 +70,12 @@ export default function TimeTracker() {
               ? isWithinInterval(entryDate, { start: todayStart, end: now })
               : dateFilter === "week"
                 ? isWithinInterval(entryDate, { start: weekStart, end: weekEnd })
-                : isWithinInterval(entryDate, { start: period.start, end: period.end });
+                : isWithinInterval(entryDate, { start: parseISO(period.startDate), end: parseISO(period.endDate) });
 
           return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
       })
       .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`));
-        }, [billingFrequency, clientFilter, clients, dateFilter, projectFilter, projects, searchQuery, settings.periodWeekStartsOn, statusFilter, timeEntries]);
+        }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, statusFilter, timeEntries]);
 
   const handleAddManual = () => {
     if (isReadonly) {

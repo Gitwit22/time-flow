@@ -22,6 +22,7 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import TimeTracker from "./pages/admin/TimeTracker";
 import Clients from "./pages/admin/Clients";
 import ProjectsPage from "./pages/admin/Projects";
+import ExpensesPage from "./pages/admin/Expenses";
 import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
@@ -141,6 +142,14 @@ const App = () => (
           >
             <Route index element={<AdminDashboard />} />
             <Route path="time" element={<TimeTracker />} />
+            <Route
+              path="expenses"
+              element={
+                <RequireContractor>
+                  <ExpensesPage />
+                </RequireContractor>
+              }
+            />
             <Route
               path="clients"
               element={

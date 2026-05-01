@@ -27,6 +27,7 @@ import type {
   AttachedDocument,
   Client,
   EmailDraft,
+  Expense,
   Invoice,
   InvoiceDraftPreview,
   Project,
@@ -43,12 +44,14 @@ type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & {
 type ClientDraft = Omit<Client, "id">;
 type ProjectDraft = Omit<Project, "id">;
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
+type ExpenseDraft = Omit<Expense, "id">;
 
 const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
+const EXPENSE_STORAGE_KEY = "timeflow-expenses-v1";
 
 type PersistedPayPeriodSettings = Pick<
   AppSettings,
-  "invoiceFrequency" | "periodWeekStartsOn" | "periodTargetHours" | "periodTargetEarnings"
+  "invoiceFrequency" | "payPeriodFrequency" | "payPeriodStartDate" | "periodWeekStartsOn" | "periodTargetHours" | "periodTargetEarnings"
 >;
 
 function readPersistedPayPeriodSettings(): Partial<PersistedPayPeriodSettings> {
@@ -74,6 +77,39 @@ function writePersistedPayPeriodSettings(settings: PersistedPayPeriodSettings) {
   }
 
   window.localStorage.setItem(PAY_PERIOD_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function readPersistedExpenses(): Expense[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(EXPENSE_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    return JSON.parse(raw) as Expense[];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedExpenses(expenses: Expense[]) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses));
+}
+
+function clearPersistedExpenses() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(EXPENSE_STORAGE_KEY);
 }
 
 function resolveViewerClientId(clients: Client[], settings: AppSettings, preferredClientId?: string) {
@@ -111,6 +147,7 @@ export interface AppState {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
+  expenses: Expense[];
   activeSession: WorkSession;
   invoices: Invoice[];
   emailDrafts: Record<string, EmailDraft>;
@@ -139,6 +176,9 @@ export interface AppState {
   addTimeEntry: (entry: TimeEntryDraft) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
+  addExpense: (expense: ExpenseDraft) => void;
+  updateExpense: (id: string, updates: Partial<Expense>) => void;
+  deleteExpense: (id: string) => void;
   markTimeEntryInvoiced: (id: string) => void;
   unmarkTimeEntryInvoiced: (id: string) => void;
   commitInvoiceDrafts: (previews: InvoiceDraftPreview[]) => Invoice[];
@@ -166,6 +206,8 @@ const defaultSettings: AppSettings = {
   invoiceNotes: "",
   paymentInstructions: "",
   invoiceFrequency: "monthly",
+  payPeriodFrequency: "monthly",
+  payPeriodStartDate: undefined,
   companyViewerAccess: false,
   emailTemplate: "",
   periodWeekStartsOn: 1,
@@ -183,6 +225,7 @@ const emptyState = {
   clients: [] as Client[],
   projects: [] as Project[],
   timeEntries: [] as TimeEntry[],
+  expenses: [] as Expense[],
   activeSession: { isActive: false } as WorkSession,
   invoices: [] as Invoice[],
   emailDrafts: {} as Record<string, EmailDraft>,
@@ -203,10 +246,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
       const normalizedInvoices = invoices.map((inv) => normalizeInvoiceRecord(inv, normalizedEntries));
       const restoredSession = readPersistedActiveSession();
+      const persistedExpenses = readPersistedExpenses();
       set({
         clients: normalizedClients,
         projects: normalizedProjects,
         timeEntries: normalizedEntries,
+        expenses: persistedExpenses,
         invoices: normalizedInvoices,
         settings: mergedSettings,
         ...(restoredSession ? { activeSession: restoredSession } : {}),
@@ -249,12 +294,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const nextSettings = { ...prev, ...updates };
     writePersistedPayPeriodSettings({
       invoiceFrequency: nextSettings.invoiceFrequency,
+      payPeriodFrequency: nextSettings.payPeriodFrequency,
+      payPeriodStartDate: nextSettings.payPeriodStartDate,
       periodWeekStartsOn: nextSettings.periodWeekStartsOn,
       periodTargetHours: nextSettings.periodTargetHours,
       periodTargetEarnings: nextSettings.periodTargetEarnings,
     });
     set({ settings: nextSettings });
-    void apiSaveSettings(updates)
+    const { payPeriodFrequency: _payPeriodFrequency, payPeriodStartDate: _payPeriodStartDate, ...serverUpdates } = updates;
+    if (Object.keys(serverUpdates).length === 0) {
+      return;
+    }
+
+    void apiSaveSettings(serverUpdates)
       .then((savedSettings) => {
         const mergedSettings = { ...savedSettings, ...readPersistedPayPeriodSettings() };
         set({ settings: mergedSettings });
@@ -443,7 +495,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       id,
       clientId: state.activeSession.clientId,
       projectId: state.activeSession.projectId,
-      date: startedAt.toISOString().slice(0, 10),
+      date: startedAt.toLocaleDateString("en-CA"),
       startTime: startedAt.toTimeString().slice(0, 5),
       endTime: endedAt.toTimeString().slice(0, 5),
       durationHours,
@@ -523,6 +575,36 @@ export const useAppStore = create<AppState>()((set, get) => ({
     void apiDeleteTimeEntry(id).catch((err) => {
       set({ timeEntries: prev });
       toast.error(err instanceof Error ? err.message : "Failed to delete time entry");
+    });
+  },
+
+  addExpense: (expense) => {
+    if (get().currentUser.role !== "contractor") return;
+
+    set((state) => {
+      const expenses = [{ id: crypto.randomUUID(), ...expense }, ...state.expenses];
+      writePersistedExpenses(expenses);
+      return { expenses };
+    });
+  },
+
+  updateExpense: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+
+    set((state) => {
+      const expenses = state.expenses.map((expense) => (expense.id === id ? { ...expense, ...updates } : expense));
+      writePersistedExpenses(expenses);
+      return { expenses };
+    });
+  },
+
+  deleteExpense: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+
+    set((state) => {
+      const expenses = state.expenses.filter((expense) => expense.id !== id);
+      writePersistedExpenses(expenses);
+      return { expenses };
     });
   },
 
@@ -675,6 +757,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   resetApp: () => {
     clearPersistedActiveSession();
+    clearPersistedExpenses();
     set({
       ...emptyState,
       authStatus: "unauthenticated",

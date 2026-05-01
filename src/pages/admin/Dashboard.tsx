@@ -23,6 +23,7 @@ export default function AdminDashboard() {
   const projects = useAppStore((state) => state.projects);
   const invoices = useAppStore((state) => state.invoices);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
@@ -36,10 +37,16 @@ export default function AdminDashboard() {
         invoices,
         projects,
         timeEntries,
+        expenses,
         activeSession,
-        settings: { invoiceFrequency: settings.invoiceFrequency, periodWeekStartsOn: settings.periodWeekStartsOn },
+        settings: {
+          invoiceFrequency: settings.invoiceFrequency,
+          payPeriodFrequency: settings.payPeriodFrequency,
+          payPeriodStartDate: settings.payPeriodStartDate,
+          periodWeekStartsOn: settings.periodWeekStartsOn,
+        },
       }),
-    [activeSession, clients, currentUser.invoiceFrequency, invoices, projects, settings.invoiceFrequency, settings.periodWeekStartsOn, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, expenses, invoices, projects, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
@@ -111,6 +118,44 @@ export default function AdminDashboard() {
           iconClassName="bg-success/10 text-success"
         />
       </div>
+
+      {!metrics.payPeriodConfigured ? (
+        <Card className="border-amber-200 bg-amber-50">
+          <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-900">Pay period start date not set</p>
+              <p className="text-sm text-amber-800">TimeFlow is using a default anchor for now. Set your pay period start date once to keep period summaries and invoice presets consistent.</p>
+            </div>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/platform/settings">Open Settings</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">Current Pay Period</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Range</p>
+            <p className="mt-1 text-sm font-medium">{formatPeriodLabel(metrics.periodStart, metrics.periodEnd)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Gross Time Earnings</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(metrics.periodEarnings)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Expenses</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(metrics.periodExpenses)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Net Amount</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(metrics.periodNet)}</p>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <ActiveSessionCard />

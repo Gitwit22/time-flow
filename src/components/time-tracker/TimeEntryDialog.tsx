@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDateForInput, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { getProjectBudgetSnapshot, getProjectWarningMessage } from "@/lib/projects";
 import type { Client, Project, TimeEntry } from "@/types";
 
@@ -23,7 +24,7 @@ function emptyState(clientId = "") {
   return {
     clientId,
     projectId: undefined,
-    date: new Date().toISOString().slice(0, 10),
+    date: toDateOnlyString(new Date()),
     startTime: "09:00",
     endTime: "17:00",
     durationHours: 8,
@@ -97,8 +98,8 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">Date</Label>
-            <Input type="date" value={form.date} onChange={(event) => setForm((current) => ({ ...current, date: event.target.value }))} />
+            <Label className="text-xs">Entry Date</Label>
+            <Input type="date" value={formatDateForInput(form.date)} onChange={(event) => setForm((current) => ({ ...current, date: parseDateInput(event.target.value) }))} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">{linkMode === "project" ? "Project" : "Client"}</Label>
@@ -141,11 +142,11 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
             </div>
           ) : null}
           <div className="space-y-1.5">
-            <Label className="text-xs">Start time</Label>
+            <Label className="text-xs">Clock In</Label>
             <Input type="time" value={form.startTime} onChange={(event) => setForm((current) => ({ ...current, startTime: event.target.value }))} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-xs">End time</Label>
+            <Label className="text-xs">Clock Out</Label>
             <Input type="time" value={form.endTime} onChange={(event) => setForm((current) => ({ ...current, endTime: event.target.value }))} />
           </div>
           <div className="space-y-1.5 sm:col-span-2">

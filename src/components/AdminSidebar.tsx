@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight, Receipt } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -17,6 +17,7 @@ import { useAppStore } from "@/store/appStore";
 const mainItems = [
   { title: "Dashboard", url: "/platform", icon: LayoutDashboard },
   { title: "Time Tracker", url: "/platform/time", icon: Clock },
+  { title: "Expenses", url: "/platform/expenses", icon: Receipt },
   { title: "Clients", url: "/platform/clients", icon: Users },
   { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
   { title: "Invoices", url: "/platform/invoices", icon: FileText },

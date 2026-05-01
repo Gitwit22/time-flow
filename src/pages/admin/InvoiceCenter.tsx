@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Link } from "react-router-dom";
 import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 
@@ -132,8 +132,8 @@ export default function InvoiceCenter() {
                       ) : (
                         <input
                           type="date"
-                          value={inv.dueDate}
-                          onChange={(event) => updateInvoice(inv.id, { dueDate: event.target.value })}
+                          value={formatDateForInput(inv.dueDate)}
+                          onChange={(event) => updateInvoice(inv.id, { dueDate: parseDateInput(event.target.value) })}
                           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                         />
                       )}
@@ -179,7 +179,7 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: new Date().toISOString(), status: "issued" });
+                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: toDateOnlyString(new Date()), status: "issued" });
                               toast({ title: "Invoice issued", description: `${inv.id} is now ready to share with the client.` });
                             }}
                           >
@@ -192,7 +192,7 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-success"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: new Date().toISOString(), status: "paid" });
+                              updateInvoice(inv.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
                               toast({ title: "Invoice paid", description: `${inv.id} marked as paid.` });
                             }}
                           >

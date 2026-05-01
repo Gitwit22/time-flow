@@ -20,6 +20,14 @@ export function toDate(value: string | Date) {
   return value instanceof Date ? value : parseISO(value);
 }
 
+export function toDateOnlyString(value: string | Date) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  return format(toDate(value), "yyyy-MM-dd");
+}
+
 export function toIsoDate(value: string | Date) {
   return format(toDate(value), "yyyy-MM-dd");
 }
@@ -28,8 +36,24 @@ export function toTimeValue(value: string | Date) {
   return format(toDate(value), "HH:mm");
 }
 
+export function formatDateForInput(value?: string | Date | null) {
+  if (!value) {
+    return "";
+  }
+
+  return toDateOnlyString(value);
+}
+
+export function parseDateInput(value: string) {
+  return value ? toDateOnlyString(value) : "";
+}
+
 export function formatLongDate(value: string | Date) {
   return format(toDate(value), "MMM d, yyyy");
+}
+
+export function formatDateDisplay(value: string | Date) {
+  return formatLongDate(value);
 }
 
 export function formatShortDate(value: string | Date) {
@@ -38,6 +62,10 @@ export function formatShortDate(value: string | Date) {
 
 export function formatClockTime(value: string | Date) {
   return format(toDate(value), "h:mm a");
+}
+
+export function formatDateTimeDisplay(value: string | Date) {
+  return format(toDate(value), "MMM d, yyyy h:mm a");
 }
 
 export function formatPeriodLabel(start: string | Date, end: string | Date) {

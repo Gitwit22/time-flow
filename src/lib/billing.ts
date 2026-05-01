@@ -1,6 +1,7 @@
 import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths } from "date-fns";
 
-import { getBillingPeriod, getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
+import { getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
+import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { resolveTimeEntryBillingContext, uniqueProjectIds } from "@/lib/projects";
 import type { AppSettings, Client, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
 
@@ -131,15 +132,21 @@ export function buildInvoiceDraftSummary(
   referenceDate = new Date(),
   clientId?: string,
 ): InvoiceDraftSummary {
-  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
-  const billingPeriod = getBillingPeriod(referenceDate, billingFrequency, settings.periodWeekStartsOn);
-  const dueDate = getInvoiceDueDate(billingPeriod.end, currentUser.invoiceDueDays);
+  const payPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+      payPeriodStartDate: settings.payPeriodStartDate,
+      periodWeekStartsOn: settings.periodWeekStartsOn,
+    },
+    referenceDate,
+  );
+  const dueDate = getInvoiceDueDate(payPeriod.endDate, currentUser.invoiceDueDays);
   const summary = getBillingSummary(entries, clients, projects, {
     clientId,
-    end: billingPeriod.end,
+    end: payPeriod.endDate,
     excludeInvoicedEntries: true,
     invoices,
-    start: billingPeriod.start,
+    start: payPeriod.startDate,
   });
   const groupedLines = new Map<string, RatedTimeEntry[]>();
 
@@ -174,11 +181,11 @@ export function buildInvoiceDraftSummary(
         hasMixedRates: new Set(grouped.map((line) => line.hourlyRate)).size > 1,
         hourlyRate: grouped[0]?.hourlyRate ?? 0,
         lineItems,
-        periodEnd: toIsoDate(billingPeriod.end),
-        periodStart: toIsoDate(billingPeriod.start),
+        periodEnd: payPeriod.endDate,
+        periodStart: payPeriod.startDate,
         projectIds: uniqueProjectIds(grouped.map((line) => line.entry)),
-        rangeEnd: toIsoDate(billingPeriod.end),
-        rangeStart: toIsoDate(billingPeriod.start),
+        rangeEnd: payPeriod.endDate,
+        rangeStart: payPeriod.startDate,
         subtotal,
         taxAmount: 0,
         taxRate: 0,

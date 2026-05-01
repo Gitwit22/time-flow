@@ -7,11 +7,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { buildSingleClientInvoicePreview } from "@/lib/billing";
-import { formatCurrency, formatHours, formatLongDate, toIsoDate } from "@/lib/date";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, parseDateInput, toIsoDate } from "@/lib/date";
+import { getCurrentPayPeriod, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
 import type { InvoiceBillingMode, InvoiceDraftPreview } from "@/types";
@@ -21,19 +21,21 @@ interface GenerateInvoiceDialogProps {
 }
 
 type Step = "configure" | "review";
+type RangeMode = "current-period" | "previous-period" | "custom-range" | "outstanding";
 
 export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const { toast } = useToast();
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const commitSingleInvoice = useAppStore((state) => state.commitSingleInvoice);
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("configure");
   const [clientId, setClientId] = useState<string>("");
-  const [billingMode, setBillingMode] = useState<InvoiceBillingMode>("outstanding");
+  const [rangeMode, setRangeMode] = useState<RangeMode>("current-period");
   const [rangeStart, setRangeStart] = useState<string>("");
   const [rangeEnd, setRangeEnd] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>(() => {
@@ -44,21 +46,39 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
 
   const selectedClient = clients.find((c) => c.id === clientId);
+  const payPeriodSettings = {
+    payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+    payPeriodStartDate: settings.payPeriodStartDate,
+    periodWeekStartsOn: settings.periodWeekStartsOn,
+  };
+  const currentPayPeriod = getCurrentPayPeriod(payPeriodSettings, new Date());
+  const previousPayPeriod = getPreviousPayPeriod(currentPayPeriod, payPeriodSettings);
+  const effectiveBillingMode: InvoiceBillingMode = rangeMode === "outstanding" ? "outstanding" : "range";
+  const effectiveRangeStart = rangeMode === "current-period"
+    ? currentPayPeriod.startDate
+    : rangeMode === "previous-period"
+      ? previousPayPeriod.startDate
+      : rangeStart;
+  const effectiveRangeEnd = rangeMode === "current-period"
+    ? currentPayPeriod.endDate
+    : rangeMode === "previous-period"
+      ? previousPayPeriod.endDate
+      : rangeEnd;
 
   const basePreviewResult = useMemo(() => {
     if (!clientId) return null;
-    if (billingMode === "range" && (!rangeStart || !rangeEnd)) return null;
+    if (effectiveBillingMode === "range" && (!effectiveRangeStart || !effectiveRangeEnd)) return null;
 
     return buildSingleClientInvoicePreview(
       timeEntries,
       clients,
       projects,
       clientId,
-      billingMode,
+      effectiveBillingMode,
       dueDate,
-      billingMode === "range" ? { rangeStart, rangeEnd } : {},
+      effectiveBillingMode === "range" ? { rangeStart: effectiveRangeStart, rangeEnd: effectiveRangeEnd } : {},
     );
-  }, [clientId, billingMode, rangeStart, rangeEnd, dueDate, timeEntries, clients, projects]);
+  }, [clientId, clients, dueDate, effectiveBillingMode, effectiveRangeEnd, effectiveRangeStart, projects, timeEntries]);
 
   const finalPreview = useMemo((): InvoiceDraftPreview | null => {
     const base = basePreviewResult?.preview;
@@ -79,14 +99,14 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     return { ...base, lineItems: keptItems, entryIds, timeEntryIds: entryIds, totalHours, subtotal, taxAmount, totalAmount };
   }, [basePreviewResult, deselectedIds]);
 
-  const canPreview = !!clientId && (billingMode === "outstanding" || (!!rangeStart && !!rangeEnd));
+  const canPreview = !!clientId && (effectiveBillingMode === "outstanding" || (!!effectiveRangeStart && !!effectiveRangeEnd));
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) {
       setStep("configure");
       setClientId("");
-      setBillingMode("outstanding");
+      setRangeMode("current-period");
       setRangeStart("");
       setRangeEnd("");
       setDeselectedIds(new Set());
@@ -157,45 +177,48 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
               </Select>
             </div>
 
-            {/* Billing mode */}
+            {!settings.payPeriodStartDate ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Pay period start date is not set yet. Current and previous pay period presets are using a default anchor until you save your pay period settings.
+              </div>
+            ) : null}
+
+            {/* Invoice source */}
             <div className="space-y-2">
-              <Label>Billing mode</Label>
-              <RadioGroup
-                value={billingMode}
-                onValueChange={(v) => setBillingMode(v as InvoiceBillingMode)}
-                className="space-y-2"
-              >
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="outstanding" id="mode-outstanding" className="mt-0.5" />
-                  <Label htmlFor="mode-outstanding" className="cursor-pointer space-y-0.5 font-normal">
-                    <span className="font-medium">Generate from Outstanding Time</span>
-                    <p className="text-xs text-muted-foreground">
-                      Include all uninvoiced billable entries for this client regardless of date.
-                    </p>
-                  </Label>
-                </div>
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="range" id="mode-range" className="mt-0.5" />
-                  <Label htmlFor="mode-range" className="cursor-pointer space-y-0.5 font-normal">
-                    <span className="font-medium">Generate by Date Range</span>
-                    <p className="text-xs text-muted-foreground">
-                      Include uninvoiced billable entries within a specific billing period.
-                    </p>
-                  </Label>
-                </div>
-              </RadioGroup>
+              <Label>Generate Invoice From</Label>
+              <Select value={rangeMode} onValueChange={(value) => setRangeMode(value as RangeMode)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current-period">Current Pay Period</SelectItem>
+                  <SelectItem value="previous-period">Previous Pay Period</SelectItem>
+                  <SelectItem value="custom-range">Custom Range</SelectItem>
+                  <SelectItem value="outstanding">All Unbilled Completed Entries</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Date range inputs */}
-            {billingMode === "range" && (
+            {rangeMode !== "outstanding" ? (
+              <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {rangeMode === "current-period"
+                  ? `Current pay period: ${formatLongDate(currentPayPeriod.startDate)} → ${formatLongDate(currentPayPeriod.endDate)}`
+                  : rangeMode === "previous-period"
+                    ? `Previous pay period: ${formatLongDate(previousPayPeriod.startDate)} → ${formatLongDate(previousPayPeriod.endDate)}`
+                    : "Choose a custom invoice period below."}
+              </div>
+            ) : null}
+
+            {rangeMode === "custom-range" && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Start date</Label>
-                  <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
+                  <Label>Invoice Period Start</Label>
+                  <Input type="date" value={formatDateForInput(rangeStart)} onChange={(e) => setRangeStart(parseDateInput(e.target.value))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>End date</Label>
-                  <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+                  <Label>Invoice Period End</Label>
+                  <Input type="date" value={formatDateForInput(rangeEnd)} onChange={(e) => setRangeEnd(parseDateInput(e.target.value))} />
                 </div>
               </div>
             )}
@@ -203,7 +226,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
             {/* No entries warning */}
             {canPreview && basePreviewResult && !basePreviewResult.preview && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                No uninvoiced billable entries found{billingMode === "range" ? " in the selected date range" : ""} for{" "}
+                No uninvoiced billable entries found{effectiveBillingMode === "range" ? " in the selected date range" : ""} for{" "}
                 {selectedClient?.name ?? "this client"}.
               </div>
             )}
@@ -222,8 +245,8 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                   <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                     <span className="min-w-0">
                       {selectedClient?.name} —{" "}
-                      {billingMode === "range"
-                        ? `${formatLongDate(rangeStart)} → ${formatLongDate(rangeEnd)}`
+                      {effectiveBillingMode === "range"
+                        ? `${formatLongDate(effectiveRangeStart)} → ${formatLongDate(effectiveRangeEnd)}`
                         : "All outstanding"}
                     </span>
                     <span className="status-badge-accent self-start sm:self-auto">
@@ -264,7 +287,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
                     <div className="grid gap-1.5 sm:max-w-xs">
                       <Label>Due date</Label>
-                      <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                      <Input type="date" value={formatDateForInput(dueDate)} onChange={(e) => setDueDate(parseDateInput(e.target.value))} />
                     </div>
 
                     <div className="space-y-2 rounded-lg border p-4">

@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { updateActiveUserProfile } from "@/lib/auth";
+import { formatDateForInput, parseDateInput } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
 
 const MAX_BRANDING_FILE_BYTES = 750 * 1024;
@@ -38,8 +39,8 @@ export default function SettingsPage() {
   const [emailTemplate, setEmailTemplate] = useState("");
   const [invoiceLogoDataUrl, setInvoiceLogoDataUrl] = useState<string | undefined>(undefined);
   const [invoiceBannerDataUrl, setInvoiceBannerDataUrl] = useState<string | undefined>(undefined);
-  const [periodFrequency, setPeriodFrequency] = useState<typeof settings.invoiceFrequency>("monthly");
-  const [periodWeekStartsOn, setPeriodWeekStartsOn] = useState<typeof settings.periodWeekStartsOn>(1);
+  const [payPeriodFrequency, setPayPeriodFrequency] = useState<typeof settings.payPeriodFrequency>("monthly");
+  const [payPeriodStartDate, setPayPeriodStartDate] = useState("");
   const [periodTargetHours, setPeriodTargetHours] = useState(0);
   const [periodTargetEarnings, setPeriodTargetEarnings] = useState(0);
 
@@ -52,8 +53,8 @@ export default function SettingsPage() {
     setEmailTemplate(settings.emailTemplate);
     setInvoiceLogoDataUrl(settings.invoiceLogoDataUrl);
     setInvoiceBannerDataUrl(settings.invoiceBannerDataUrl);
-    setPeriodFrequency(settings.invoiceFrequency);
-    setPeriodWeekStartsOn(settings.periodWeekStartsOn);
+    setPayPeriodFrequency(settings.payPeriodFrequency);
+    setPayPeriodStartDate(formatDateForInput(settings.payPeriodStartDate));
     setPeriodTargetHours(settings.periodTargetHours);
     setPeriodTargetEarnings(settings.periodTargetEarnings);
   }, [
@@ -61,12 +62,12 @@ export default function SettingsPage() {
     currentUser.name,
     settings.businessName,
     settings.emailTemplate,
-    settings.invoiceFrequency,
     settings.invoiceBannerDataUrl,
     settings.invoiceLogoDataUrl,
     settings.invoiceNotes,
     settings.paymentInstructions,
-    settings.periodWeekStartsOn,
+    settings.payPeriodFrequency,
+    settings.payPeriodStartDate,
     settings.periodTargetHours,
     settings.periodTargetEarnings,
   ]);
@@ -230,10 +231,10 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">Period Type</Label>
+              <Label className="text-xs">Pay Period Frequency</Label>
               <Select
-                value={periodFrequency}
-                onValueChange={(value) => setPeriodFrequency(value as typeof settings.invoiceFrequency)}
+                value={payPeriodFrequency}
+                onValueChange={(value) => setPayPeriodFrequency(value as typeof settings.payPeriodFrequency)}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -246,24 +247,8 @@ export default function SettingsPage() {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Period Starts On</Label>
-              <Select
-                value={String(periodWeekStartsOn)}
-                onValueChange={(value) => setPeriodWeekStartsOn(Number(value) as 0 | 1 | 2 | 3 | 4 | 5 | 6)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="0">Sunday</SelectItem>
-                  <SelectItem value="1">Monday</SelectItem>
-                  <SelectItem value="2">Tuesday</SelectItem>
-                  <SelectItem value="3">Wednesday</SelectItem>
-                  <SelectItem value="4">Thursday</SelectItem>
-                  <SelectItem value="5">Friday</SelectItem>
-                  <SelectItem value="6">Saturday</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Pay Period Start Date</Label>
+              <Input type="date" value={payPeriodStartDate} onChange={(event) => setPayPeriodStartDate(parseDateInput(event.target.value))} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -290,19 +275,18 @@ export default function SettingsPage() {
               />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">
-            The period start day applies to weekly and bi-weekly periods. Monthly periods always start on the 1st.
-          </p>
+          <p className="text-xs text-muted-foreground">Choose the first day your pay cycle starts. TimeFlow will calculate future pay periods automatically from this date.</p>
           <Button
             size="sm"
             onClick={() => {
               updateSettings({
-                invoiceFrequency: periodFrequency,
-                periodWeekStartsOn,
+                invoiceFrequency: payPeriodFrequency,
+                payPeriodFrequency,
+                payPeriodStartDate: payPeriodStartDate || undefined,
                 periodTargetHours,
                 periodTargetEarnings,
               });
-              updateCurrentUser({ invoiceFrequency: periodFrequency });
+              updateCurrentUser({ invoiceFrequency: payPeriodFrequency });
               toast({ title: "Pay period saved", description: "Period settings were updated." });
             }}
           >

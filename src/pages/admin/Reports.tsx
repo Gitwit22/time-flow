@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { getBillingSummary, getMonthlyEarnings } from "@/lib/billing";
 import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
-import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
+import { formatCurrency, formatHours } from "@/lib/date";
+import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
 
 const pieColors = {
@@ -22,10 +23,23 @@ export default function Reports() {
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
-  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
-  const billingPeriod = getBillingPeriod(new Date(), billingFrequency, settings.periodWeekStartsOn);
-  const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
+  const expenses = useAppStore((state) => state.expenses);
+  const billingPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+      payPeriodStartDate: settings.payPeriodStartDate,
+      periodWeekStartsOn: settings.periodWeekStartsOn,
+    },
+    new Date(),
+  );
+  const periodHours = getPeriodHours(timeEntries, billingPeriod.startDate, billingPeriod.endDate);
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.startDate, end: billingPeriod.endDate });
+  const payPeriodSummary = summarizePayPeriod({
+    entries: periodBilling.lines.map((line) => ({ amount: line.amount, date: line.entry.date, durationHours: line.entry.durationHours })),
+    expenses,
+    invoices,
+    period: billingPeriod,
+  });
   const weeklyHours = getWeeklyHours(timeEntries);
   const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
   const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects);
@@ -48,6 +62,30 @@ export default function Reports() {
         <h1 className="page-title">Reports</h1>
         <p className="page-subtitle">Your earnings, hours, and billing overview.</p>
       </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">Current Pay Period Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Gross Time</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.timeEarnings)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Expenses</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.expenseTotal)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Net</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.netAmount)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Invoices in Period</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.invoiceTotal)}</p>
+          </div>
+        </CardContent>
+      </Card>
 
       {isReadonly ? <div className="readonly-banner">Viewer mode: report data is visible but cannot be modified.</div> : null}
 

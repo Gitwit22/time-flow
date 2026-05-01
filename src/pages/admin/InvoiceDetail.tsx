@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
 import { useAppStore } from "@/store/appStore";
@@ -108,7 +108,7 @@ export default function InvoiceDetail() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  updateInvoice(invoice.id, { issuedAt: new Date().toISOString(), paidAt: undefined, status: "issued" });
+                  updateInvoice(invoice.id, { issuedAt: toDateOnlyString(new Date()), paidAt: undefined, status: "issued" });
                   toast({ title: "Invoice issued", description: `${invoice.id} is now ready to share.` });
                 }}
               >
@@ -121,7 +121,7 @@ export default function InvoiceDetail() {
               variant="outline"
               className="text-success border-success/30 hover:bg-success/10"
               onClick={() => {
-                  updateInvoice(invoice.id, { paidAt: new Date().toISOString(), status: "paid" });
+                  updateInvoice(invoice.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
                 toast({ title: "Invoice paid", description: `${invoice.id} marked as paid.` });
               }}
             >
@@ -213,7 +213,7 @@ export default function InvoiceDetail() {
                 <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
               ) : (
                 <div className="mt-1 max-w-[180px]">
-                  <Input type="date" value={invoice.dueDate} onChange={(event) => updateInvoice(invoice.id, { dueDate: event.target.value })} />
+                  <Input type="date" value={formatDateForInput(invoice.dueDate)} onChange={(event) => updateInvoice(invoice.id, { dueDate: parseDateInput(event.target.value) })} />
                 </div>
               )}
             </div>

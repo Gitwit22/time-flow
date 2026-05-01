@@ -118,16 +118,20 @@ export function toInvoice(r: ApiRecord): Invoice {
 }
 
 export function toSettings(r: ApiRecord): AppSettings {
+  const invoiceFrequency = ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly");
+
   return {
     businessName: (r.businessName as string) || "",
     defaultClientId: (r.defaultClientId as string) ?? undefined,
-    invoiceFrequency: ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly"),
+    invoiceFrequency,
     invoiceNotes: (r.invoiceNotes as string) || "",
     paymentInstructions: (r.paymentInstructions as string) || "",
     invoiceLogoDataUrl: (r.invoiceLogoDataUrl as string) ?? undefined,
     invoiceBannerDataUrl: (r.invoiceBannerDataUrl as string) ?? undefined,
     companyViewerAccess: r.companyViewerAccess === true,
     emailTemplate: (r.emailTemplate as string) || "",
+    payPeriodFrequency: ((r.payPeriodFrequency as AppSettings["payPeriodFrequency"]) ?? invoiceFrequency),
+    payPeriodStartDate: (r.payPeriodStartDate as string) ?? undefined,
     periodWeekStartsOn: ((r.periodWeekStartsOn as number) ?? 1) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
     periodTargetHours: (r.periodTargetHours as number) ?? 0,
     periodTargetEarnings: (r.periodTargetEarnings as number) ?? 0,

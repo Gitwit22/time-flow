@@ -3,6 +3,7 @@ export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "a
 export type ProjectBillingType = "hourly_uncapped" | "hourly_capped" | "fixed_fee";
 export type ProjectCapHandling = "allow_overage" | "warn_only" | "block_billable";
 export type AttachedDocumentStatus = "active" | "archived";
+export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
 
 export interface UserProfile {
   id: string;
@@ -79,6 +80,19 @@ export interface TimeEntry {
   status: "running" | "completed" | "invoiced";
 }
 
+export interface Expense {
+  id: string;
+  amount: number;
+  category: "travel" | "software" | "meals" | "supplies" | "other";
+  clientId?: string;
+  date: string;
+  description: string;
+  excludedFromPayPeriod?: boolean;
+  includedInPayPeriod?: boolean;
+  notes: string;
+  projectId?: string;
+}
+
 export type InvoiceBillingMode = "range" | "outstanding";
 export type InvoiceGrouping = "none" | "day" | "week";
 
@@ -141,6 +155,8 @@ export interface AppSettings {
   invoiceBannerDataUrl?: string;
   companyViewerAccess: boolean;
   emailTemplate: string;
+  payPeriodFrequency: PayPeriodFrequency;
+  payPeriodStartDate?: string;
   /** Day the work week / period starts on. 0 = Sunday, 1 = Monday (default), …, 6 = Saturday */
   periodWeekStartsOn: 0 | 1 | 2 | 3 | 4 | 5 | 6;
   /** Target billable hours for the current period (0 = no target set) */
