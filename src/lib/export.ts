@@ -1,11 +1,12 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { resolveTimeEntryBillingContext } from "@/lib/projects";
-import type { AppSettings, Client, Invoice, TimeEntry, UserProfile } from "@/types";
+import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
 import type { Project } from "@/types";
 
 interface InvoiceExportInput {
   invoice: Invoice;
   entries: TimeEntry[];
+  expenses: Expense[];
   client?: Client;
   currentUser: UserProfile;
   projects: Project[];
@@ -34,7 +35,7 @@ function formatMultilineHtml(value: string) {
   return escapeHtml(value).replaceAll("\n", "<br />");
 }
 
-function buildInvoiceExportHtml({ invoice, entries, client, currentUser, projects, settings }: InvoiceExportInput) {
+function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUser, projects, settings }: InvoiceExportInput) {
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
@@ -52,23 +53,47 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
   const logoMarkup = settings.invoiceLogoDataUrl
     ? `<img class="logo" src="${escapeHtml(settings.invoiceLogoDataUrl)}" alt="${escapeHtml(businessName)} logo" />`
     : "";
-  const lineItems = entries
-    .map(
-      (entry) => {
-        const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
-        const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
+  const fallbackLineItems = entries.map((entry, index) => {
+    const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
+    const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
 
-        return `
+    return {
+      id: `legacy-${entry.id}-${index}`,
+      description: entry.notes || "Tracked work",
+      date: entry.date,
+      hours: entry.durationHours,
+      lineType: "time" as const,
+      rate: hourlyRate,
+      amount: entry.durationHours * hourlyRate,
+      timeEntryIds: [entry.id],
+    };
+  });
+
+  const displayLineItems = invoice.lineItems.length > 0 ? invoice.lineItems : fallbackLineItems;
+  const expenseById = new Map(expenses.map((expense) => [expense.id, expense]));
+
+  const lineItems = displayLineItems
+    .map((lineItem) => {
+      const linkedExpense = lineItem.expenseId ? expenseById.get(lineItem.expenseId) : undefined;
+      const projectName = lineItem.lineType === "expense"
+        ? "Expense"
+        : entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId
+          ? (projects.find((project) => project.id === entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId)?.name ?? "Client-only")
+          : "Client-only";
+
+      const hours = lineItem.lineType === "expense" ? "-" : formatHours(lineItem.hours);
+      const rate = lineItem.lineType === "expense" ? "-" : formatCurrency(lineItem.rate);
+
+      return `
         <tr>
-          <td>${escapeHtml(formatLongDate(entry.date))}</td>
-          <td>${escapeHtml(billingContext.project?.name ?? "Client-only")}</td>
-          <td>${escapeHtml(entry.notes || "Tracked work")}</td>
-          <td class="numeric">${escapeHtml(formatHours(entry.durationHours))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(hourlyRate))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(entry.durationHours * hourlyRate))}</td>
+          <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
+          <td>${escapeHtml(projectName)}</td>
+          <td>${escapeHtml(lineItem.description || (linkedExpense ? `Expense (${linkedExpense.category})` : "Tracked work"))}</td>
+          <td class="numeric">${escapeHtml(hours)}</td>
+          <td class="numeric">${escapeHtml(rate)}</td>
+          <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
         </tr>`;
-      },
-    )
+    })
     .join("");
 
   return `<!doctype html>
@@ -159,7 +184,8 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
     <div class="totals">
       <div class="totals-card">
         <div class="totals-row"><span>Total Hours</span><span>${escapeHtml(formatHours(invoice.totalHours))}</span></div>
-        <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(invoice.totalAmount))}</span></div>
+        <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(invoice.subtotal || invoice.totalAmount))}</span></div>
+        ${invoice.taxAmount > 0 ? `<div class="totals-row"><span>Tax</span><span>${escapeHtml(formatCurrency(invoice.taxAmount))}</span></div>` : ""}
         <div class="totals-row total"><span>Total</span><span>${escapeHtml(formatCurrency(invoice.totalAmount))}</span></div>
       </div>
     </div>

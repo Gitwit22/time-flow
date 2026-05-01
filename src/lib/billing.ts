@@ -3,7 +3,7 @@ import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths
 import { getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { resolveTimeEntryBillingContext, uniqueProjectIds } from "@/lib/projects";
-import type { AppSettings, Client, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
+import type { AppSettings, Client, Expense, ExpenseBillingTarget, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
 
 interface BillingSummaryOptions {
   clientId?: string;
@@ -216,10 +216,22 @@ export interface SingleClientPreviewResult {
   missingRateEntries: TimeEntry[];
 }
 
+function resolveExpenseBillingTarget(expense: Expense): ExpenseBillingTarget {
+  return expense.billTo ?? (expense.projectId ? "project" : "client");
+}
+
+function getInvoicedExpenseIds(invoices: Invoice[]) {
+  return new Set(
+    invoices.flatMap((invoice) => invoice.lineItems.map((lineItem) => lineItem.expenseId).filter((expenseId): expenseId is string => Boolean(expenseId))),
+  );
+}
+
 export function buildSingleClientInvoicePreview(
   allEntries: TimeEntry[],
+  allExpenses: Expense[],
   clients: Client[],
   projects: Project[],
+  invoices: Invoice[],
   clientId: string,
   billingMode: InvoiceBillingMode,
   dueDate: string,
@@ -232,6 +244,7 @@ export function buildSingleClientInvoicePreview(
 ): SingleClientPreviewResult {
   const { rangeStart, rangeEnd, taxRate = 0, grouping = "none" } = options;
   const client = clients.find((c) => c.id === clientId);
+  const invoicedExpenseIds = getInvoicedExpenseIds(invoices);
 
   if (!client) {
     return { preview: null, missingRateEntries: [] };
@@ -271,15 +284,9 @@ export function buildSingleClientInvoicePreview(
     });
   });
 
-  if (lines.length === 0) {
-    return { preview: null, missingRateEntries };
-  }
-
   const entryIds = lines.map((l) => l.entry.id);
   const totalHours = Number(lines.reduce((sum, l) => sum + l.entry.durationHours, 0).toFixed(2));
   const subtotal = Number(lines.reduce((sum, l) => sum + l.amount, 0).toFixed(2));
-  const taxAmount = Number((subtotal * taxRate).toFixed(2));
-  const totalAmount = Number((subtotal + taxAmount).toFixed(2));
   const hasMixedRates = new Set(lines.map((l) => l.hourlyRate)).size > 1;
   const hourlyRate = lines[0]?.hourlyRate ?? 0;
 
@@ -288,14 +295,61 @@ export function buildSingleClientInvoicePreview(
     description: l.entry.notes || (l.project ? l.project.name : client.name),
     date: l.entry.date,
     hours: l.entry.durationHours,
+    lineType: "time",
     rate: l.hourlyRate,
     amount: l.amount,
     timeEntryIds: [l.entry.id],
   }));
 
-  const sortedDates = lines.map((l) => l.entry.date).sort();
+  const expenseLineItems: InvoiceLineItem[] = allExpenses
+    .filter((expense) => !invoicedExpenseIds.has(expense.id))
+    .filter((expense) => {
+      const billTo = resolveExpenseBillingTarget(expense);
+      if (billTo === "client") {
+        return expense.clientId === clientId;
+      }
+
+      if (!expense.projectId) {
+        return false;
+      }
+
+      const project = projects.find((item) => item.id === expense.projectId);
+      return project?.clientId === clientId;
+    })
+    .filter((expense) => {
+      if (billingMode !== "range" || !rangeStart || !rangeEnd) {
+        return true;
+      }
+
+      return expense.date >= rangeStart && expense.date <= rangeEnd;
+    })
+    .map((expense, index) => ({
+      id: `exp-${expense.id}-${index}`,
+      description: expense.description || `Expense (${expense.category})`,
+      date: expense.date,
+      expenseId: expense.id,
+      hours: 0,
+      lineType: "expense",
+      rate: 0,
+      amount: Number(expense.amount.toFixed(2)),
+      timeEntryIds: [],
+    }));
+
+  const allLineItems = [...lineItems, ...expenseLineItems].sort((left, right) => left.date.localeCompare(right.date));
+
+  if (allLineItems.length === 0) {
+    return { preview: null, missingRateEntries };
+  }
+
+  const sortedDates = allLineItems.map((item) => item.date).sort();
   const periodStart = sortedDates[0] ?? toIsoDate(new Date());
   const periodEnd = sortedDates[sortedDates.length - 1] ?? periodStart;
+
+  const expenseTotal = Number(expenseLineItems.reduce((sum, lineItem) => sum + lineItem.amount, 0).toFixed(2));
+  const lineSubtotal = Number(subtotal + expenseTotal).toFixed(2);
+  const subtotalWithExpenses = Number(lineSubtotal);
+  const taxAmountWithExpenses = Number((subtotalWithExpenses * taxRate).toFixed(2));
+  const totalAmountWithExpenses = Number((subtotalWithExpenses + taxAmountWithExpenses).toFixed(2));
 
   const preview: InvoiceDraftPreview = {
     billingMode,
@@ -306,17 +360,17 @@ export function buildSingleClientInvoicePreview(
     grouping,
     hasMixedRates,
     hourlyRate,
-    lineItems,
+    lineItems: allLineItems,
     periodEnd,
     periodStart,
     projectIds: uniqueProjectIds(lines.map((l) => l.entry)),
     rangeEnd,
     rangeStart,
-    subtotal,
-    taxAmount,
+    subtotal: subtotalWithExpenses,
+    taxAmount: taxAmountWithExpenses,
     taxRate,
     timeEntryIds: entryIds,
-    totalAmount,
+    totalAmount: totalAmountWithExpenses,
     totalHours,
   };
 

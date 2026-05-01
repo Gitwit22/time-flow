@@ -21,6 +21,7 @@ const statusStyles: Record<string, string> = {
 export default function ClientInvoiceHistory() {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
+  const expenses = useAppStore((state) => state.expenses);
   const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
   const rows = useMemo(
     () =>
@@ -84,6 +85,7 @@ export default function ClientInvoiceHistory() {
                             downloadInvoiceExport({
                               invoice: inv,
                               entries,
+                              expenses,
                               client,
                               currentUser,
                               projects,

@@ -30,6 +30,8 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
+  const invoices = useAppStore((state) => state.invoices);
   const commitSingleInvoice = useAppStore((state) => state.commitSingleInvoice);
 
   const [open, setOpen] = useState(false);
@@ -71,22 +73,26 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
 
     return buildSingleClientInvoicePreview(
       timeEntries,
+      expenses,
       clients,
       projects,
+      invoices,
       clientId,
       effectiveBillingMode,
       dueDate,
       effectiveBillingMode === "range" ? { rangeStart: effectiveRangeStart, rangeEnd: effectiveRangeEnd } : {},
     );
-  }, [clientId, clients, dueDate, effectiveBillingMode, effectiveRangeEnd, effectiveRangeStart, projects, timeEntries]);
+  }, [clientId, clients, dueDate, effectiveBillingMode, effectiveRangeEnd, effectiveRangeStart, expenses, invoices, projects, timeEntries]);
 
   const finalPreview = useMemo((): InvoiceDraftPreview | null => {
     const base = basePreviewResult?.preview;
     if (!base) return null;
     if (deselectedIds.size === 0) return base;
 
+    const getLineItemSelectionKey = (item: InvoiceDraftPreview["lineItems"][number]) => item.expenseId ?? item.timeEntryIds[0] ?? item.id;
+
     const keptItems = base.lineItems.filter(
-      (item) => !item.timeEntryIds.some((id) => deselectedIds.has(id)),
+      (item) => !deselectedIds.has(getLineItemSelectionKey(item)),
     );
     if (keptItems.length === 0) return null;
 
@@ -140,9 +146,13 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     }
 
     const count = finalPreview.entryIds.length;
+    const expenseLineCount = finalPreview.lineItems.filter((item) => item.lineType === "expense").length;
     toast({
       title: "Invoice created",
-      description: `${invoice.id} was created as a draft. ${count} time entr${count === 1 ? "y was" : "ies were"} marked as invoiced.`,
+      description:
+        count > 0
+          ? `${invoice.id} was created as a draft. ${count} time entr${count === 1 ? "y was" : "ies were"} marked as invoiced${expenseLineCount > 0 ? ` and ${expenseLineCount} expense${expenseLineCount === 1 ? "" : "s"} added.` : "."}`
+          : `${invoice.id} was created as a draft with ${expenseLineCount} expense line${expenseLineCount === 1 ? "" : "s"}.`,
     });
     handleOpenChange(false);
   }
@@ -250,23 +260,23 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                         : "All outstanding"}
                     </span>
                     <span className="status-badge-accent self-start sm:self-auto">
-                      {finalPreview.entryIds.length} entr{finalPreview.entryIds.length === 1 ? "y" : "ies"}
+                      {finalPreview.lineItems.length} line{finalPreview.lineItems.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
                   <div className="max-h-[40vh] overflow-y-auto rounded-lg border divide-y">
                     {finalPreview.lineItems.map((item) => {
-                      const entryId = item.timeEntryIds[0] ?? item.id;
-                      const isSelected = !deselectedIds.has(entryId);
+                      const lineItemSelectionKey = item.expenseId ?? item.timeEntryIds[0] ?? item.id;
+                      const isSelected = !deselectedIds.has(lineItemSelectionKey);
                       return (
                         <div
                           key={item.id}
                           className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}
                         >
                           <Checkbox
-                            id={`entry-${entryId}`}
+                            id={`entry-${lineItemSelectionKey}`}
                             checked={isSelected}
-                            onCheckedChange={(checked) => handleToggleEntry(entryId, !!checked)}
+                            onCheckedChange={(checked) => handleToggleEntry(lineItemSelectionKey, !!checked)}
                             className="mt-1"
                           />
                           <div className="min-w-0 flex-1">
@@ -276,7 +286,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                           <div className="shrink-0 text-right">
                             <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
                             <p className="text-xs text-muted-foreground">
-                              {formatHours(item.hours)} × {formatCurrency(item.rate)}/hr
+                              {item.lineType === "expense" ? "Expense" : `${formatHours(item.hours)} × ${formatCurrency(item.rate)}/hr`}
                             </p>
                           </div>
                         </div>

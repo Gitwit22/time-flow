@@ -31,6 +31,7 @@ export default function InvoiceDetail() {
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const isReadonly = currentUser.role === "client_viewer";
@@ -65,6 +66,18 @@ export default function InvoiceDetail() {
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const lineItems = invoice.lineItems.length > 0
+    ? invoice.lineItems
+    : entries.map((entry, index) => ({
+      id: `legacy-${entry.id}-${index}`,
+      description: entry.notes || "Tracked work",
+      date: entry.date,
+      hours: entry.durationHours,
+      rate: entry.billingRate ?? invoice.hourlyRate,
+      amount: entry.durationHours * (entry.billingRate ?? invoice.hourlyRate),
+      timeEntryIds: [entry.id],
+      lineType: "time" as const,
+    }));
   const displayStatus = getInvoiceDisplayStatus(invoice);
 
   return (
@@ -84,6 +97,7 @@ export default function InvoiceDetail() {
               const opened = downloadInvoiceExport({
                 invoice,
                 entries,
+                expenses,
                 client,
                 currentUser,
                 projects,
@@ -253,13 +267,13 @@ export default function InvoiceDetail() {
               </tr>
             </thead>
             <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} className="border-b last:border-0">
-                  <td className="py-2.5">{formatLongDate(entry.date)}</td>
-                  <td className="py-2.5">{entry.notes || "Tracked work"}</td>
-                  <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
-                  <td className="py-2.5 text-right">{formatCurrency(entry.billingRate ?? invoice.hourlyRate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * (entry.billingRate ?? invoice.hourlyRate))}</td>
+              {lineItems.map((lineItem) => (
+                <tr key={lineItem.id} className="border-b last:border-0">
+                  <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                  <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
+                  <td className="py-2.5 text-right">{lineItem.lineType === "expense" ? "-" : formatHours(lineItem.hours)}</td>
+                  <td className="py-2.5 text-right">{lineItem.lineType === "expense" ? "-" : formatCurrency(lineItem.rate)}</td>
+                  <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -271,8 +285,14 @@ export default function InvoiceDetail() {
             <div className="w-64 space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatCurrency(invoice.totalAmount)}</span>
+                <span className="font-medium">{formatCurrency(invoice.subtotal || invoice.totalAmount)}</span>
               </div>
+              {invoice.taxAmount > 0 ? (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span className="font-medium">{formatCurrency(invoice.taxAmount)}</span>
+                </div>
+              ) : null}
               <Separator />
               <div className="flex justify-between text-lg">
                 <span className="font-heading font-bold">Total Due</span>

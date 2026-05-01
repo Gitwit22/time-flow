@@ -103,8 +103,10 @@ export interface InvoiceLineItem {
   description: string;
   date: string;
   hours: number;
+  lineType?: "time" | "expense";
   rate: number;
   amount: number;
+  expenseId?: string;
   timeEntryIds: string[];
 }
 

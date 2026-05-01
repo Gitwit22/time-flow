@@ -30,6 +30,7 @@ export default function InvoiceCenter() {
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -158,6 +159,7 @@ export default function InvoiceCenter() {
                             const opened = downloadInvoiceExport({
                               invoice: inv,
                               entries,
+                              expenses,
                               client,
                               currentUser,
                               projects,

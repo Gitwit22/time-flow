@@ -22,7 +22,9 @@ export default function EmailPrep() {
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const invoices = useAppStore((state) => state.invoices);
+  const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const emailDrafts = useAppStore((state) => state.emailDrafts);
   const saveEmailDraft = useAppStore((state) => state.saveEmailDraft);
   const markEmailDraftReady = useAppStore((state) => state.markEmailDraftReady);
@@ -237,6 +239,7 @@ export default function EmailPrep() {
                   const opened = downloadInvoiceExport({
                     invoice: selectedInvoice,
                     entries,
+                    expenses,
                     client: selectedClient,
                     currentUser,
                     projects,
