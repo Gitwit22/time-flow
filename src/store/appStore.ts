@@ -213,6 +213,7 @@ export interface AppState {
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
+  switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
@@ -349,6 +350,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
         viewerClientLocked: Boolean(locked && resolvedViewerClientId),
       };
     }),
+
+  switchToViewerMode: (preferredClientId) => {
+    // Single atomic store update: sets role + resolves viewer client id in one shot.
+    // This avoids an intermediate render where role is client_viewer but clientId is still undefined.
+    let resolvedId: string | undefined;
+    set((state) => {
+      resolvedId = resolveViewerClientId(state.clients, state.settings, preferredClientId ?? state.viewerClientId);
+      return {
+        currentUser: { ...state.currentUser, role: "client_viewer" as const },
+        viewerClientId: resolvedId,
+        viewerClientLocked: false,
+      };
+    });
+    return resolvedId;
+  },
 
   syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
 

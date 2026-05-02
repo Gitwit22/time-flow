@@ -33,6 +33,7 @@ import DataTransferPage from "./pages/admin/DataTransfer";
 
 // Client layout + pages
 import { ClientLayout } from "./components/ClientLayout";
+import { ClientErrorBoundary } from "./components/layout/ClientErrorBoundary";
 import ClientDashboard from "./pages/client/Dashboard";
 import ClientTimeLogs from "./pages/client/TimeLogs";
 import ClientInvoiceHistory from "./pages/client/InvoiceHistory";
@@ -218,7 +219,9 @@ const App = () => (
             path="/client"
             element={
               <RequireAuth>
-                <ClientLayout />
+                <ClientErrorBoundary>
+                  <ClientLayout />
+                </ClientErrorBoundary>
               </RequireAuth>
             }
           >

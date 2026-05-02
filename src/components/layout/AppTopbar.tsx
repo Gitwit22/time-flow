@@ -35,14 +35,19 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
+  const switchToViewerMode = useAppStore((state) => state.switchToViewerMode);
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
 
   const handleRoleChange = (role: UserRole) => {
-    setRole(role);
     if (role === "client_viewer") {
-      setViewerClientContext(undefined, false);
+      // Use a single atomic store update to avoid intermediate renders with
+      // role="client_viewer" and viewerClientId=undefined, which can crash the
+      // controlled Select component (Radix UI uses flushSync in onValueChange).
+      switchToViewerMode();
+    } else {
+      setRole(role);
     }
     navigate(role === "contractor" ? "/platform" : "/client");
   };
@@ -71,7 +76,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       </div>
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
-          <Select value={viewerClientId} onValueChange={(value) => setViewerClientContext(value, viewerClientLocked)} disabled={viewerClientLocked || !availableViewerClients.length}>
+          <Select value={viewerClientId ?? ""} onValueChange={(value) => setViewerClientContext(value, viewerClientLocked)} disabled={viewerClientLocked || !availableViewerClients.length}>
             <SelectTrigger className="h-8 w-[220px] text-xs">
               <SelectValue placeholder="Select company" />
             </SelectTrigger>
