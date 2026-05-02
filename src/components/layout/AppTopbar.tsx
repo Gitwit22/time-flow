@@ -41,6 +41,9 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
 
   const handleRoleChange = (role: UserRole) => {
     setRole(role);
+    if (role === "client_viewer") {
+      setViewerClientContext(undefined, false);
+    }
     navigate(role === "contractor" ? "/platform" : "/client");
   };
 

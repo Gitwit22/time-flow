@@ -8,6 +8,7 @@ interface AuthUser {
 	name: string;
 	loginId: string;
 	role: UserRole;
+	clientId?: string;
 	organizationId?: string;
 	programDomain?: string;
 	createdAt: string;
@@ -24,6 +25,7 @@ interface BackendAuthUser {
 	email: string;
 	displayName?: string;
 	role: string;
+	clientId?: string;
 	organizationId?: string;
 	programDomain?: string;
 }
@@ -61,6 +63,7 @@ function toAuthUser(user: BackendAuthUser): AuthUser {
 		name: user.displayName?.trim() || user.email.split("@")[0] || user.email,
 		loginId: normalizeLoginId(user.email),
 		role: normalizedRole,
+		clientId: user.clientId,
 		organizationId: user.organizationId,
 		programDomain: user.programDomain,
 		createdAt: new Date().toISOString(),
@@ -120,8 +123,13 @@ export function getActiveAuthToken() {
 }
 
 // Viewer invite linkage is now server-managed; keep compatibility API.
-export function getViewerClientIdForUser(_userId: string) {
-	return undefined;
+export function getViewerClientIdForUser(userId: string) {
+	const activeUser = readSession()?.user;
+	if (!activeUser || activeUser.id !== userId) {
+		return undefined;
+	}
+
+	return activeUser.clientId;
 }
 
 export function logoutActiveUser() {
@@ -185,12 +193,39 @@ export async function loginWithCredentials(loginId: string, password: string) {
 	return writeSessionFromAuthResponse(response);
 }
 
-export function generateViewerInvite(_clientId: string, _createdByLoginId: string) {
-	throw new Error("Viewer invite codes now require backend invite configuration.");
+export async function generateViewerInvite(clientId: string, _createdByLoginId: string): Promise<{ code: string }> {
+	const response = await authFetch("/api/timeflow/auth/invite/generate", {
+		method: "POST",
+		body: JSON.stringify({ clientId }),
+	});
+	const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+	if (!response.ok) {
+		throw new Error(typeof data.error === "string" ? data.error : "Failed to generate invite");
+	}
+	return { code: data.code as string };
 }
 
-export async function acceptViewerInvite(_code: string, _name: string, _password: string) {
-	throw new Error("Viewer invite acceptance is not configured for backend persistence yet.");
+export async function acceptViewerInvite(
+	code: string,
+	name: string,
+	email: string,
+	password: string,
+): Promise<AuthUser & { clientId?: string }> {
+	const response = await authFetch("/api/timeflow/auth/invite/accept", {
+		method: "POST",
+		body: JSON.stringify({ code, displayName: name, email, password }),
+	});
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	const userPayload = payload.user as (BackendAuthUser & { clientId?: string }) | undefined;
+	const token = parseToken(payload);
+
+	if (!userPayload || !token) {
+		throw new Error("Invite acceptance response was incomplete.");
+	}
+
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return user;
 }
 
 export function toAppIdentity(user: AuthUser) {

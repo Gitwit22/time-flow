@@ -322,20 +322,33 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setHydrated: (hydrated) => set({ hydrated }),
 
   setRole: (role) =>
-    set((state) => ({
-      currentUser: { ...state.currentUser, role },
-      viewerClientId:
-        role === "client_viewer"
-          ? resolveViewerClientId(state.clients, state.settings, state.viewerClientId)
-          : state.viewerClientId,
-      viewerClientLocked: role === "client_viewer" ? state.viewerClientLocked : false,
-    })),
+    set((state) => {
+      if (role !== "client_viewer") {
+        return {
+          currentUser: { ...state.currentUser, role },
+          viewerClientId: state.viewerClientId,
+          viewerClientLocked: false,
+        };
+      }
+
+      const resolvedViewerClientId = resolveViewerClientId(state.clients, state.settings, state.viewerClientId);
+      return {
+        currentUser: { ...state.currentUser, role },
+        viewerClientId: resolvedViewerClientId,
+        // Never keep viewer mode locked without a concrete scoped client.
+        viewerClientLocked: Boolean(state.viewerClientLocked && resolvedViewerClientId),
+      };
+    }),
 
   setViewerClientContext: (clientId, locked = false) =>
-    set((state) => ({
-      viewerClientId: locked ? clientId : resolveViewerClientId(state.clients, state.settings, clientId),
-      viewerClientLocked: locked,
-    })),
+    set((state) => {
+      const resolvedViewerClientId = resolveViewerClientId(state.clients, state.settings, clientId);
+
+      return {
+        viewerClientId: resolvedViewerClientId,
+        viewerClientLocked: Boolean(locked && resolvedViewerClientId),
+      };
+    }),
 
   syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
 

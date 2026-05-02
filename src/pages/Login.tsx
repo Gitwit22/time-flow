@@ -10,13 +10,14 @@ import {
   getViewerClientIdForUser,
   loginWithCredentials,
   registerContractor,
+  acceptViewerInvite,
   toAppIdentity,
 } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
 
-type LoginTab = "signin" | "signup";
+type LoginTab = "signin" | "signup" | "invite";
 
 function getNextPath(role: "contractor" | "client_viewer") {
   return role === "client_viewer" ? "/client" : "/platform";
@@ -39,6 +40,7 @@ export default function Login() {
   const initialTab: LoginTab = useMemo(() => {
     const mode = (searchParams.get("mode") ?? "signin").toLowerCase();
     if (mode === "signup") return "signup";
+    if (mode === "invite") return "invite";
     return "signin";
   }, [searchParams]);
 
@@ -50,6 +52,11 @@ export default function Login() {
   const [signupName, setSignupName] = useState("");
   const [signupLoginId, setSignupLoginId] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
+
+  const inviteCode = useMemo(() => searchParams.get("code") ?? "", [searchParams]);
+  const [inviteName, setInviteName] = useState("");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -104,6 +111,28 @@ export default function Login() {
     }
   }
 
+  async function handleAcceptInvite(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const user = await acceptViewerInvite(inviteCode, inviteName, inviteEmail, invitePassword);
+      const identity = toAppIdentity(user);
+      syncCurrentUser(identity);
+      markAuthenticated();
+      setViewerClientContext(user.clientId, true);
+      await hydrateFromApi();
+      navigate("/client", { replace: true });
+    } catch (error) {
+      toast({
+        title: "Unable to accept invite",
+        description: error instanceof Error ? error.message : "The invite link may be invalid or expired.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
       <Card className="w-full max-w-xl">
@@ -115,9 +144,10 @@ export default function Login() {
         </CardHeader>
         <CardContent>
           <Tabs value={tab} onValueChange={(value) => setTab(value as LoginTab)} className="space-y-4">
-            <TabsList className="grid w-full grid-cols-2">
-              <TabsTrigger value="signin">Sign In</TabsTrigger>
-              <TabsTrigger value="signup">Create Account</TabsTrigger>
+            <TabsList className={`grid w-full ${tab === "invite" ? "grid-cols-1" : "grid-cols-2"}`}>
+              {tab !== "invite" && <TabsTrigger value="signin">Sign In</TabsTrigger>}
+              {tab !== "invite" && <TabsTrigger value="signup">Create Account</TabsTrigger>}
+              {tab === "invite" && <TabsTrigger value="invite">Accept Viewer Invite</TabsTrigger>}
             </TabsList>
 
             <TabsContent value="signin">
@@ -188,6 +218,53 @@ export default function Login() {
                   {isSubmitting ? "Creating Account..." : "Create Account"}
                 </Button>
               </form>
+            </TabsContent>
+
+            <TabsContent value="invite">
+              {!inviteCode && (
+                <p className="text-sm text-destructive">No invite code found. Please use the link sent to you.</p>
+              )}
+              {inviteCode && (
+                <form className="space-y-4" onSubmit={handleAcceptInvite}>
+                  <p className="text-sm text-muted-foreground">Create your viewer account to access the client portal.</p>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="invite-name">Full Name</Label>
+                    <Input
+                      id="invite-name"
+                      value={inviteName}
+                      onChange={(event) => setInviteName(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="invite-email">Email</Label>
+                    <Input
+                      id="invite-email"
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      placeholder="you@company.com"
+                      autoComplete="username"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="invite-password">Password</Label>
+                    <Input
+                      id="invite-password"
+                      type="password"
+                      value={invitePassword}
+                      onChange={(event) => setInvitePassword(event.target.value)}
+                      autoComplete="new-password"
+                      minLength={8}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={isSubmitting}>
+                    {isSubmitting ? "Creating Account..." : "Accept Invite & Sign In"}
+                  </Button>
+                </form>
+              )}
             </TabsContent>
 
           </Tabs>

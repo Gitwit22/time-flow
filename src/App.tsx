@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -113,6 +113,13 @@ function AuthBootstrapper() {
   return null;
 }
 
+function InviteRedirect() {
+  const [searchParams] = useSearchParams();
+  const code = searchParams.get("code");
+  const target = code ? `/login?mode=invite&code=${encodeURIComponent(code)}` : "/login?mode=invite";
+  return <Navigate to={target} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -129,7 +136,7 @@ const App = () => (
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
-          <Route path="/invite" element={<Navigate to="/login?mode=invite" replace />} />
+          <Route path="/invite" element={<InviteRedirect />} />
 
           {/* Contractor workspace */}
           <Route

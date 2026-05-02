@@ -189,7 +189,7 @@ export default function Clients() {
                     onClick={async () => {
                       updateClient(client.id, { companyViewerEnabled: true });
                       try {
-                        const invite = generateViewerInvite(client.id, currentUser.email);
+                        const invite = await generateViewerInvite(client.id, currentUser.email);
                         const inviteUrl = `${window.location.origin}/invite?code=${encodeURIComponent(invite.code)}`;
                         await navigator.clipboard.writeText(inviteUrl);
                         toast({ title: "Invite link copied", description: `${client.name} viewer link copied to clipboard.` });
