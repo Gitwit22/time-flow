@@ -5,6 +5,7 @@ export type ProjectCapHandling = "allow_overage" | "warn_only" | "block_billable
 export type AttachedDocumentStatus = "active" | "archived";
 export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
 export type ExpenseBillingTarget = "client" | "project";
+export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 
 export interface UserProfile {
   id: string;
@@ -85,14 +86,19 @@ export interface Expense {
   id: string;
   amount: number;
   category: "travel" | "software" | "meals" | "supplies" | "other";
+  billableToClient?: boolean;
   billTo?: ExpenseBillingTarget;
   clientId?: string;
   date: string;
   description: string;
   excludedFromPayPeriod?: boolean;
   includedInPayPeriod?: boolean;
+  invoiceId?: string | null;
   notes: string;
   projectId?: string;
+  receiptAttached?: boolean;
+  status?: ExpenseStatus;
+  vendor?: string;
 }
 
 export type InvoiceBillingMode = "range" | "outstanding";
@@ -103,7 +109,7 @@ export interface InvoiceLineItem {
   description: string;
   date: string;
   hours: number;
-  lineType?: "time" | "expense";
+  lineType?: "time" | "expense" | "manual";
   rate: number;
   amount: number;
   expenseId?: string;

@@ -7,6 +7,10 @@ import type { AppSettings, Client, Expense, ExpenseBillingTarget, Invoice, Invoi
 
 interface BillingSummaryOptions {
   clientId?: string;
+  dateRange?: {
+    end?: string;
+    start?: string;
+  };
   end?: string | Date;
   excludeInvoicedEntries?: boolean;
   invoices?: Invoice[];
@@ -220,10 +224,133 @@ function resolveExpenseBillingTarget(expense: Expense): ExpenseBillingTarget {
   return expense.billTo ?? (expense.projectId ? "project" : "client");
 }
 
+function isExpenseBillable(expense: Expense) {
+  const isBillableFlag = expense.billableToClient ?? true;
+  const status = expense.status ?? (isBillableFlag ? "billable" : "non_billable");
+  return isBillableFlag && status !== "non_billable";
+}
+
+function isExpenseArchivedOrDeleted(expense: Expense) {
+  const status = String(expense.status ?? "").toLowerCase();
+  return status === "archived" || status === "deleted";
+}
+
+function isExpenseInDateRange(expense: Expense, dateRange?: { start?: string; end?: string }) {
+  if (!dateRange?.start || !dateRange?.end) {
+    return true;
+  }
+
+  return expense.date >= dateRange.start && expense.date <= dateRange.end;
+}
+
 function getInvoicedExpenseIds(invoices: Invoice[]) {
   return new Set(
     invoices.flatMap((invoice) => invoice.lineItems.map((lineItem) => lineItem.expenseId).filter((expenseId): expenseId is string => Boolean(expenseId))),
   );
+}
+
+interface BillableExpenseFilterOptions {
+  dateRange?: {
+    end?: string;
+    start?: string;
+  };
+  projectId?: string;
+}
+
+export function getBillableExpensesForClient(
+  expenses: Expense[],
+  projects: Project[],
+  invoices: Invoice[],
+  clientId: string,
+  options: BillableExpenseFilterOptions = {},
+) {
+  const invoicedExpenseIds = getInvoicedExpenseIds(invoices);
+
+  return expenses.filter((expense) => {
+    if (isExpenseArchivedOrDeleted(expense)) {
+      return false;
+    }
+
+    if (!isExpenseBillable(expense)) {
+      return false;
+    }
+
+    if (expense.invoiceId) {
+      return false;
+    }
+
+    if (invoicedExpenseIds.has(expense.id)) {
+      return false;
+    }
+
+    if (!isExpenseInDateRange(expense, options.dateRange)) {
+      return false;
+    }
+
+    const billTo = resolveExpenseBillingTarget(expense);
+
+    if (billTo === "client") {
+      if (!expense.clientId || expense.clientId !== clientId) {
+        return false;
+      }
+
+      if (options.projectId) {
+        return false;
+      }
+
+      return true;
+    }
+
+    if (!expense.projectId) {
+      return false;
+    }
+
+    const project = projects.find((item) => item.id === expense.projectId);
+    if (!project || project.clientId !== clientId) {
+      return false;
+    }
+
+    if (options.projectId && project.id !== options.projectId) {
+      return false;
+    }
+
+    return true;
+  });
+}
+
+export function getUninvoicedBillableExpenses(
+  expenses: Expense[],
+  projects: Project[],
+  invoices: Invoice[],
+  clientId: string,
+  options: BillableExpenseFilterOptions = {},
+) {
+  return getBillableExpensesForClient(expenses, projects, invoices, clientId, options);
+}
+
+export function calculateInvoiceLaborSubtotal(invoice: Pick<Invoice, "lineItems">) {
+  return Number(
+    invoice.lineItems
+      .filter((lineItem) => lineItem.lineType !== "expense")
+      .reduce((sum, lineItem) => sum + lineItem.amount, 0)
+      .toFixed(2),
+  );
+}
+
+export function calculateInvoiceExpenseSubtotal(invoice: Pick<Invoice, "lineItems">) {
+  return Number(
+    invoice.lineItems
+      .filter((lineItem) => lineItem.lineType === "expense")
+      .reduce((sum, lineItem) => sum + lineItem.amount, 0)
+      .toFixed(2),
+  );
+}
+
+export function calculateInvoiceGrandTotal(invoice: Pick<Invoice, "lineItems" | "taxRate" | "taxAmount">) {
+  const subtotal = Number(invoice.lineItems.reduce((sum, lineItem) => sum + lineItem.amount, 0).toFixed(2));
+  const computedTaxAmount = Number((subtotal * (invoice.taxRate ?? 0)).toFixed(2));
+  const taxAmount = invoice.taxAmount > 0 ? invoice.taxAmount : computedTaxAmount;
+  return Number((subtotal + taxAmount).toFixed(2));
 }
 
 export function buildSingleClientInvoicePreview(
@@ -238,11 +365,12 @@ export function buildSingleClientInvoicePreview(
   options: {
     rangeStart?: string;
     rangeEnd?: string;
+    selectedExpenseIds?: string[];
     taxRate?: number;
     grouping?: InvoiceGrouping;
   } = {},
 ): SingleClientPreviewResult {
-  const { rangeStart, rangeEnd, taxRate = 0, grouping = "none" } = options;
+  const { rangeStart, rangeEnd, selectedExpenseIds, taxRate = 0, grouping = "none" } = options;
   const client = clients.find((c) => c.id === clientId);
   const invoicedExpenseIds = getInvoicedExpenseIds(invoices);
 
@@ -301,28 +429,14 @@ export function buildSingleClientInvoicePreview(
     timeEntryIds: [l.entry.id],
   }));
 
-  const expenseLineItems: InvoiceLineItem[] = allExpenses
+  const selectedExpenseIdSet = selectedExpenseIds ? new Set(selectedExpenseIds) : null;
+  const eligibleExpenses = getUninvoicedBillableExpenses(allExpenses, projects, invoices, clientId, {
+    dateRange: billingMode === "range" ? { start: rangeStart, end: rangeEnd } : undefined,
+  });
+
+  const expenseLineItems: InvoiceLineItem[] = eligibleExpenses
     .filter((expense) => !invoicedExpenseIds.has(expense.id))
-    .filter((expense) => {
-      const billTo = resolveExpenseBillingTarget(expense);
-      if (billTo === "client") {
-        return expense.clientId === clientId;
-      }
-
-      if (!expense.projectId) {
-        return false;
-      }
-
-      const project = projects.find((item) => item.id === expense.projectId);
-      return project?.clientId === clientId;
-    })
-    .filter((expense) => {
-      if (billingMode !== "range" || !rangeStart || !rangeEnd) {
-        return true;
-      }
-
-      return expense.date >= rangeStart && expense.date <= rangeEnd;
-    })
+    .filter((expense) => (selectedExpenseIdSet ? selectedExpenseIdSet.has(expense.id) : true))
     .map((expense, index) => ({
       id: `exp-${expense.id}-${index}`,
       description: expense.description || `Expense (${expense.category})`,

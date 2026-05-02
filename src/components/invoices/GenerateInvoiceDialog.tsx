@@ -45,7 +45,8 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     d.setDate(d.getDate() + (currentUser.invoiceDueDays ?? 30));
     return toIsoDate(d);
   });
-  const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
+  const [selectedTimeEntryIds, setSelectedTimeEntryIds] = useState<Set<string>>(new Set());
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
 
   const selectedClient = clients.find((c) => c.id === clientId);
   const payPeriodSettings = {
@@ -84,16 +85,31 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     );
   }, [clientId, clients, dueDate, effectiveBillingMode, effectiveRangeEnd, effectiveRangeStart, expenses, invoices, projects, timeEntries]);
 
+  const expenseLookup = useMemo(() => {
+    return new Map(expenses.map((expense) => [expense.id, expense]));
+  }, [expenses]);
+
+  const baseTimeItems = useMemo(
+    () => (basePreviewResult?.preview?.lineItems ?? []).filter((item) => item.lineType !== "expense"),
+    [basePreviewResult?.preview?.lineItems],
+  );
+  const baseExpenseItems = useMemo(
+    () => (basePreviewResult?.preview?.lineItems ?? []).filter((item) => item.lineType === "expense"),
+    [basePreviewResult?.preview?.lineItems],
+  );
+
   const finalPreview = useMemo((): InvoiceDraftPreview | null => {
     const base = basePreviewResult?.preview;
     if (!base) return null;
-    if (deselectedIds.size === 0) return base;
 
-    const getLineItemSelectionKey = (item: InvoiceDraftPreview["lineItems"][number]) => item.expenseId ?? item.timeEntryIds[0] ?? item.id;
+    const keptItems = base.lineItems.filter((item) => {
+      if (item.lineType === "expense") {
+        return item.expenseId ? selectedExpenseIds.has(item.expenseId) : false;
+      }
 
-    const keptItems = base.lineItems.filter(
-      (item) => !deselectedIds.has(getLineItemSelectionKey(item)),
-    );
+      const timeEntryId = item.timeEntryIds[0];
+      return timeEntryId ? selectedTimeEntryIds.has(timeEntryId) : false;
+    });
     if (keptItems.length === 0) return null;
 
     const entryIds = keptItems.flatMap((item) => item.timeEntryIds);
@@ -103,7 +119,17 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     const totalAmount = Number((subtotal + taxAmount).toFixed(2));
 
     return { ...base, lineItems: keptItems, entryIds, timeEntryIds: entryIds, totalHours, subtotal, taxAmount, totalAmount };
-  }, [basePreviewResult, deselectedIds]);
+  }, [basePreviewResult, selectedExpenseIds, selectedTimeEntryIds]);
+
+  const laborSubtotal = useMemo(
+    () => Number((finalPreview?.lineItems.filter((item) => item.lineType !== "expense").reduce((sum, item) => sum + item.amount, 0) ?? 0).toFixed(2)),
+    [finalPreview],
+  );
+
+  const expenseSubtotal = useMemo(
+    () => Number((finalPreview?.lineItems.filter((item) => item.lineType === "expense").reduce((sum, item) => sum + item.amount, 0) ?? 0).toFixed(2)),
+    [finalPreview],
+  );
 
   const canPreview = !!clientId && (effectiveBillingMode === "outstanding" || (!!effectiveRangeStart && !!effectiveRangeEnd));
 
@@ -115,25 +141,48 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
       setRangeMode("current-period");
       setRangeStart("");
       setRangeEnd("");
-      setDeselectedIds(new Set());
+      setSelectedTimeEntryIds(new Set());
+      setSelectedExpenseIds(new Set());
     }
   }
 
   function handleGoToReview() {
-    setDeselectedIds(new Set());
+    const base = basePreviewResult?.preview;
+    setSelectedTimeEntryIds(new Set((base?.lineItems ?? []).flatMap((item) => (item.lineType === "expense" ? [] : item.timeEntryIds))));
+    setSelectedExpenseIds(new Set((base?.lineItems ?? []).flatMap((item) => (item.lineType === "expense" && item.expenseId ? [item.expenseId] : []))));
     setStep("review");
   }
 
-  function handleToggleEntry(entryId: string, checked: boolean) {
-    setDeselectedIds((prev) => {
+  function handleToggleTimeEntry(entryId: string, checked: boolean) {
+    setSelectedTimeEntryIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        next.delete(entryId);
-      } else {
         next.add(entryId);
+      } else {
+        next.delete(entryId);
       }
       return next;
     });
+  }
+
+  function handleToggleExpense(expenseId: string, checked: boolean) {
+    setSelectedExpenseIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(expenseId);
+      } else {
+        next.delete(expenseId);
+      }
+      return next;
+    });
+  }
+
+  function handleSelectAllExpenses() {
+    setSelectedExpenseIds(new Set(baseExpenseItems.flatMap((item) => (item.expenseId ? [item.expenseId] : []))));
+  }
+
+  function handleClearExpenses() {
+    setSelectedExpenseIds(new Set());
   }
 
   function handleConfirm() {
@@ -236,7 +285,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
             {/* No entries warning */}
             {canPreview && basePreviewResult && !basePreviewResult.preview && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                No uninvoiced billable entries found{effectiveBillingMode === "range" ? " in the selected date range" : ""} for{" "}
+                No uninvoiced billable time entries or expenses found{effectiveBillingMode === "range" ? " in the selected date range" : ""} for{" "}
                 {selectedClient?.name ?? "this client"}.
               </div>
             )}
@@ -260,38 +309,92 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                         : "All outstanding"}
                     </span>
                     <span className="status-badge-accent self-start sm:self-auto">
-                      {finalPreview.lineItems.length} line{finalPreview.lineItems.length === 1 ? "" : "s"}
+                      {finalPreview.lineItems.length} line{finalPreview.lineItems.length === 1 ? "" : "s"} selected
                     </span>
                   </div>
 
-                  <div className="max-h-[40vh] overflow-y-auto rounded-lg border divide-y">
-                    {finalPreview.lineItems.map((item) => {
-                      const lineItemSelectionKey = item.expenseId ?? item.timeEntryIds[0] ?? item.id;
-                      const isSelected = !deselectedIds.has(lineItemSelectionKey);
-                      return (
-                        <div
-                          key={item.id}
-                          className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}
-                        >
-                          <Checkbox
-                            id={`entry-${lineItemSelectionKey}`}
-                            checked={isSelected}
-                            onCheckedChange={(checked) => handleToggleEntry(lineItemSelectionKey, !!checked)}
-                            className="mt-1"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium leading-5 break-words">{item.description}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {item.lineType === "expense" ? "Expense" : `${formatHours(item.hours)} × ${formatCurrency(item.rate)}/hr`}
-                            </p>
-                          </div>
+                  <div className="space-y-4">
+                    <div className="rounded-lg border">
+                      <div className="border-b px-3 py-2 text-sm font-medium">Labor / Time Entries</div>
+                      <div className="max-h-[28vh] overflow-y-auto divide-y">
+                        {baseTimeItems.length ? (
+                          baseTimeItems.map((item) => {
+                            const timeEntryId = item.timeEntryIds[0] ?? item.id;
+                            const isSelected = selectedTimeEntryIds.has(timeEntryId);
+                            return (
+                              <div key={item.id} className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}>
+                                <Checkbox
+                                  id={`time-${timeEntryId}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => handleToggleTimeEntry(timeEntryId, !!checked)}
+                                  className="mt-1"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium leading-5 break-words">{item.description}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
+                                  <p className="text-xs text-muted-foreground">{formatHours(item.hours)} × {formatCurrency(item.rate)}/hr</p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No eligible time entries.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border">
+                      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+                        <p className="text-sm font-medium">Expenses</p>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={handleSelectAllExpenses}>
+                            Select all eligible expenses
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={handleClearExpenses}>
+                            Clear expenses
+                          </Button>
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div className="max-h-[28vh] overflow-y-auto divide-y">
+                        {baseExpenseItems.length ? (
+                          baseExpenseItems.map((item) => {
+                            if (!item.expenseId) {
+                              return null;
+                            }
+
+                            const expense = expenseLookup.get(item.expenseId);
+                            const projectName = expense?.projectId ? projects.find((project) => project.id === expense.projectId)?.name : undefined;
+                            const isSelected = selectedExpenseIds.has(item.expenseId);
+                            return (
+                              <div key={item.id} className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}>
+                                <Checkbox
+                                  id={`expense-${item.expenseId}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => handleToggleExpense(item.expenseId!, !!checked)}
+                                  className="mt-1"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium leading-5 break-words">{expense?.vendor ? `${expense.vendor} — ${item.description}` : item.description}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {formatLongDate(item.date)} · {projectName ?? "Client"} · {expense?.category ?? "other"}
+                                    {expense?.receiptAttached ? " · Receipt" : ""}
+                                  </p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
+                                  <p className="text-xs text-muted-foreground">Expense reimbursement</p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No eligible expenses.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
@@ -302,7 +405,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
 
                     <div className="space-y-2 rounded-lg border p-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Total hours</span>
+                        <span className="text-muted-foreground">Selected hours</span>
                         <span className="font-medium">{formatHours(finalPreview.totalHours)}</span>
                       </div>
                       {finalPreview.hasMixedRates ? (
@@ -316,6 +419,14 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                           <span className="font-medium">{formatCurrency(finalPreview.hourlyRate)}/hr</span>
                         </div>
                       )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Selected labor total</span>
+                        <span className="font-medium">{formatCurrency(laborSubtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Selected expense total</span>
+                        <span className="font-medium">{formatCurrency(expenseSubtotal)}</span>
+                      </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Subtotal</span>
                         <span className="font-medium">{formatCurrency(finalPreview.subtotal)}</span>

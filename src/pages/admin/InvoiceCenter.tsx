@@ -226,7 +226,8 @@ export default function InvoiceCenter() {
                                 <AlertDialogTitle>Void invoice {inv.id}?</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete the invoice and release all linked time entries back to
-                                  billable status so they can be re-invoiced. This action cannot be undone.
+                                  billable status so they can be re-invoiced. Linked billable expenses will also be
+                                  released back to uninvoiced status. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -237,7 +238,7 @@ export default function InvoiceCenter() {
                                     deleteInvoice(inv.id);
                                     toast({
                                       title: "Invoice voided",
-                                      description: `${inv.id} was deleted and its time entries were released back to billable status.`,
+                                      description: `${inv.id} was deleted and its linked time entries and expenses were released back to billable status.`,
                                     });
                                   }}
                                 >

@@ -21,6 +21,7 @@ interface ExpenseDialogProps {
 function createInitialExpense(): Omit<Expense, "id"> {
   return {
     amount: 0,
+    billableToClient: true,
     billTo: "client",
     category: "other",
     clientId: undefined,
@@ -28,8 +29,12 @@ function createInitialExpense(): Omit<Expense, "id"> {
     description: "",
     excludedFromPayPeriod: false,
     includedInPayPeriod: false,
+    invoiceId: null,
     notes: "",
     projectId: undefined,
+    receiptAttached: false,
+    status: "billable",
+    vendor: "",
   };
 }
 
@@ -38,7 +43,12 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
     expense
       ? {
           ...expense,
+            billableToClient: expense.billableToClient ?? true,
           billTo: expense.billTo ?? (expense.projectId ? "project" : "client"),
+            invoiceId: expense.invoiceId ?? null,
+            receiptAttached: expense.receiptAttached ?? false,
+            status: expense.status ?? (expense.billableToClient === false ? "non_billable" : "billable"),
+            vendor: expense.vendor ?? "",
         }
       : createInitialExpense(),
   );
@@ -48,7 +58,12 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
       expense
         ? {
             ...expense,
+            billableToClient: expense.billableToClient ?? true,
             billTo: expense.billTo ?? (expense.projectId ? "project" : "client"),
+            invoiceId: expense.invoiceId ?? null,
+            receiptAttached: expense.receiptAttached ?? false,
+            status: expense.status ?? (expense.billableToClient === false ? "non_billable" : "billable"),
+            vendor: expense.vendor ?? "",
           }
         : createInitialExpense(),
     );
@@ -72,6 +87,10 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
           <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Description</Label>
             <Input value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Vendor (optional)</Label>
+            <Input value={form.vendor ?? ""} onChange={(event) => setForm((current) => ({ ...current, vendor: event.target.value }))} />
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Expense Date</Label>
@@ -114,6 +133,27 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
               <SelectContent>
                 <SelectItem value="client">Client</SelectItem>
                 <SelectItem value="project">Project</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Billable to client</Label>
+            <Select
+              value={form.billableToClient === false ? "no" : "yes"}
+              onValueChange={(value) =>
+                setForm((current) => ({
+                  ...current,
+                  billableToClient: value === "yes",
+                  status: value === "yes" ? (current.invoiceId ? "invoiced" : "billable") : "non_billable",
+                }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Yes</SelectItem>
+                <SelectItem value="no">No</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -171,6 +211,21 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
           <div className="space-y-1.5 sm:col-span-2">
             <Label className="text-xs">Notes</Label>
             <Textarea className="min-h-24 resize-none" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
+          </div>
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label className="text-xs">Receipt</Label>
+            <Select
+              value={form.receiptAttached ? "yes" : "no"}
+              onValueChange={(value) => setForm((current) => ({ ...current, receiptAttached: value === "yes" }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="yes">Receipt attached</SelectItem>
+                <SelectItem value="no">No receipt attached</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
         <DialogFooter>

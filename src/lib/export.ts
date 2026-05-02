@@ -1,5 +1,6 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { resolveTimeEntryBillingContext } from "@/lib/projects";
+import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
 import type { Project } from "@/types";
 
@@ -72,29 +73,49 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
   const displayLineItems = invoice.lineItems.length > 0 ? invoice.lineItems : fallbackLineItems;
   const expenseById = new Map(expenses.map((expense) => [expense.id, expense]));
 
-  const lineItems = displayLineItems
+  const laborLineItems = displayLineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const expenseLineItems = displayLineItems.filter((lineItem) => lineItem.lineType === "expense");
+
+  const laborRows = laborLineItems
     .map((lineItem) => {
-      const linkedExpense = lineItem.expenseId ? expenseById.get(lineItem.expenseId) : undefined;
       const projectName = lineItem.lineType === "expense"
         ? "Expense"
         : entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId
           ? (projects.find((project) => project.id === entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId)?.name ?? "Client-only")
           : "Client-only";
 
-      const hours = lineItem.lineType === "expense" ? "-" : formatHours(lineItem.hours);
-      const rate = lineItem.lineType === "expense" ? "-" : formatCurrency(lineItem.rate);
+      const hours = formatHours(lineItem.hours);
+      const rate = formatCurrency(lineItem.rate);
 
       return `
         <tr>
           <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
           <td>${escapeHtml(projectName)}</td>
-          <td>${escapeHtml(lineItem.description || (linkedExpense ? `Expense (${linkedExpense.category})` : "Tracked work"))}</td>
+          <td>${escapeHtml(lineItem.description || "Tracked work")}</td>
           <td class="numeric">${escapeHtml(hours)}</td>
           <td class="numeric">${escapeHtml(rate)}</td>
           <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
         </tr>`;
     })
     .join("");
+
+  const expenseRows = expenseLineItems
+    .map((lineItem) => {
+      const linkedExpense = lineItem.expenseId ? expenseById.get(lineItem.expenseId) : undefined;
+      const description = linkedExpense?.vendor ? `${linkedExpense.vendor} - ${lineItem.description}` : lineItem.description;
+
+      return `
+        <tr>
+          <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
+          <td>${escapeHtml(linkedExpense?.category ?? "other")}</td>
+          <td>${escapeHtml(description || (linkedExpense ? `Expense (${linkedExpense.category})` : "Expense"))}</td>
+          <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems: displayLineItems });
+  const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems: displayLineItems });
 
   return `<!doctype html>
 <html lang="en">
@@ -165,6 +186,7 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       </div>
     </div>
 
+    <h2>Labor / Time Entry Line Items</h2>
     <table>
       <thead>
         <tr>
@@ -177,13 +199,30 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
         </tr>
       </thead>
       <tbody>
-        ${lineItems}
+        ${laborRows || `<tr><td colspan="6">No labor items.</td></tr>`}
+      </tbody>
+    </table>
+
+    <h2 style="margin-top: 24px;">Expense Reimbursements</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Category</th>
+          <th>Description</th>
+          <th class="numeric">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${expenseRows || `<tr><td colspan="4">No expense reimbursements.</td></tr>`}
       </tbody>
     </table>
 
     <div class="totals">
       <div class="totals-card">
         <div class="totals-row"><span>Total Hours</span><span>${escapeHtml(formatHours(invoice.totalHours))}</span></div>
+        <div class="totals-row"><span>Subtotal labor</span><span>${escapeHtml(formatCurrency(laborSubtotal))}</span></div>
+        <div class="totals-row"><span>Subtotal expenses</span><span>${escapeHtml(formatCurrency(expenseSubtotal))}</span></div>
         <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(invoice.subtotal || invoice.totalAmount))}</span></div>
         ${invoice.taxAmount > 0 ? `<div class="totals-row"><span>Tax</span><span>${escapeHtml(formatCurrency(invoice.taxAmount))}</span></div>` : ""}
         <div class="totals-row total"><span>Total</span><span>${escapeHtml(formatCurrency(invoice.totalAmount))}</span></div>

@@ -106,11 +106,58 @@ function writePersistedExpenses(expenses: Expense[]) {
 
 function normalizeExpenseRecord(expense: Expense): Expense {
   const billTo = expense.billTo ?? (expense.projectId ? "project" : "client");
+  const billableToClient = expense.billableToClient ?? true;
+  const normalizedStatus = expense.status ?? (billableToClient ? "billable" : "non_billable");
+  const normalizedInvoiceId = billableToClient ? expense.invoiceId ?? null : null;
+
   if (billTo === "project") {
-    return { ...expense, billTo };
+    return {
+      ...expense,
+      billTo,
+      billableToClient,
+      invoiceId: normalizedInvoiceId,
+      receiptAttached: expense.receiptAttached ?? false,
+      status:
+        normalizedInvoiceId && normalizedStatus !== "reimbursed"
+          ? "invoiced"
+          : normalizedStatus,
+    };
   }
 
-  return { ...expense, billTo, projectId: undefined };
+  return {
+    ...expense,
+    billTo,
+    billableToClient,
+    invoiceId: normalizedInvoiceId,
+    projectId: undefined,
+    receiptAttached: expense.receiptAttached ?? false,
+    status:
+      normalizedInvoiceId && normalizedStatus !== "reimbursed"
+        ? "invoiced"
+        : normalizedStatus,
+  };
+}
+
+function getInvoiceExpenseIds(invoice: Pick<Invoice, "lineItems">) {
+  return invoice.lineItems
+    .map((lineItem) => lineItem.expenseId)
+    .filter((expenseId): expenseId is string => Boolean(expenseId));
+}
+
+function getExpenseStatusForInvoiceStatus(status: Invoice["status"]): Expense["status"] {
+  if (status === "paid") {
+    return "reimbursed";
+  }
+
+  return "invoiced";
+}
+
+function releaseExpenseFromInvoice(expense: Expense): Expense {
+  return normalizeExpenseRecord({
+    ...expense,
+    invoiceId: null,
+    status: expense.billableToClient === false ? "non_billable" : "billable",
+  });
 }
 
 function clearPersistedExpenses() {
@@ -651,18 +698,39 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
 
     const entryToInvoiceId = new Map<string, string>();
+    const expenseToInvoiceId = new Map<string, string>();
     previews.forEach((preview, i) => {
       const invoice = nextInvoices[i];
-      if (invoice) preview.entryIds.forEach((eid) => entryToInvoiceId.set(eid, invoice.id));
+      if (invoice) {
+        preview.entryIds.forEach((eid) => entryToInvoiceId.set(eid, invoice.id));
+        getInvoiceExpenseIds(invoice).forEach((expenseId) => expenseToInvoiceId.set(expenseId, invoice.id));
+      }
     });
 
-    set((current) => ({
-      invoices: [...nextInvoices, ...current.invoices],
-      timeEntries: current.timeEntries.map((entry) => {
-        const invoiceId = entryToInvoiceId.get(entry.id);
-        return invoiceId ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId } : entry;
-      }),
-    }));
+    set((current) => {
+      const expenses = current.expenses.map((expense) => {
+        const invoiceId = expenseToInvoiceId.get(expense.id);
+        if (!invoiceId) {
+          return expense;
+        }
+
+        return normalizeExpenseRecord({
+          ...expense,
+          invoiceId,
+          status: "invoiced",
+        });
+      });
+      writePersistedExpenses(expenses);
+
+      return {
+        invoices: [...nextInvoices, ...current.invoices],
+        timeEntries: current.timeEntries.map((entry) => {
+          const invoiceId = entryToInvoiceId.get(entry.id);
+          return invoiceId ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId } : entry;
+        }),
+        expenses,
+      };
+    });
 
     nextInvoices.forEach((invoice, i) => {
       const preview = previews[i];
@@ -691,12 +759,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
     if (!invoice) return null;
 
-    set((current) => ({
-      invoices: [invoice, ...current.invoices],
-      timeEntries: current.timeEntries.map((entry) =>
-        preview.entryIds.includes(entry.id) ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId: invoice.id } : entry,
-      ),
-    }));
+    const invoiceExpenseIds = new Set(getInvoiceExpenseIds(invoice));
+
+    set((current) => {
+      const expenses = current.expenses.map((expense) => {
+        if (!invoiceExpenseIds.has(expense.id)) {
+          return expense;
+        }
+
+        return normalizeExpenseRecord({
+          ...expense,
+          invoiceId: invoice.id,
+          status: "invoiced",
+        });
+      });
+      writePersistedExpenses(expenses);
+
+      return {
+        invoices: [invoice, ...current.invoices],
+        timeEntries: current.timeEntries.map((entry) =>
+          preview.entryIds.includes(entry.id) ? { ...entry, status: "invoiced" as const, invoiced: true, invoiceId: invoice.id } : entry,
+        ),
+        expenses,
+      };
+    });
 
     void apiCreateInvoice(invoice.id, preview).catch((err) => {
       toast.error(err instanceof Error ? err.message : "Failed to save invoice");
@@ -717,9 +803,59 @@ export const useAppStore = create<AppState>()((set, get) => ({
   updateInvoice: (id, updates) => {
     if (get().currentUser.role !== "contractor") return;
     const prev = get().invoices.find((inv) => inv.id === id);
-    set((state) => ({ invoices: state.invoices.map((inv) => (inv.id === id ? { ...inv, ...updates } : inv)) }));
+    if (!prev) return;
+    const nextInvoice = { ...prev, ...updates };
+    const previousExpenseIds = new Set(getInvoiceExpenseIds(prev));
+    const nextExpenseIds = new Set(getInvoiceExpenseIds(nextInvoice));
+    const nextExpenseStatus = getExpenseStatusForInvoiceStatus(nextInvoice.status);
+
+    set((state) => {
+      const expenses = state.expenses.map((expense) => {
+        const wasLinked = previousExpenseIds.has(expense.id);
+        const shouldBeLinked = nextExpenseIds.has(expense.id);
+
+        if (shouldBeLinked) {
+          return normalizeExpenseRecord({
+            ...expense,
+            invoiceId: id,
+            status: nextExpenseStatus,
+          });
+        }
+
+        if (wasLinked && expense.invoiceId === id) {
+          return releaseExpenseFromInvoice(expense);
+        }
+
+        return expense;
+      });
+      writePersistedExpenses(expenses);
+
+      return {
+        invoices: state.invoices.map((inv) => (inv.id === id ? nextInvoice : inv)),
+        expenses,
+      };
+    });
     void apiUpdateInvoice(id, updates).catch((err) => {
-      if (prev) set((state) => ({ invoices: state.invoices.map((inv) => (inv.id === id ? prev : inv)) }));
+      set((state) => {
+        const previousExpenseIds = new Set(getInvoiceExpenseIds(prev));
+        const restoredExpenses = state.expenses.map((expense) => {
+          if (!previousExpenseIds.has(expense.id)) {
+            return expense;
+          }
+
+          return normalizeExpenseRecord({
+            ...expense,
+            invoiceId: id,
+            status: getExpenseStatusForInvoiceStatus(prev.status),
+          });
+        });
+        writePersistedExpenses(restoredExpenses);
+
+        return {
+          invoices: state.invoices.map((inv) => (inv.id === id ? prev : inv)),
+          expenses: restoredExpenses,
+        };
+      });
       toast.error(err instanceof Error ? err.message : "Failed to update invoice");
     });
   },
@@ -729,16 +865,31 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const s = get();
     const invoice = s.invoices.find((inv) => inv.id === id);
     const linkedEntryIds = new Set(invoice?.entryIds ?? []);
+    const linkedExpenseIds = new Set(invoice ? getInvoiceExpenseIds(invoice) : []);
     const prevInvoices = s.invoices;
     const prevEntries = s.timeEntries;
-    set((state) => ({
-      invoices: state.invoices.filter((inv) => inv.id !== id),
-      timeEntries: state.timeEntries.map((entry) =>
-        linkedEntryIds.has(entry.id) ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null } : entry,
-      ),
-    }));
+    const prevExpenses = s.expenses;
+    set((state) => {
+      const expenses = state.expenses.map((expense) => {
+        if (!linkedExpenseIds.has(expense.id) || expense.invoiceId !== id) {
+          return expense;
+        }
+
+        return releaseExpenseFromInvoice(expense);
+      });
+      writePersistedExpenses(expenses);
+
+      return {
+        invoices: state.invoices.filter((inv) => inv.id !== id),
+        timeEntries: state.timeEntries.map((entry) =>
+          linkedEntryIds.has(entry.id) ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null } : entry,
+        ),
+        expenses,
+      };
+    });
     void apiDeleteInvoice(id).catch((err) => {
-      set({ invoices: prevInvoices, timeEntries: prevEntries });
+      set({ invoices: prevInvoices, timeEntries: prevEntries, expenses: prevExpenses });
+      writePersistedExpenses(prevExpenses);
       toast.error(err instanceof Error ? err.message : "Failed to delete invoice");
     });
   },

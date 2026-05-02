@@ -48,6 +48,7 @@ export interface ExportTimeEntry {
 export interface ExportExpense {
   id: string;
   amount: number;
+  billableToClient?: boolean;
   category: Expense["category"];
   billTo?: Expense["billTo"];
   clientId?: string;
@@ -55,8 +56,12 @@ export interface ExportExpense {
   description: string;
   excludedFromPayPeriod?: boolean;
   includedInPayPeriod?: boolean;
+  invoiceId?: string | null;
   notes: string;
   projectId?: string;
+  receiptAttached?: boolean;
+  status?: Expense["status"];
+  vendor?: string;
 }
 
 export interface TimeFlowExport {
@@ -129,6 +134,7 @@ function toExportExpense(expense: Expense): ExportExpense {
   return {
     id: expense.id,
     amount: expense.amount,
+    billableToClient: expense.billableToClient,
     category: expense.category,
     billTo: expense.billTo,
     clientId: expense.clientId,
@@ -136,8 +142,12 @@ function toExportExpense(expense: Expense): ExportExpense {
     description: expense.description,
     excludedFromPayPeriod: expense.excludedFromPayPeriod,
     includedInPayPeriod: expense.includedInPayPeriod,
+    invoiceId: expense.invoiceId,
     notes: expense.notes,
     projectId: expense.projectId,
+    receiptAttached: expense.receiptAttached,
+    status: expense.status,
+    vendor: expense.vendor,
   };
 }
 
@@ -541,6 +551,7 @@ function expenseFromExport(
 
   return {
     amount: src.amount,
+    billableToClient: src.billableToClient ?? true,
     billTo,
     category: src.category,
     clientId: resolvedClientId,
@@ -548,8 +559,12 @@ function expenseFromExport(
     description: src.description,
     excludedFromPayPeriod: src.excludedFromPayPeriod,
     includedInPayPeriod: src.includedInPayPeriod,
+    invoiceId: src.invoiceId ?? null,
     notes: src.notes,
     projectId: billTo === "project" ? resolvedProjectId : undefined,
+    receiptAttached: src.receiptAttached ?? false,
+    status: src.status ?? (src.billableToClient === false ? "non_billable" : "billable"),
+    vendor: src.vendor,
   };
 }
 

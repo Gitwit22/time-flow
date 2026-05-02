@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { useAppStore } from "@/store/appStore";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
@@ -78,6 +79,10 @@ export default function InvoiceDetail() {
       timeEntryIds: [entry.id],
       lineType: "time" as const,
     }));
+  const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const expenseLineItems = lineItems.filter((lineItem) => lineItem.lineType === "expense");
+  const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
+  const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
   const displayStatus = getInvoiceDisplayStatus(invoice);
 
   return (
@@ -167,7 +172,8 @@ export default function InvoiceDetail() {
                     <AlertDialogDescription>
                       This will permanently delete the invoice and release all {entries.length} linked time{" "}
                       {entries.length === 1 ? "entry" : "entries"} back to billable status so they can be re-invoiced.
-                      This action cannot be undone.
+                      Linked billable expenses will also be returned to an uninvoiced billable state. This action
+                      cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -178,7 +184,7 @@ export default function InvoiceDetail() {
                         deleteInvoice(invoice.id);
                         toast({
                           title: "Invoice voided",
-                          description: `${invoice.id} was deleted and its time entries were released back to billable status.`,
+                          description: `${invoice.id} was deleted and its linked time entries and expenses were released back to billable status.`,
                         });
                         navigate("/platform/invoices");
                       }}
@@ -256,33 +262,85 @@ export default function InvoiceDetail() {
             ))}
           </div>
 
-          <table className="w-full text-sm mb-6">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {lineItems.map((lineItem) => (
-                <tr key={lineItem.id} className="border-b last:border-0">
-                  <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
-                  <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
-                  <td className="py-2.5 text-right">{lineItem.lineType === "expense" ? "-" : formatHours(lineItem.hours)}</td>
-                  <td className="py-2.5 text-right">{lineItem.lineType === "expense" ? "-" : formatCurrency(lineItem.rate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-6 mb-6">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Labor / Time Entry Line Items</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {laborLineItems.length ? (
+                    laborLineItems.map((lineItem) => (
+                      <tr key={lineItem.id} className="border-b last:border-0">
+                        <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                        <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
+                        <td className="py-2.5 text-right">{formatHours(lineItem.hours)}</td>
+                        <td className="py-2.5 text-right">{formatCurrency(lineItem.rate)}</td>
+                        <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={5} className="py-3 text-sm text-muted-foreground">No labor items on this invoice.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Expense Reimbursement Line Items</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Category</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseLineItems.length ? (
+                    expenseLineItems.map((lineItem) => {
+                      const linkedExpense = lineItem.expenseId ? expenses.find((expense) => expense.id === lineItem.expenseId) : undefined;
+                      return (
+                        <tr key={lineItem.id} className="border-b last:border-0">
+                          <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                          <td className="py-2.5">{linkedExpense?.vendor ? `${linkedExpense.vendor} — ${lineItem.description}` : lineItem.description}</td>
+                          <td className="py-2.5 capitalize text-muted-foreground">{linkedExpense?.category ?? "other"}</td>
+                          <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-3 text-sm text-muted-foreground">No expense reimbursements on this invoice.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <Separator className="my-4" />
 
           <div className="flex justify-end">
             <div className="w-64 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal labor</span>
+                <span className="font-medium">{formatCurrency(laborSubtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal expenses</span>
+                <span className="font-medium">{formatCurrency(expenseSubtotal)}</span>
+              </div>
               <div className="flex justify-between text-sm">
                 <span className="text-muted-foreground">Subtotal</span>
                 <span className="font-medium">{formatCurrency(invoice.subtotal || invoice.totalAmount)}</span>
