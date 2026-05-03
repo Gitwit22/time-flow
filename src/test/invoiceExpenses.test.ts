@@ -83,6 +83,80 @@ describe("invoice expense billing helpers", () => {
     expect(result.preview?.subtotal).toBe(375);
   });
 
+  it("excludes entries tied to projects outside the selected client", () => {
+    const extendedClients = [
+      ...clients,
+      { id: "client-2", name: "Globex", companyViewerEnabled: false, documents: [] },
+    ];
+    const extendedProjects = [
+      ...projects,
+      {
+        id: "project-2",
+        clientId: "client-2",
+        name: "Other Client Project",
+        status: "active",
+        description: "",
+        billingType: "hourly_uncapped",
+        hourlyRate: 160,
+        maxPayoutCap: 0,
+        capHandling: "allow_overage",
+        startDate: "2026-05-01",
+        notes: "",
+        documents: [],
+      },
+    ];
+    const entries = [
+      {
+        id: "entry-valid",
+        clientId: "client-1",
+        projectId: "project-1",
+        date: "2026-05-12",
+        startTime: "09:00",
+        endTime: "10:00",
+        durationHours: 1,
+        billingRate: 150,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "In-scope work",
+        status: "completed",
+      },
+      {
+        id: "entry-cross-client",
+        clientId: "client-1",
+        projectId: "project-2",
+        date: "2026-05-12",
+        startTime: "10:00",
+        endTime: "11:00",
+        durationHours: 1,
+        billingRate: 160,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "Out-of-scope work",
+        status: "completed",
+      },
+    ];
+
+    const result = buildSingleClientInvoicePreview(
+      entries as any,
+      [],
+      extendedClients as any,
+      extendedProjects as any,
+      [],
+      "client-1",
+      "range",
+      "2026-05-30",
+      {
+        rangeStart: "2026-05-01",
+        rangeEnd: "2026-05-31",
+      },
+    );
+
+    expect(result.preview?.entryIds).toEqual(["entry-valid"]);
+    expect(result.preview?.projectIds).toEqual(["project-1"]);
+  });
+
   it("calculates labor, expense, and grand totals", () => {
     const invoice = {
       lineItems: [

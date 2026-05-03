@@ -381,6 +381,7 @@ export function buildSingleClientInvoicePreview(
   const candidateEntries = getDedupedEntries(allEntries).filter(
     (entry) =>
       entry.clientId === clientId &&
+      (!entry.projectId || projects.some((project) => project.id === entry.projectId && project.clientId === clientId)) &&
       entry.billable === true &&
       entry.status === "completed" &&
       entry.invoiced !== true &&

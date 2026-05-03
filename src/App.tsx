@@ -182,8 +182,22 @@ const App = () => (
                 </RequireContractor>
               }
             />
-            <Route path="invoices" element={<InvoiceCenter />} />
-            <Route path="invoices/:id" element={<InvoiceDetail />} />
+            <Route
+              path="invoices"
+              element={
+                <RequireContractor>
+                  <InvoiceCenter />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="invoices/:id"
+              element={
+                <RequireContractor>
+                  <InvoiceDetail />
+                </RequireContractor>
+              }
+            />
             <Route
               path="email"
               element={
