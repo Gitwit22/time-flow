@@ -39,6 +39,8 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
+  const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
+  const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
 
   const handleRoleChange = (role: UserRole) => {
     if (role === "client_viewer") {
@@ -76,7 +78,15 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       </div>
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
-          <Select value={viewerClientId ?? ""} onValueChange={(value) => setViewerClientContext(value, viewerClientLocked)} disabled={viewerClientLocked || !availableViewerClients.length}>
+          <Select
+            value={viewerSelectValue}
+            onValueChange={(value) => {
+              if (value !== viewerClientId) {
+                setViewerClientContext(value, viewerClientLocked);
+              }
+            }}
+            disabled={viewerClientLocked || !availableViewerClients.length}
+          >
             <SelectTrigger className="h-8 w-[220px] text-xs">
               <SelectValue placeholder="Select company" />
             </SelectTrigger>
