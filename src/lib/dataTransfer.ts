@@ -483,6 +483,7 @@ function clientFromExport(src: ExportClient): Omit<Client, "id"> {
     contacts: src.contacts ?? [],
     hourlyRate: src.hourlyRate,
     companyViewerEnabled: false,
+    canViewActiveClockIns: true,
     documents: [],
   };
 }

@@ -405,7 +405,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addClient: (client) => {
     if (get().currentUser.role !== "contractor") return;
     const id = crypto.randomUUID();
-    const newClient: Client = { ...client, id, documents: [] };
+    const newClient: Client = { ...client, id, canViewActiveClockIns: client.canViewActiveClockIns ?? true, documents: [] };
     set((state) => ({ clients: [...state.clients, newClient] }));
     void apiCreateClient(newClient).catch((err) => {
       set((state) => ({ clients: state.clients.filter((c) => c.id !== id) }));

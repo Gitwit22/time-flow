@@ -41,16 +41,17 @@ const initialForm: Omit<Client, "id"> = {
   contactEmail: "",
   contacts: [{ name: "", email: "" }],
   companyViewerEnabled: false,
+  canViewActiveClockIns: true,
   documents: [],
 };
 
 export function ClientDialog({ client, open, onOpenChange, onSubmit }: ClientDialogProps) {
   const [form, setForm] = useState<Omit<Client, "id">>(
-    client ? { ...client, contacts: normalizeContacts(client) } : initialForm,
+    client ? { ...client, contacts: normalizeContacts(client), canViewActiveClockIns: client.canViewActiveClockIns ?? true } : initialForm,
   );
 
   useEffect(() => {
-    setForm(client ? { ...client, contacts: normalizeContacts(client) } : initialForm);
+    setForm(client ? { ...client, contacts: normalizeContacts(client), canViewActiveClockIns: client.canViewActiveClockIns ?? true } : initialForm);
   }, [client, open]);
 
   const handleSubmit = () => {
@@ -157,6 +158,13 @@ export function ClientDialog({ client, open, onOpenChange, onSubmit }: ClientDia
               <p className="text-xs text-muted-foreground">Let this client review hours and invoices in read-only mode.</p>
             </div>
             <Switch checked={form.companyViewerEnabled} onCheckedChange={(value) => setForm((current) => ({ ...current, companyViewerEnabled: value }))} />
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div>
+              <p className="text-sm font-medium">Client can view active workers</p>
+              <p className="text-xs text-muted-foreground">Show who is currently clocked in on this client's projects.</p>
+            </div>
+            <Switch checked={form.canViewActiveClockIns ?? true} onCheckedChange={(value) => setForm((current) => ({ ...current, canViewActiveClockIns: value }))} />
           </div>
         </div>
         <DialogFooter>

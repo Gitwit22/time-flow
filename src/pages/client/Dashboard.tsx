@@ -1,5 +1,7 @@
 import { ArrowRight, Calendar, Clock, DollarSign, Eye } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { SummaryCard } from "@/components/SummaryCard";
+import { ActiveClockInsCard } from "@/components/dashboard/ActiveClockInsCard";
 import { UpcomingInvoiceCard } from "@/components/dashboard/UpcomingInvoiceCard";
 import { RecentTimeEntriesTable } from "@/components/time-tracker/RecentTimeEntriesTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,13 +12,35 @@ import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { getPeriodHours, getTodaysHours } from "@/lib/calculations";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
-import { selectViewerScope } from "@/store/selectors";
+import { applyClientClockInVisibility, canClientViewActiveClockIns, getActiveTimeEntriesForClient, selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 
 export default function ClientDashboard() {
+  const [now, setNow] = useState(() => new Date());
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
   const { activeClient, clients, invoices, projects, timeEntries, viewerClientId } = useAppStore(useShallow(selectViewerScope));
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const visibleActiveClockIns = useMemo(() => {
+    if (!viewerClientId) {
+      return [];
+    }
+
+    const rows = getActiveTimeEntriesForClient(viewerClientId, timeEntries, projects, clients, {
+      currentUserName: currentUser.name,
+      now,
+    });
+
+    return applyClientClockInVisibility(rows, activeClient);
+  }, [activeClient, clients, currentUser.name, now, projects, timeEntries, viewerClientId]);
+
+  const showActiveClockInsCard = canClientViewActiveClockIns(activeClient);
+
   const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
   const recentEntries = [...timeEntries]
     .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
@@ -45,6 +69,14 @@ export default function ClientDashboard() {
         <Eye className="h-4 w-4 shrink-0" />
         <span>You have read-only access. Contact your contractor for any changes.</span>
       </div>
+
+      {showActiveClockInsCard ? (
+        <ActiveClockInsCard
+          title="Currently Clocked In"
+          rows={visibleActiveClockIns}
+          emptyMessage="No one is currently clocked in for your projects."
+        />
+      ) : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard title="Status" value="Read-only" subtitle="Viewer access" icon={Eye} iconClassName="bg-muted text-muted-foreground" />

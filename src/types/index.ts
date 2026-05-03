@@ -47,6 +47,13 @@ export interface Client {
   contacts?: ClientContact[];
   hourlyRate?: number;
   companyViewerEnabled: boolean;
+  canViewActiveClockIns?: boolean;
+  clientVisibility?: {
+    canViewActiveClockIns?: boolean;
+    canViewWorkerNames?: boolean;
+    canViewProjectNames?: boolean;
+    canViewLiveDuration?: boolean;
+  };
   documents: AttachedDocument[];
 }
 
@@ -70,6 +77,7 @@ export interface TimeEntry {
   id: string;
   clientId: string;
   projectId?: string;
+  workerName?: string;
   date: string;
   startTime: string;
   endTime?: string;
@@ -79,7 +87,7 @@ export interface TimeEntry {
   invoiced: boolean;
   invoiceId: string | null;
   notes: string;
-  status: "running" | "completed" | "invoiced";
+  status: "running" | "active" | "open" | "completed" | "invoiced";
 }
 
 export interface Expense {

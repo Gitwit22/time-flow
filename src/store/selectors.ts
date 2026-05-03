@@ -3,6 +3,157 @@ import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculati
 import { formatClockTime } from "@/lib/date";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import type { AppState } from "@/store/appStore";
+import type { Client, Project, TimeEntry } from "@/types";
+
+export interface ActiveClockInRow {
+  entryId: string;
+  workerName: string;
+  projectName: string;
+  clientName: string;
+  clockedInSince: string;
+  durationLabel: string;
+  durationMinutes: number;
+  status: "Active";
+}
+
+interface ClientClockInVisibility {
+  canViewActiveClockIns: boolean;
+  canViewWorkerNames: boolean;
+  canViewProjectNames: boolean;
+  canViewLiveDuration: boolean;
+}
+
+function getClientClockInVisibility(client?: Client): ClientClockInVisibility {
+  return {
+    canViewActiveClockIns:
+      client?.clientVisibility?.canViewActiveClockIns ??
+      client?.canViewActiveClockIns ??
+      true,
+    canViewWorkerNames: client?.clientVisibility?.canViewWorkerNames ?? true,
+    canViewProjectNames: client?.clientVisibility?.canViewProjectNames ?? true,
+    canViewLiveDuration: client?.clientVisibility?.canViewLiveDuration ?? true,
+  };
+}
+
+function isActiveTimeEntry(entry: TimeEntry) {
+  const normalizedStatus = String(entry.status ?? "").toLowerCase();
+  const hasClockIn = Boolean(entry.startTime);
+  const hasClockOut = Boolean(entry.endTime);
+  const activeStatus = normalizedStatus === "running" || normalizedStatus === "active" || normalizedStatus === "open";
+
+  return hasClockIn && !hasClockOut && activeStatus;
+}
+
+function toClockInDate(entry: TimeEntry) {
+  const candidate = new Date(`${entry.date}T${entry.startTime.length === 5 ? `${entry.startTime}:00` : entry.startTime}`);
+  return Number.isNaN(candidate.getTime()) ? null : candidate;
+}
+
+function formatDurationLabel(durationMinutes: number) {
+  const safe = Math.max(0, durationMinutes);
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+function buildActiveClockInRow(
+  entry: TimeEntry,
+  projects: Project[],
+  clients: Client[],
+  currentUserName: string,
+  now: Date,
+): ActiveClockInRow | null {
+  const clockInDate = toClockInDate(entry);
+  if (!clockInDate) {
+    return null;
+  }
+
+  const durationMinutes = Math.max(0, Math.floor((now.getTime() - clockInDate.getTime()) / (1000 * 60)));
+  const project = entry.projectId ? projects.find((item) => item.id === entry.projectId) : undefined;
+  const client = clients.find((item) => item.id === entry.clientId);
+
+  return {
+    entryId: entry.id,
+    workerName: entry.workerName || currentUserName,
+    projectName: project?.name ?? "Client-only task",
+    clientName: client?.name ?? "Unknown client",
+    clockedInSince: formatClockTime(clockInDate),
+    durationLabel: formatDurationLabel(durationMinutes),
+    durationMinutes,
+    status: "Active",
+  };
+}
+
+export function canClientViewActiveClockIns(client?: Client) {
+  return getClientClockInVisibility(client).canViewActiveClockIns;
+}
+
+export function getActiveTimeEntriesForClient(
+  clientId: string,
+  timeEntries: TimeEntry[],
+  projects: Project[],
+  clients: Client[],
+  options: {
+    currentUserName: string;
+    now?: Date;
+  },
+) {
+  const now = options.now ?? new Date();
+
+  return timeEntries
+    .filter((entry) => entry.clientId === clientId)
+    .filter(isActiveTimeEntry)
+    .filter((entry) => {
+      if (!entry.projectId) {
+        return true;
+      }
+
+      const project = projects.find((item) => item.id === entry.projectId);
+      return Boolean(project && project.clientId === clientId);
+    })
+    .map((entry) => buildActiveClockInRow(entry, projects, clients, options.currentUserName, now))
+    .filter((row): row is ActiveClockInRow => Boolean(row));
+}
+
+export function getActiveTimeEntries(
+  timeEntries: TimeEntry[],
+  projects: Project[],
+  clients: Client[],
+  options: {
+    currentUserName: string;
+    now?: Date;
+  },
+) {
+  const now = options.now ?? new Date();
+
+  return timeEntries
+    .filter(isActiveTimeEntry)
+    .map((entry) => buildActiveClockInRow(entry, projects, clients, options.currentUserName, now))
+    .filter((row): row is ActiveClockInRow => Boolean(row));
+}
+
+export function applyClientClockInVisibility(
+  rows: ActiveClockInRow[],
+  client?: Client,
+) {
+  const visibility = getClientClockInVisibility(client);
+
+  if (!visibility.canViewActiveClockIns) {
+    return [];
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    workerName: visibility.canViewWorkerNames ? row.workerName : "Team Member",
+    projectName: visibility.canViewProjectNames ? row.projectName : "Client Project",
+    durationLabel: visibility.canViewLiveDuration ? row.durationLabel : "Active",
+  }));
+}
 
 function resolveScopedViewerClientId(state: AppState) {
   if (state.currentUser.role !== "client_viewer") {

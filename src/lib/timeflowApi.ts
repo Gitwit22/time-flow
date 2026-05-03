@@ -48,6 +48,7 @@ export function toClient(r: ApiRecord): Client {
     contacts: (r.contacts as Client["contacts"]) ?? [],
     hourlyRate: r.hourlyRate != null ? (r.hourlyRate as number) : undefined,
     companyViewerEnabled: r.companyViewerEnabled === true,
+    canViewActiveClockIns: r.canViewActiveClockIns !== false,
     documents: [],
   };
 }

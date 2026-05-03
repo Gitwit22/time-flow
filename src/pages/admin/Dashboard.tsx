@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Calendar, Clock, DollarSign } from "lucide-react";
 import { Link } from "react-router-dom";
 
 import { ActiveSessionCard } from "@/components/dashboard/ActiveSessionCard";
+import { ActiveClockInsCard } from "@/components/dashboard/ActiveClockInsCard";
 import { UpcomingInvoiceCard } from "@/components/dashboard/UpcomingInvoiceCard";
 import { SummaryCard } from "@/components/SummaryCard";
 import { RecentTimeEntriesTable } from "@/components/time-tracker/RecentTimeEntriesTable";
@@ -12,10 +13,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
-import { selectDashboardMetrics, selectIsReadonly } from "@/store/selectors";
+import { getActiveTimeEntries, selectDashboardMetrics, selectIsReadonly } from "@/store/selectors";
 import type { TimeEntry } from "@/types";
 
 export default function AdminDashboard() {
+  const [now, setNow] = useState(() => new Date());
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
@@ -51,6 +53,20 @@ export default function AdminDashboard() {
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNow(new Date()), 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, []);
+
+  const activeClockIns = useMemo(
+    () =>
+      getActiveTimeEntries(timeEntries, projects, clients, {
+        currentUserName: currentUser.name,
+        now,
+      }),
+    [clients, currentUser.name, now, projects, timeEntries],
+  );
 
   const handleEditEntry = (entry: TimeEntry) => {
     if (isReadonly) {
@@ -161,6 +177,13 @@ export default function AdminDashboard() {
         <ActiveSessionCard />
         <UpcomingInvoiceCard />
       </div>
+
+      <ActiveClockInsCard
+        title="Active Workers"
+        rows={activeClockIns}
+        emptyMessage="No workers are currently clocked in."
+        showClientColumn
+      />
 
       <Card>
         <CardHeader className="pb-3 flex flex-row items-center justify-between">
