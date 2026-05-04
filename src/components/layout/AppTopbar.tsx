@@ -40,9 +40,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
   const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
-  // Always pass a string to the controlled Select — never `undefined`, which causes Radix to
-  // flip between uncontrolled and controlled mode and triggers React error #185.
-  const viewerSelectValue = hasValidViewerSelection ? (viewerClientId ?? "") : "";
+  const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
 
   const handleRoleChange = (role: UserRole) => {
     if (role === "client_viewer") {
@@ -80,10 +78,11 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       </div>
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
+          hasValidViewerSelection && viewerSelectValue ? (
           <Select
             value={viewerSelectValue}
             onValueChange={(value) => {
-              if (value && value !== viewerClientId) {
+              if (value !== viewerClientId) {
                 setViewerClientContext(value, viewerClientLocked);
               }
             }}
@@ -93,12 +92,6 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
               <SelectValue placeholder="Select company" />
             </SelectTrigger>
             <SelectContent>
-              {/* Hidden sentinel item keeps the Select controlled when no client is resolved */}
-              {!hasValidViewerSelection && (
-                <SelectItem value="" disabled className="hidden">
-                  Select company
-                </SelectItem>
-              )}
               {availableViewerClients.map((client) => (
                 <SelectItem key={client.id} value={client.id}>
                   {client.name}
@@ -106,6 +99,11 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
               ))}
             </SelectContent>
           </Select>
+          ) : (
+            <Button variant="outline" size="sm" className="h-8 w-[220px] justify-start text-xs" disabled>
+              Select company
+            </Button>
+          )
         ) : null}
         {canSwitchRoles ? (
           <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
