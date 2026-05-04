@@ -5,7 +5,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { getActiveUser, logoutActiveUser } from "@/lib/auth";
+import { getActiveUser, logoutActiveUser, updateActiveUserRole } from "@/lib/auth";
 import { clearPlatformSession } from "@/lib/platformApi";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
@@ -43,6 +43,8 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
 
   const handleRoleChange = (role: UserRole) => {
+    updateActiveUserRole(role);
+
     if (role === "client_viewer") {
       // Use a single atomic store update to avoid intermediate renders with
       // role="client_viewer" and viewerClientId=undefined, which can crash the
@@ -51,7 +53,11 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
     } else {
       setRole(role);
     }
-    navigate(role === "contractor" ? "/platform" : "/client");
+
+    // Defer navigation to avoid unmount timing issues while Select is finishing its internal state updates.
+    window.setTimeout(() => {
+      navigate(role === "contractor" ? "/platform" : "/client", { replace: true });
+    }, 0);
   };
 
   const handleLogout = () => {

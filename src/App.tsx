@@ -5,6 +5,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
+import { RequireClientViewer } from "@/components/layout/RequireClientViewer";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
@@ -233,9 +234,11 @@ const App = () => (
             path="/client"
             element={
               <RequireAuth>
-                <ClientErrorBoundary>
-                  <ClientLayout />
-                </ClientErrorBoundary>
+                <RequireClientViewer>
+                  <ClientErrorBoundary>
+                    <ClientLayout />
+                  </ClientErrorBoundary>
+                </RequireClientViewer>
               </RequireAuth>
             }
           >

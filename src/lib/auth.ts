@@ -168,6 +168,20 @@ export function updateActiveUserProfile(updates: { name?: string; loginId?: stri
 	return nextUser;
 }
 
+export function updateActiveUserRole(role: UserRole) {
+	const session = readSession();
+	if (!session) {
+		return null;
+	}
+
+	const nextUser: AuthUser = {
+		...session.user,
+		role,
+	};
+	writeSession({ ...session, user: nextUser });
+	return nextUser;
+}
+
 export async function registerContractor(name: string, loginId: string, password: string) {
 	const response = await authFetch("/api/timeflow/auth/register", {
 		method: "POST",

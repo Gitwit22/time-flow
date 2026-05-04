@@ -120,6 +120,7 @@ export interface InvoiceLineItem {
   lineType?: "time" | "expense" | "manual";
   rate: number;
   amount: number;
+  projectId?: string;
   expenseId?: string;
   timeEntryIds: string[];
 }

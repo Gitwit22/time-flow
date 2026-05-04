@@ -1,4 +1,5 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { groupInvoiceLaborByProject } from "@/lib/invoice";
 import { resolveTimeEntryBillingContext } from "@/lib/projects";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
@@ -64,6 +65,7 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       date: entry.date,
       hours: entry.durationHours,
       lineType: "time" as const,
+      projectId: entry.projectId,
       rate: hourlyRate,
       amount: entry.durationHours * hourlyRate,
       timeEntryIds: [entry.id],
@@ -74,28 +76,36 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
   const expenseById = new Map(expenses.map((expense) => [expense.id, expense]));
 
   const laborLineItems = displayLineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const groupedLaborLineItems = groupInvoiceLaborByProject(displayLineItems, entries, projects);
   const expenseLineItems = displayLineItems.filter((lineItem) => lineItem.lineType === "expense");
 
-  const laborRows = laborLineItems
-    .map((lineItem) => {
-      const projectName = lineItem.lineType === "expense"
-        ? "Expense"
-        : entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId
-          ? (projects.find((project) => project.id === entries.find((entry) => lineItem.timeEntryIds.includes(entry.id))?.projectId)?.name ?? "Client-only")
-          : "Client-only";
-
-      const hours = formatHours(lineItem.hours);
-      const rate = formatCurrency(lineItem.rate);
-
-      return `
-        <tr>
-          <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
-          <td>${escapeHtml(projectName)}</td>
-          <td>${escapeHtml(lineItem.description || "Tracked work")}</td>
-          <td class="numeric">${escapeHtml(hours)}</td>
-          <td class="numeric">${escapeHtml(rate)}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
+  const laborRows = groupedLaborLineItems
+    .map((group) => {
+      const groupHeader = `
+        <tr class="project-group-row">
+          <td colspan="5">
+            <div class="project-group-header">
+              <span class="project-group-title">Project: ${escapeHtml(group.projectName)}</span>
+              <span class="project-group-summary">${escapeHtml(formatHours(group.totalHours))} · ${escapeHtml(formatCurrency(group.subtotal))}</span>
+            </div>
+          </td>
         </tr>`;
+
+      const rows = group.lineItems.map((lineItem) => {
+        const hours = formatHours(lineItem.hours);
+        const rate = formatCurrency(lineItem.rate);
+
+        return `
+          <tr>
+            <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
+            <td>${escapeHtml(lineItem.description || "Tracked work")}</td>
+            <td class="numeric">${escapeHtml(hours)}</td>
+            <td class="numeric">${escapeHtml(rate)}</td>
+            <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
+          </tr>`;
+      }).join("");
+
+      return `${groupHeader}${rows}`;
     })
     .join("");
 
@@ -138,6 +148,10 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       table { width: 100%; border-collapse: collapse; margin-top: 24px; }
       th, td { border-bottom: 1px solid #d1d5db; padding: 10px 8px; text-align: left; vertical-align: top; }
       th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+      .project-group-row td { background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+      .project-group-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+      .project-group-title { font-weight: 600; }
+      .project-group-summary { font-size: 12px; color: #6b7280; }
       .numeric { text-align: right; }
       .totals { margin-top: 24px; justify-content: flex-end; }
       .totals-card { min-width: 280px; }
@@ -191,7 +205,6 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       <thead>
         <tr>
           <th>Date</th>
-          <th>Project</th>
           <th>Description</th>
           <th class="numeric">Hours</th>
           <th class="numeric">Hourly Rate</th>
@@ -199,7 +212,7 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
         </tr>
       </thead>
       <tbody>
-        ${laborRows || `<tr><td colspan="6">No labor items.</td></tr>`}
+        ${laborRows || `<tr><td colspan="5">No labor items.</td></tr>`}
       </tbody>
     </table>
 

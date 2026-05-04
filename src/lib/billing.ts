@@ -173,6 +173,7 @@ export function buildInvoiceDraftSummary(
         hours: line.entry.durationHours,
         rate: line.hourlyRate,
         amount: line.amount,
+        projectId: line.project?.id,
         timeEntryIds: [line.entry.id],
       }));
       return {
@@ -427,6 +428,7 @@ export function buildSingleClientInvoicePreview(
     lineType: "time",
     rate: l.hourlyRate,
     amount: l.amount,
+    projectId: l.project?.id,
     timeEntryIds: [l.entry.id],
   }));
 
@@ -447,6 +449,7 @@ export function buildSingleClientInvoicePreview(
       lineType: "expense",
       rate: 0,
       amount: Number(expense.amount.toFixed(2)),
+      projectId: expense.projectId,
       timeEntryIds: [],
     }));
 

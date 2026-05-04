@@ -4,6 +4,15 @@ import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { uniqueProjectIds } from "@/lib/projects";
 import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDisplayStatus, InvoiceDraftPreview, Project, TimeEntry, UserProfile } from "@/types";
 
+export interface InvoiceProjectGroup {
+  id: string;
+  projectId?: string;
+  projectName: string;
+  lineItems: Invoice["lineItems"];
+  subtotal: number;
+  totalHours: number;
+}
+
 export function buildInvoiceDrafts(
   entries: TimeEntry[],
   clients: Client[],
@@ -130,4 +139,56 @@ export function buildInvoiceEmailDraft(invoice: Invoice, client: Client | undefi
     body: template,
     readyToSend: false,
   };
+}
+
+export function groupInvoiceLaborByProject(
+  lineItems: Invoice["lineItems"],
+  entries: TimeEntry[],
+  projects: Project[],
+): InvoiceProjectGroup[] {
+  const laborItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const projectLookup = new Map(projects.map((project) => [project.id, project.name]));
+  const entryProjectLookup = new Map(entries.map((entry) => [entry.id, entry.projectId]));
+  const groups = new Map<string, InvoiceProjectGroup>();
+
+  laborItems.forEach((lineItem) => {
+    const projectId = lineItem.projectId
+      ?? lineItem.timeEntryIds.map((timeEntryId) => entryProjectLookup.get(timeEntryId)).find((value): value is string => Boolean(value));
+    const key = projectId ?? "__client-work__";
+    const projectName = projectId
+      ? (projectLookup.get(projectId) ?? "Unknown project")
+      : "Client-level work";
+    const existing = groups.get(key);
+
+    if (existing) {
+      existing.lineItems.push(lineItem);
+      existing.subtotal = Number((existing.subtotal + lineItem.amount).toFixed(2));
+      existing.totalHours = Number((existing.totalHours + lineItem.hours).toFixed(2));
+      return;
+    }
+
+    groups.set(key, {
+      id: key,
+      projectId,
+      projectName,
+      lineItems: [lineItem],
+      subtotal: Number(lineItem.amount.toFixed(2)),
+      totalHours: Number(lineItem.hours.toFixed(2)),
+    });
+  });
+
+  return Array.from(groups.values())
+    .map((group) => ({
+      ...group,
+      lineItems: [...group.lineItems].sort((left, right) => left.date.localeCompare(right.date)),
+    }))
+    .sort((left, right) => {
+      if (left.projectId && !right.projectId) {
+        return 1;
+      }
+      if (!left.projectId && right.projectId) {
+        return -1;
+      }
+      return left.projectName.localeCompare(right.projectName);
+    });
 }

@@ -9,7 +9,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { useAppStore } from "@/store/appStore";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -74,12 +74,14 @@ export default function InvoiceDetail() {
       description: entry.notes || "Tracked work",
       date: entry.date,
       hours: entry.durationHours,
+      projectId: entry.projectId,
       rate: entry.billingRate ?? invoice.hourlyRate,
       amount: entry.durationHours * (entry.billingRate ?? invoice.hourlyRate),
       timeEntryIds: [entry.id],
       lineType: "time" as const,
     }));
   const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const laborGroups = groupInvoiceLaborByProject(lineItems, entries, projects);
   const expenseLineItems = lineItems.filter((lineItem) => lineItem.lineType === "expense");
   const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
   const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
@@ -265,34 +267,44 @@ export default function InvoiceDetail() {
           <div className="space-y-6 mb-6">
             <div>
               <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Labor / Time Entry Line Items</p>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
-                    <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
-                    <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
-                    <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
-                    <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {laborLineItems.length ? (
-                    laborLineItems.map((lineItem) => (
-                      <tr key={lineItem.id} className="border-b last:border-0">
-                        <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
-                        <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
-                        <td className="py-2.5 text-right">{formatHours(lineItem.hours)}</td>
-                        <td className="py-2.5 text-right">{formatCurrency(lineItem.rate)}</td>
-                        <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={5} className="py-3 text-sm text-muted-foreground">No labor items on this invoice.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {laborLineItems.length ? (
+                <div className="space-y-4">
+                  {laborGroups.map((group) => (
+                    <div key={group.id} className="rounded-lg border">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium">Project: {group.projectName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatHours(group.totalHours)} · {formatCurrency(group.subtotal)}
+                        </p>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                            <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.lineItems.map((lineItem) => (
+                            <tr key={lineItem.id} className="border-b last:border-0">
+                              <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                              <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
+                              <td className="py-2.5 text-right">{formatHours(lineItem.hours)}</td>
+                              <td className="py-2.5 text-right">{formatCurrency(lineItem.rate)}</td>
+                              <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border px-3 py-3 text-sm text-muted-foreground">No labor items on this invoice.</div>
+              )}
             </div>
 
             <div>
