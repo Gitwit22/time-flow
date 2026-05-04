@@ -40,7 +40,9 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
   const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
-  const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
+  // Always pass a string to the controlled Select — never `undefined`, which causes Radix to
+  // flip between uncontrolled and controlled mode and triggers React error #185.
+  const viewerSelectValue = hasValidViewerSelection ? (viewerClientId ?? "") : "";
 
   const handleRoleChange = (role: UserRole) => {
     if (role === "client_viewer") {
@@ -81,7 +83,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
           <Select
             value={viewerSelectValue}
             onValueChange={(value) => {
-              if (value !== viewerClientId) {
+              if (value && value !== viewerClientId) {
                 setViewerClientContext(value, viewerClientLocked);
               }
             }}
@@ -91,6 +93,12 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
               <SelectValue placeholder="Select company" />
             </SelectTrigger>
             <SelectContent>
+              {/* Hidden sentinel item keeps the Select controlled when no client is resolved */}
+              {!hasValidViewerSelection && (
+                <SelectItem value="" disabled className="hidden">
+                  Select company
+                </SelectItem>
+              )}
               {availableViewerClients.map((client) => (
                 <SelectItem key={client.id} value={client.id}>
                   {client.name}
