@@ -6,12 +6,19 @@ import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
+  apiArchiveClient,
+  apiArchiveProject,
   apiCreateClient,
   apiUpdateClient,
   apiDeleteClient,
   apiCreateProject,
+  apiCreateProjectBill,
   apiUpdateProject,
+  apiUpdateProjectBill as apiUpdateProjectBillRequest,
   apiDeleteProject,
+  apiDeleteProjectBill,
+  apiRestoreClient,
+  apiRestoreProject,
   apiCreateTimeEntry,
   apiUpdateTimeEntry,
   apiDeleteTimeEntry,
@@ -30,6 +37,7 @@ import type {
   Expense,
   Invoice,
   InvoiceDraftPreview,
+  ProjectBill,
   Project,
   TimeEntry,
   UserProfile,
@@ -43,6 +51,9 @@ type TimeEntryDraft = Omit<TimeEntry, "id" | "status" | "durationHours"> & {
 };
 type ClientDraft = Omit<Client, "id">;
 type ProjectDraft = Omit<Project, "id">;
+type ProjectBillDraft = Omit<ProjectBill, "id" | "createdAt" | "updatedAt" | "status" | "paidAt" | "voidedAt"> & {
+  status?: ProjectBill["status"];
+};
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
 type ExpenseDraft = Omit<Expense, "id">;
 
@@ -103,6 +114,7 @@ function writePersistedExpenses(expenses: Expense[]) {
 
   window.localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses));
 }
+
 
 function normalizeExpenseRecord(expense: Expense): Expense {
   const billTo = expense.billTo ?? (expense.projectId ? "project" : "client");
@@ -204,6 +216,7 @@ export interface AppState {
   projects: Project[];
   timeEntries: TimeEntry[];
   expenses: Expense[];
+  projectBills: ProjectBill[];
   activeSession: WorkSession;
   invoices: Invoice[];
   emailDrafts: Record<string, EmailDraft>;
@@ -219,11 +232,15 @@ export interface AppState {
   updateSettings: (updates: Partial<AppSettings>) => void;
   addClient: (client: ClientDraft) => void;
   updateClient: (id: string, updates: Partial<Client>) => void;
+  archiveClient: (id: string) => void;
+  restoreClient: (id: string) => void;
   deleteClient: (id: string) => void;
   addClientDocument: (clientId: string, document: AttachedDocumentDraft) => void;
   updateClientDocument: (clientId: string, documentId: string, updates: Partial<AttachedDocument>) => void;
   addProject: (project: ProjectDraft) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
+  archiveProject: (id: string) => void;
+  restoreProject: (id: string) => void;
   deleteProject: (id: string) => void;
   addProjectDocument: (projectId: string, document: AttachedDocumentDraft) => void;
   updateProjectDocument: (projectId: string, documentId: string, updates: Partial<AttachedDocument>) => void;
@@ -236,6 +253,11 @@ export interface AppState {
   addExpense: (expense: ExpenseDraft) => void;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
+  addProjectBill: (bill: ProjectBillDraft) => void;
+  updateProjectBill: (id: string, updates: Partial<ProjectBill>) => void;
+  markProjectBillPaid: (id: string, paidAt?: string) => void;
+  voidProjectBill: (id: string) => void;
+  deleteProjectBill: (id: string) => void;
   markTimeEntryInvoiced: (id: string) => void;
   unmarkTimeEntryInvoiced: (id: string) => void;
   commitInvoiceDrafts: (previews: InvoiceDraftPreview[]) => Invoice[];
@@ -283,6 +305,7 @@ const emptyState = {
   projects: [] as Project[],
   timeEntries: [] as TimeEntry[],
   expenses: [] as Expense[],
+  projectBills: [] as ProjectBill[],
   activeSession: { isActive: false } as WorkSession,
   invoices: [] as Invoice[],
   emailDrafts: {} as Record<string, EmailDraft>,
@@ -296,7 +319,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   hydrateFromApi: async () => {
     try {
-      const { clients, projects, timeEntries, invoices, settings } = await apiHydrateAll();
+      const { clients, projects, timeEntries, invoices, projectBills, settings } = await apiHydrateAll();
       const mergedSettings = { ...settings, ...readPersistedPayPeriodSettings() };
       const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
       const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
@@ -309,6 +332,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         projects: normalizedProjects,
         timeEntries: normalizedEntries,
         expenses: persistedExpenses,
+        projectBills,
         invoices: normalizedInvoices,
         settings: mergedSettings,
         ...(restoredSession ? { activeSession: restoredSession } : {}),
@@ -446,6 +470,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
+  archiveClient: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().clients.find((c) => c.id === id);
+    set((state) => ({
+      clients: state.clients.map((c) => (c.id === id ? { ...c, archived: true, archivedAt: new Date().toISOString() } : c)),
+    }));
+    void apiArchiveClient(id).catch((err) => {
+      if (prev) set((state) => ({ clients: state.clients.map((c) => (c.id === id ? prev : c)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to archive client");
+    });
+  },
+
+  restoreClient: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().clients.find((c) => c.id === id);
+    set((state) => ({
+      clients: state.clients.map((c) => (c.id === id ? { ...c, archived: false, archivedAt: undefined, archivedReason: undefined } : c)),
+    }));
+    void apiRestoreClient(id).catch((err) => {
+      if (prev) set((state) => ({ clients: state.clients.map((c) => (c.id === id ? prev : c)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to restore client");
+    });
+  },
+
   deleteClient: (id) => {
     if (get().currentUser.role !== "contractor") return;
     const s = get();
@@ -453,23 +501,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
       clients: s.clients,
       projects: s.projects,
       timeEntries: s.timeEntries,
+      projectBills: s.projectBills,
       invoices: s.invoices,
       activeSession: s.activeSession,
       viewerClientId: s.viewerClientId,
     };
-    set((state) => ({
-      clients: state.clients.filter((c) => c.id !== id),
-      projects: state.projects.filter((p) => p.clientId !== id),
-      timeEntries: state.timeEntries.filter((e) => e.clientId !== id),
-      invoices: state.invoices.filter((inv) => inv.clientId !== id),
-      activeSession: state.activeSession.clientId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
-      viewerClientId:
-        state.viewerClientId === id
-          ? state.viewerClientLocked
-            ? undefined
-            : resolveViewerClientId(state.clients.filter((c) => c.id !== id), state.settings)
-          : state.viewerClientId,
-    }));
+    set((state) => {
+      const projectBills = state.projectBills.filter((bill) => bill.clientId !== id);
+      return {
+        clients: state.clients.filter((c) => c.id !== id),
+        projects: state.projects.filter((p) => p.clientId !== id),
+        timeEntries: state.timeEntries.filter((e) => e.clientId !== id),
+        projectBills,
+        invoices: state.invoices.filter((inv) => inv.clientId !== id),
+        activeSession: state.activeSession.clientId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
+        viewerClientId:
+          state.viewerClientId === id
+            ? state.viewerClientLocked
+              ? undefined
+              : resolveViewerClientId(state.clients.filter((c) => c.id !== id), state.settings)
+            : state.viewerClientId,
+      };
+    });
     void apiDeleteClient(id).catch((err) => {
       set(snapshot);
       toast.error(err instanceof Error ? err.message : "Failed to delete client");
@@ -497,15 +550,43 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
+  archiveProject: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().projects.find((p) => p.id === id);
+    set((state) => ({
+      projects: state.projects.map((p) => (p.id === id ? { ...p, archived: true, archivedAt: new Date().toISOString() } : p)),
+    }));
+    void apiArchiveProject(id).catch((err) => {
+      if (prev) set((state) => ({ projects: state.projects.map((p) => (p.id === id ? prev : p)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to archive project");
+    });
+  },
+
+  restoreProject: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().projects.find((p) => p.id === id);
+    set((state) => ({
+      projects: state.projects.map((p) => (p.id === id ? { ...p, archived: false, archivedAt: undefined, archivedReason: undefined } : p)),
+    }));
+    void apiRestoreProject(id).catch((err) => {
+      if (prev) set((state) => ({ projects: state.projects.map((p) => (p.id === id ? prev : p)) }));
+      toast.error(err instanceof Error ? err.message : "Failed to restore project");
+    });
+  },
+
   deleteProject: (id) => {
     if (get().currentUser.role !== "contractor") return;
     const s = get();
-    const snapshot = { projects: s.projects, timeEntries: s.timeEntries, activeSession: s.activeSession };
-    set((state) => ({
-      projects: state.projects.filter((p) => p.id !== id),
-      timeEntries: state.timeEntries.map((e) => (e.projectId === id ? { ...e, projectId: undefined } : e)),
-      activeSession: state.activeSession.projectId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
-    }));
+    const snapshot = { projects: s.projects, timeEntries: s.timeEntries, projectBills: s.projectBills, activeSession: s.activeSession };
+    set((state) => {
+      const projectBills = state.projectBills.filter((bill) => bill.projectId !== id);
+      return {
+        projects: state.projects.filter((p) => p.id !== id),
+        timeEntries: state.timeEntries.map((e) => (e.projectId === id ? { ...e, projectId: undefined } : e)),
+        projectBills,
+        activeSession: state.activeSession.projectId === id ? (clearPersistedActiveSession(), { isActive: false } as WorkSession) : state.activeSession,
+      };
+    });
     void apiDeleteProject(id).catch((err) => {
       set(snapshot);
       toast.error(err instanceof Error ? err.message : "Failed to delete project");
@@ -690,6 +771,80 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expenses = state.expenses.filter((expense) => expense.id !== id);
       writePersistedExpenses(expenses);
       return { expenses };
+    });
+  },
+
+  addProjectBill: (bill) => {
+    if (get().currentUser.role !== "contractor") return;
+
+    const id = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const next: ProjectBill = {
+      ...bill,
+      amount: Number(bill.amount || 0),
+      id,
+      status: bill.status ?? "issued",
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    set((state) => ({ projectBills: [next, ...state.projectBills] }));
+
+    void apiCreateProjectBill(next).catch((err) => {
+      set((state) => ({ projectBills: state.projectBills.filter((projectBill) => projectBill.id !== id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to add project bill");
+    });
+  },
+
+  updateProjectBill: (id, updates) => {
+    if (get().currentUser.role !== "contractor") return;
+
+    const prev = get().projectBills.find((projectBill) => projectBill.id === id);
+    set((state) => ({
+      projectBills: state.projectBills.map((projectBill) =>
+        projectBill.id === id
+          ? {
+              ...projectBill,
+              ...updates,
+              updatedAt: new Date().toISOString(),
+            }
+          : projectBill,
+      ),
+    }));
+
+    void apiUpdateProjectBillRequest(id, updates).catch((err) => {
+      if (prev) {
+        set((state) => ({ projectBills: state.projectBills.map((projectBill) => (projectBill.id === id ? prev : projectBill)) }));
+      }
+      toast.error(err instanceof Error ? err.message : "Failed to update project bill");
+    });
+  },
+
+  markProjectBillPaid: (id, paidAt) => {
+    if (get().currentUser.role !== "contractor") return;
+    get().updateProjectBill(id, {
+      status: "paid",
+      paidAt: paidAt ?? new Date().toISOString(),
+      voidedAt: undefined,
+    });
+  },
+
+  voidProjectBill: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    get().updateProjectBill(id, {
+      status: "void",
+      voidedAt: new Date().toISOString(),
+      paidAt: undefined,
+    });
+  },
+
+  deleteProjectBill: (id) => {
+    if (get().currentUser.role !== "contractor") return;
+    const prev = get().projectBills;
+    set((state) => ({ projectBills: state.projectBills.filter((projectBill) => projectBill.id !== id) }));
+    void apiDeleteProjectBill(id).catch((err) => {
+      set({ projectBills: prev });
+      toast.error(err instanceof Error ? err.message : "Failed to delete project bill");
     });
   },
 

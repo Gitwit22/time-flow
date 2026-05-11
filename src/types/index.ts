@@ -6,6 +6,7 @@ export type AttachedDocumentStatus = "active" | "archived";
 export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
 export type ExpenseBillingTarget = "client" | "project";
 export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
+export type ProjectBillStatus = "draft" | "issued" | "paid" | "void";
 
 export interface UserProfile {
   id: string;
@@ -54,6 +55,9 @@ export interface Client {
     canViewProjectNames?: boolean;
     canViewLiveDuration?: boolean;
   };
+  archived?: boolean;
+  archivedAt?: string;
+  archivedReason?: string;
   documents: AttachedDocument[];
 }
 
@@ -70,7 +74,26 @@ export interface Project {
   startDate: string;
   endDate?: string;
   notes: string;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedReason?: string;
   documents: AttachedDocument[];
+}
+
+export interface ProjectBill {
+  id: string;
+  projectId: string;
+  clientId: string;
+  title: string;
+  amount: number;
+  issueDate: string;
+  dueDate?: string;
+  notes?: string;
+  status: ProjectBillStatus;
+  paidAt?: string;
+  voidedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface TimeEntry {

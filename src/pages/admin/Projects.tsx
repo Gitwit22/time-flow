@@ -1,4 +1,4 @@
-import { BriefcaseBusiness, ChevronRight, Plus, Trash2, TriangleAlert } from "lucide-react";
+import { Archive, BriefcaseBusiness, ChevronRight, Plus, RotateCcw, Trash2, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
@@ -45,10 +45,13 @@ export default function ProjectsPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const addProject = useAppStore((state) => state.addProject);
+  const archiveProject = useAppStore((state) => state.archiveProject);
+  const restoreProject = useAppStore((state) => state.restoreProject);
   const deleteProject = useAppStore((state) => state.deleteProject);
   const updateProject = useAppStore((state) => state.updateProject);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
 
@@ -62,8 +65,19 @@ export default function ProjectsPage() {
           warning: getProjectWarningMessage(project, getProjectDerivedMetrics(project, timeEntries, invoices, clients, projects)),
         }))
         .filter((row) => (statusFilter === "all" ? true : row.project.status === statusFilter))
+        .filter((row) => {
+          if (archiveFilter === "all") {
+            return true;
+          }
+
+          if (archiveFilter === "archived") {
+            return row.project.archived === true;
+          }
+
+          return row.project.archived !== true;
+        })
         .sort((a, b) => a.project.name.localeCompare(b.project.name)),
-    [clients, invoices, projects, statusFilter, timeEntries],
+    [archiveFilter, clients, invoices, projects, statusFilter, timeEntries],
   );
 
   const handleSave = (value: Omit<Project, "id">) => {
@@ -122,7 +136,17 @@ export default function ProjectsPage() {
 
       {isReadonly ? <div className="readonly-banner">Viewer mode: project changes are disabled.</div> : null}
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Select value={archiveFilter} onValueChange={(value) => setArchiveFilter(value as "active" | "archived" | "all")}>
+          <SelectTrigger className="w-[160px]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="active">Active only</SelectItem>
+            <SelectItem value="archived">Archived only</SelectItem>
+            <SelectItem value="all">All records</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[200px]">
             <SelectValue />
@@ -148,6 +172,7 @@ export default function ProjectsPage() {
                     <div className="flex items-center gap-2">
                       <h2 className="font-heading text-lg font-semibold">{project.name}</h2>
                       <span className={statusStyles[project.status]}>{formatEnumLabel(project.status)}</span>
+                      {project.archived ? <span className="status-badge-muted">Archived</span> : null}
                     </div>
                     <p className="text-sm text-muted-foreground mt-1">{client?.name ?? "Unknown client"}</p>
                     <p className="text-sm text-muted-foreground mt-2 line-clamp-2">{project.description}</p>
@@ -226,6 +251,23 @@ export default function ProjectsPage() {
                       }}
                     >
                       Edit project
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        if (project.archived) {
+                          restoreProject(project.id);
+                          toast({ title: "Project restored", description: `${project.name} is active again.` });
+                          return;
+                        }
+
+                        archiveProject(project.id);
+                        toast({ title: "Project archived", description: `${project.name} was archived.` });
+                      }}
+                    >
+                      {project.archived ? <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> : <Archive className="mr-1.5 h-3.5 w-3.5" />}
+                      {project.archived ? "Restore" : "Archive"}
                     </Button>
                     <AlertDialog>
                       <AlertDialogTrigger asChild>

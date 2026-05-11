@@ -6,6 +6,7 @@ import { DocumentManager } from "@/components/shared/DocumentManager";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -34,10 +35,21 @@ export default function ProjectDetailPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const updateProject = useAppStore((state) => state.updateProject);
+  const projectBills = useAppStore((state) => state.projectBills);
+  const addProjectBill = useAppStore((state) => state.addProjectBill);
+  const markProjectBillPaid = useAppStore((state) => state.markProjectBillPaid);
+  const voidProjectBill = useAppStore((state) => state.voidProjectBill);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
 
   const project = projects.find((item) => item.id === id);
   const [noteDraft, setNoteDraft] = useState(project?.notes ?? "");
+  const [billDraft, setBillDraft] = useState({
+    title: "",
+    amount: "",
+    issueDate: new Date().toLocaleDateString("en-CA"),
+    dueDate: "",
+    notes: "",
+  });
 
   const client = useMemo(() => clients.find((item) => item.id === project?.clientId), [clients, project?.clientId]);
   const projectEntries = useMemo(
@@ -45,6 +57,13 @@ export default function ProjectDetailPage() {
     [project?.id, timeEntries],
   );
   const projectInvoices = useMemo(() => invoices.filter((invoice) => invoice.projectIds.includes(project?.id ?? "")), [invoices, project?.id]);
+  const projectFixedBills = useMemo(
+    () =>
+      projectBills
+        .filter((bill) => bill.projectId === project?.id)
+        .sort((a, b) => `${b.issueDate}-${b.createdAt}`.localeCompare(`${a.issueDate}-${a.createdAt}`)),
+    [project?.id, projectBills],
+  );
   const metrics = useMemo(
     () => (project ? getProjectDerivedMetrics(project, timeEntries, invoices, clients, projects) : null),
     [clients, invoices, project, projects, timeEntries],
@@ -130,6 +149,7 @@ export default function ProjectDetailPage() {
           <TabsTrigger value="budget">Budget</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          <TabsTrigger value="fixed-bills">Fixed Bills</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
         </TabsList>
 
@@ -324,6 +344,114 @@ export default function ProjectDetailPage() {
                 </div>
               ) : (
                 <EmptyState icon={FileText} title="No invoices linked yet" description="Invoices will appear here once project-linked time entries are included in a billing run." />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fixed-bills" className="space-y-4">
+          {!isReadonly ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading">Add Fixed-Price Bill</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    placeholder="Bill title"
+                    value={billDraft.title}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, title: event.target.value }))}
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Amount"
+                    value={billDraft.amount}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, amount: event.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    type="date"
+                    value={billDraft.issueDate}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, issueDate: event.target.value }))}
+                  />
+                  <Input
+                    type="date"
+                    value={billDraft.dueDate}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                  />
+                </div>
+                <Textarea
+                  placeholder="Optional notes"
+                  value={billDraft.notes}
+                  onChange={(event) => setBillDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                />
+                <Button
+                  onClick={() => {
+                    const amount = Number(billDraft.amount);
+                    if (!billDraft.title.trim() || !Number.isFinite(amount) || amount <= 0) {
+                      toast({ title: "Invalid bill", description: "Add a title and amount greater than zero.", variant: "destructive" });
+                      return;
+                    }
+
+                    addProjectBill({
+                      projectId: project.id,
+                      clientId: project.clientId,
+                      title: billDraft.title.trim(),
+                      amount,
+                      issueDate: billDraft.issueDate || new Date().toLocaleDateString("en-CA"),
+                      dueDate: billDraft.dueDate || undefined,
+                      notes: billDraft.notes.trim() || undefined,
+                    });
+                    setBillDraft({ title: "", amount: "", issueDate: new Date().toLocaleDateString("en-CA"), dueDate: "", notes: "" });
+                    toast({ title: "Fixed bill added", description: "The project bill is now included in reporting." });
+                  }}
+                >
+                  Add Fixed Bill
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-heading">Project Bills</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {projectFixedBills.length ? (
+                <div className="space-y-3">
+                  {projectFixedBills.map((bill) => (
+                    <div key={bill.id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{bill.title}</p>
+                          <p className="text-sm text-muted-foreground">Issued {formatLongDate(bill.issueDate)}{bill.dueDate ? ` • Due ${formatLongDate(bill.dueDate)}` : ""}</p>
+                          {bill.notes ? <p className="text-sm text-muted-foreground mt-1">{bill.notes}</p> : null}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{formatCurrency(bill.amount)}</p>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{bill.status}</p>
+                        </div>
+                      </div>
+                      {!isReadonly && bill.status !== "void" ? (
+                        <div className="mt-3 flex gap-2">
+                          {bill.status !== "paid" ? (
+                            <Button size="sm" variant="outline" onClick={() => markProjectBillPaid(bill.id)}>
+                              Mark Paid
+                            </Button>
+                          ) : null}
+                          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => voidProjectBill(bill.id)}>
+                            Void
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState icon={FileText} title="No fixed bills yet" description="Add manual/fixed project bills to capture non-hourly revenue." />
               )}
             </CardContent>
           </Card>
