@@ -17,7 +17,9 @@ import type {
 type ApiRecord = Record<string, unknown>;
 
 function buildHeaders(): HeadersInit {
-  const token = getActiveAuthToken() ?? getPlatformSession()?.token;
+  // Prefer suite-launched platform identity when present.
+  // This prevents stale local sessions from masking platform-scoped data.
+  const token = getPlatformSession()?.token ?? getActiveAuthToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
