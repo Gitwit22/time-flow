@@ -13,7 +13,7 @@ import {
   acceptViewerInvite,
   toAppIdentity,
 } from "@/lib/auth";
-import { getPlatformSession } from "@/lib/platformApi";
+import { clearPlatformSession, getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
 
@@ -69,6 +69,7 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       const user = await loginWithCredentials(loginId, password);
+      clearPlatformSession();
       const identity = toAppIdentity(user);
       syncCurrentUser(identity);
       markAuthenticated();
@@ -94,6 +95,7 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       const user = await registerContractor(signupName, signupLoginId, signupPassword);
+      clearPlatformSession();
       const identity = toAppIdentity(user);
       syncCurrentUser(identity);
       markAuthenticated();
@@ -116,6 +118,7 @@ export default function Login() {
     setIsSubmitting(true);
     try {
       const user = await acceptViewerInvite(inviteCode, inviteName, inviteEmail, invitePassword);
+      clearPlatformSession();
       const identity = toAppIdentity(user);
       syncCurrentUser(identity);
       markAuthenticated();

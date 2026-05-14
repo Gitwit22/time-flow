@@ -3,7 +3,7 @@ import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculati
 import { formatClockTime } from "@/lib/date";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import type { AppState } from "@/store/appStore";
-import type { Client, Project, TimeEntry } from "@/types";
+import type { Client, Project, ProjectBill, TimeEntry } from "@/types";
 
 export interface ActiveClockInRow {
   entryId: string;
@@ -226,6 +226,7 @@ interface DashboardMetricsInput {
   timeEntries: AppState["timeEntries"];
   activeSession: AppState["activeSession"];
   expenses: AppState["expenses"];
+  projectBills: AppState["projectBills"];
   settings: Pick<AppState["settings"], "invoiceFrequency" | "payPeriodFrequency" | "payPeriodStartDate" | "periodWeekStartsOn">;
 }
 
@@ -255,6 +256,14 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
   });
   const todayHours = getTodaysHours(input.timeEntries, referenceDate);
   const periodHours = getPeriodHours(input.timeEntries, billingPeriod.startDate, billingPeriod.endDate);
+  const periodProjectBills = input.projectBills.filter((bill: ProjectBill) => {
+    if (bill.status === "void") {
+      return false;
+    }
+
+    return bill.issueDate >= billingPeriod.startDate && bill.issueDate <= billingPeriod.endDate;
+  });
+  const periodProjectBillRevenue = Number(periodProjectBills.reduce((sum, bill) => sum + bill.amount, 0).toFixed(2));
   const status = getActiveStatus(input.activeSession);
   const statusSince =
     input.activeSession.isPaused && input.activeSession.pausedAt
@@ -274,6 +283,8 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     todayHours,
     periodHours,
     periodEarnings: payPeriodSummary.timeEarnings,
+    periodFixedBillRevenue: periodProjectBillRevenue,
+    periodRevenue: Number((payPeriodSummary.timeEarnings + periodProjectBillRevenue).toFixed(2)),
     periodExpenses: payPeriodSummary.expenseTotal,
     periodInvoiceTotal: payPeriodSummary.invoiceTotal,
     periodNet: payPeriodSummary.netAmount,

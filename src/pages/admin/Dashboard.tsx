@@ -26,6 +26,7 @@ export default function AdminDashboard() {
   const invoices = useAppStore((state) => state.invoices);
   const timeEntries = useAppStore((state) => state.timeEntries);
   const expenses = useAppStore((state) => state.expenses);
+  const projectBills = useAppStore((state) => state.projectBills);
   const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
@@ -40,6 +41,7 @@ export default function AdminDashboard() {
         projects,
         timeEntries,
         expenses,
+        projectBills,
         activeSession,
         settings: {
           invoiceFrequency: settings.invoiceFrequency,
@@ -48,7 +50,7 @@ export default function AdminDashboard() {
           periodWeekStartsOn: settings.periodWeekStartsOn,
         },
       }),
-    [activeSession, clients, currentUser.invoiceFrequency, expenses, invoices, projects, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, timeEntries],
+    [activeSession, clients, currentUser.invoiceFrequency, expenses, invoices, projectBills, projects, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, timeEntries],
   );
   const isReadonly = useAppStore(selectIsReadonly);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);

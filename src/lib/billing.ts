@@ -3,7 +3,7 @@ import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths
 import { getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { resolveTimeEntryBillingContext, uniqueProjectIds } from "@/lib/projects";
-import type { AppSettings, Client, Expense, ExpenseBillingTarget, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
+import type { AppSettings, Client, Expense, ExpenseBillingTarget, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, ProjectBill, TimeEntry, UserProfile } from "@/types";
 
 interface BillingSummaryOptions {
   clientId?: string;
@@ -202,15 +202,22 @@ export function buildInvoiceDraftSummary(
   };
 }
 
-export function getMonthlyEarnings(entries: TimeEntry[], clients: Client[], projects: Project[], referenceDate = new Date()) {
+export function getMonthlyEarnings(entries: TimeEntry[], clients: Client[], projects: Project[], projectBills: ProjectBill[] = [], referenceDate = new Date()) {
   return Array.from({ length: 6 }).map((_, index) => {
     const monthDate = subMonths(referenceDate, 5 - index);
     const start = startOfMonth(monthDate);
     const end = endOfMonth(monthDate);
     const summary = getBillingSummary(entries, clients, projects, { start, end });
+    const fixedBillsAmount = projectBills
+      .filter((bill) => bill.status !== "void")
+      .filter((bill) => {
+        const issuedAt = parseISO(bill.issueDate);
+        return isWithinInterval(issuedAt, { start, end });
+      })
+      .reduce((sum, bill) => sum + bill.amount, 0);
 
     return {
-      earnings: summary.totalAmount,
+      earnings: Number((summary.totalAmount + fixedBillsAmount).toFixed(2)),
       month: format(monthDate, "MMM"),
     };
   });

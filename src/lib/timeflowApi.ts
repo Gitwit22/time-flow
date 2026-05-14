@@ -10,6 +10,7 @@ import type {
   Invoice,
   InvoiceDraftPreview,
   InvoiceLineItem,
+  ProjectBill,
   Project,
   TimeEntry,
 } from "@/types";
@@ -17,7 +18,9 @@ import type {
 type ApiRecord = Record<string, unknown>;
 
 function buildHeaders(): HeadersInit {
-  const token = getActiveAuthToken() ?? getPlatformSession()?.token;
+  // Prefer suite-launched platform identity when present.
+  // This prevents stale local sessions from masking platform-scoped data.
+  const token = getPlatformSession()?.token ?? getActiveAuthToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -40,6 +43,7 @@ async function apiRequest<T>(method: string, path: string, body?: unknown): Prom
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
 export function toClient(r: ApiRecord): Client {
+  const isArchived = r.isActive === false;
   return {
     id: r.id as string,
     name: r.name as string,
@@ -49,11 +53,14 @@ export function toClient(r: ApiRecord): Client {
     hourlyRate: r.hourlyRate != null ? (r.hourlyRate as number) : undefined,
     companyViewerEnabled: r.companyViewerEnabled === true,
     canViewActiveClockIns: r.canViewActiveClockIns !== false,
+    archived: isArchived,
+    archivedAt: isArchived ? ((r.updatedAt as string) ?? new Date().toISOString()) : undefined,
     documents: [],
   };
 }
 
 export function toProject(r: ApiRecord): Project {
+  const isArchived = r.isActive === false;
   return {
     id: r.id as string,
     name: r.name as string,
@@ -67,6 +74,8 @@ export function toProject(r: ApiRecord): Project {
     startDate: r.startDate as string,
     endDate: (r.endDate as string) ?? undefined,
     notes: (r.notes as string) || "",
+    archived: isArchived,
+    archivedAt: isArchived ? ((r.updatedAt as string) ?? new Date().toISOString()) : undefined,
     documents: [],
   };
 }
@@ -118,6 +127,24 @@ export function toInvoice(r: ApiRecord): Invoice {
   };
 }
 
+export function toProjectBill(r: ApiRecord): ProjectBill {
+  return {
+    id: r.id as string,
+    projectId: r.projectId as string,
+    clientId: r.clientId as string,
+    title: (r.title as string) || "",
+    amount: (r.amount as number) || 0,
+    issueDate: (r.issueDate as string) || "",
+    dueDate: (r.dueDate as string) ?? undefined,
+    notes: (r.notes as string) || undefined,
+    status: (r.status as ProjectBill["status"]) || "issued",
+    paidAt: (r.paidAt as string) ?? undefined,
+    voidedAt: (r.voidedAt as string) ?? undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: (r.updatedAt as string) || (r.createdAt as string) || new Date().toISOString(),
+  };
+}
+
 export function toSettings(r: ApiRecord): AppSettings {
   const invoiceFrequency = ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly");
 
@@ -153,6 +180,12 @@ export const apiUpdateClient = (id: string, data: Partial<Omit<Client, "id" | "d
 export const apiDeleteClient = (id: string) =>
   apiRequest<void>("DELETE", `/clients/${id}`);
 
+export const apiArchiveClient = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/clients/${id}/archive`).then(toClient);
+
+export const apiRestoreClient = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/clients/${id}/restore`).then(toClient);
+
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 export const apiListProjects = () =>
@@ -166,6 +199,12 @@ export const apiUpdateProject = (id: string, data: Partial<Omit<Project, "id" | 
 
 export const apiDeleteProject = (id: string) =>
   apiRequest<void>("DELETE", `/projects/${id}`);
+
+export const apiArchiveProject = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/projects/${id}/archive`).then(toProject);
+
+export const apiRestoreProject = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/projects/${id}/restore`).then(toProject);
 
 // ─── Time entries ─────────────────────────────────────────────────────────────
 
@@ -200,6 +239,20 @@ export const apiUpdateInvoice = (id: string, data: Partial<Invoice>) =>
 export const apiDeleteInvoice = (id: string) =>
   apiRequest<void>("DELETE", `/invoices/${id}`);
 
+// ─── Project bills ────────────────────────────────────────────────────────────
+
+export const apiListProjectBills = () =>
+  apiRequest<ApiRecord[]>("GET", "/project-bills").then((rs) => rs.map(toProjectBill));
+
+export const apiCreateProjectBill = (data: Pick<ProjectBill, "id"> & Omit<ProjectBill, "id" | "createdAt" | "updatedAt">) =>
+  apiRequest<ApiRecord>("POST", "/project-bills", data).then(toProjectBill);
+
+export const apiUpdateProjectBill = (id: string, data: Partial<Omit<ProjectBill, "id" | "createdAt" | "updatedAt">>) =>
+  apiRequest<ApiRecord>("PUT", `/project-bills/${id}`, data).then(toProjectBill);
+
+export const apiDeleteProjectBill = (id: string) =>
+  apiRequest<void>("DELETE", `/project-bills/${id}`);
+
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
 export const apiGetSettings = () =>
@@ -215,16 +268,18 @@ export interface TimeflowAllData {
   projects: Project[];
   timeEntries: TimeEntry[];
   invoices: Invoice[];
+  projectBills: ProjectBill[];
   settings: AppSettings;
 }
 
 export async function apiHydrateAll(): Promise<TimeflowAllData> {
-  const [clients, projects, timeEntries, invoices, settings] = await Promise.all([
+  const [clients, projects, timeEntries, invoices, projectBills, settings] = await Promise.all([
     apiListClients(),
     apiListProjects(),
     apiListTimeEntries(),
     apiListInvoices(),
+    apiListProjectBills(),
     apiGetSettings(),
   ]);
-  return { clients, projects, timeEntries, invoices, settings };
+  return { clients, projects, timeEntries, invoices, projectBills, settings };
 }
