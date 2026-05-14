@@ -38,6 +38,53 @@ export function nextInvoiceId(invoices: Invoice[], referenceDate = new Date()) {
   return `${prefix}${String(currentMax + 1).padStart(3, "0")}`;
 }
 
+/**
+ * Create an invoice draft from a fixed bill amount, useful for consolidated project billing
+ */
+export function createFixedBillInvoicePreview(
+  clientId: string,
+  client: Client,
+  billAmount: number,
+  billTitle: string,
+  projectId: string,
+  dueDate: string,
+): InvoiceDraftPreview {
+  const today = new Date().toISOString().split("T")[0];
+  return {
+    billingMode: "range",
+    clientId,
+    clientName: client.name,
+    dueDate,
+    entryIds: [],
+    timeEntryIds: [],
+    lineItems: [
+      {
+        id: `fixed-${crypto.randomUUID()}`,
+        description: billTitle,
+        date: today,
+        hours: 0,
+        lineType: "manual",
+        rate: billAmount,
+        amount: billAmount,
+        projectId,
+        expenseId: undefined,
+        timeEntryIds: [],
+      },
+    ],
+    projectIds: [projectId],
+    totalHours: 0,
+    hourlyRate: 0,
+    grouping: "none",
+    periodStart: today,
+    periodEnd: today,
+    subtotal: billAmount,
+    taxRate: 0,
+    taxAmount: 0,
+    totalAmount: billAmount,
+    hasMixedRates: false,
+  };
+}
+
 export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoices: Invoice[], referenceDate = new Date()) {
   const nextInvoices: Invoice[] = [];
   let runningInvoices = [...invoices];

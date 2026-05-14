@@ -34,6 +34,7 @@ export default function ProjectDetailPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const updateProject = useAppStore((state) => state.updateProject);
+  const createInvoiceFromFixedBill = useAppStore((state) => state.createInvoiceFromFixedBill);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
 
   const project = projects.find((item) => item.id === id);
@@ -59,7 +60,6 @@ export default function ProjectDetailPage() {
     if (!project?.id) {
       return;
     }
-
     let cancelled = false;
 
     void (async () => {
@@ -116,6 +116,28 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {!isReadonly && project.maxPayoutCap > 0 ? (
+        <Button
+          size="sm"
+          onClick={() => {
+            const invoiceResult = createInvoiceFromFixedBill(
+              project.maxPayoutCap,
+              `${project.name} - Fixed Fee Contract`,
+              project.clientId,
+              project.id,
+              new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-CA"),
+            );
+            if (invoiceResult) {
+              toast({
+                title: "Invoice created",
+                description: `Created invoice ${invoiceResult.id} for ${formatCurrency(project.maxPayoutCap)}`,
+              });
+            }
+          }}
+        >
+          Bill as Invoice
+        </Button>
+      ) : null}
       {warningMessage ? (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />

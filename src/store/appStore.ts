@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import { materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
+import { createFixedBillInvoicePreview, materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
@@ -242,6 +242,7 @@ export interface AppState {
   commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
+  createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string, dueDate: string) => Invoice | null;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
   resetApp: () => void;
@@ -921,6 +922,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
       writePersistedExpenses(prevExpenses);
       toast.error(err instanceof Error ? err.message : "Failed to delete invoice");
     });
+  },
+
+  createInvoiceFromFixedBill: (billAmount, billTitle, clientId, projectId, dueDate) => {
+    const state = get();
+    if (state.currentUser.role !== "contractor") return null;
+
+    const client = state.clients.find((c) => c.id === clientId);
+    if (!client) {
+      toast.error("Client not found");
+      return null;
+    }
+
+    const preview = createFixedBillInvoicePreview(clientId, client, billAmount, billTitle, projectId, dueDate);
+    const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
+    if (!invoice) return null;
+
+    set((current) => ({ invoices: [invoice, ...current.invoices] }));
+
+    void apiCreateInvoice(invoice.id, preview).catch((err) => {
+      set((current) => ({ invoices: current.invoices.filter((inv) => inv.id !== invoice.id) }));
+      toast.error(err instanceof Error ? err.message : "Failed to create invoice from fixed bill");
+    });
+
+    return invoice;
   },
 
   saveEmailDraft: (draft) => {
