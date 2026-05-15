@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import { createFixedBillInvoicePreview, materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
+import { createFixedBillInvoicePreview, createProjectPartialInvoicePreview, materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
-import { normalizeTimeEntryRecord } from "@/lib/projects";
+import { getProjectBillingSnapshot, normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
   apiArchiveClient,
@@ -56,6 +56,17 @@ type ProjectBillDraft = Omit<ProjectBill, "id" | "createdAt" | "updatedAt" | "st
 };
 type AttachedDocumentDraft = Omit<AttachedDocument, "id">;
 type ExpenseDraft = Omit<Expense, "id">;
+type PartialProjectInvoiceDraft = {
+  title: string;
+  amount: number;
+  dueDate: string;
+  description?: string;
+  notes?: string;
+  status?: "draft" | "sent";
+  markAsPaid?: boolean;
+  projectId: string;
+  clientId: string;
+};
 
 const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
 const EXPENSE_STORAGE_KEY = "timeflow-expenses-v1";
@@ -264,6 +275,7 @@ export interface AppState {
   commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
+  createPartialProjectInvoice: (draft: PartialProjectInvoiceDraft) => Invoice | null;
   createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string, dueDate: string) => Invoice | null;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
@@ -1077,6 +1089,94 @@ export const useAppStore = create<AppState>()((set, get) => ({
       writePersistedExpenses(prevExpenses);
       toast.error(err instanceof Error ? err.message : "Failed to delete invoice");
     });
+  },
+
+  createPartialProjectInvoice: (draft) => {
+    const state = get();
+    if (state.currentUser.role !== "contractor") return null;
+
+    const project = state.projects.find((item) => item.id === draft.projectId);
+    const client = state.clients.find((item) => item.id === draft.clientId);
+    if (!project || !client) {
+      toast.error("Project or client not found");
+      return null;
+    }
+
+    if (project.clientId !== client.id) {
+      toast.error("Selected client does not match the project");
+      return null;
+    }
+
+    if (!Number.isFinite(draft.amount) || draft.amount <= 0) {
+      toast.error("Invoice amount must be greater than zero");
+      return null;
+    }
+
+    const billingSnapshot = getProjectBillingSnapshot(project, state.invoices);
+    if (
+      typeof billingSnapshot.remainingProjectBillableAmount === "number"
+      && draft.amount > billingSnapshot.remainingProjectBillableAmount
+    ) {
+      toast.error("This amount exceeds the remaining project balance.");
+      return null;
+    }
+
+    const normalizedTitle = draft.title.trim() || "Partial project invoice";
+    const normalizedDescription = draft.description?.trim() || "Partial project invoice";
+    const sourceDescription = draft.notes?.trim()
+      ? `${normalizedDescription}\n\n${draft.notes.trim()}`
+      : normalizedDescription;
+    const preview = createProjectPartialInvoicePreview({
+      amount: draft.amount,
+      client,
+      clientId: client.id,
+      dueDate: draft.dueDate,
+      invoiceSourceType: typeof billingSnapshot.fixedProjectAmount === "number" ? "partial_project" : "manual_project",
+      projectId: project.id,
+      sourceDescription,
+      title: normalizedTitle,
+    });
+    const [baseInvoice] = materializeInvoiceDrafts([preview], state.invoices);
+    if (!baseInvoice) {
+      return null;
+    }
+
+    const shouldMarkSent = draft.status === "sent" || draft.markAsPaid === true;
+    const nowDate = new Date().toISOString().split("T")[0];
+    const invoice: Invoice = {
+      ...baseInvoice,
+      fixedBillingAmount: draft.amount,
+      invoiceSourceType: preview.invoiceSourceType,
+      projectId: project.id,
+      projectIds: [project.id],
+      sourceDescription,
+      status: draft.markAsPaid ? "paid" : shouldMarkSent ? "issued" : "draft",
+      issuedAt: shouldMarkSent ? nowDate : undefined,
+      paidAt: draft.markAsPaid ? nowDate : undefined,
+    };
+
+    set((current) => ({ invoices: [invoice, ...current.invoices] }));
+
+    void apiCreateInvoice(invoice.id, preview)
+      .then(() => {
+        if (invoice.status === "draft") {
+          return;
+        }
+
+        void apiUpdateInvoice(invoice.id, {
+          issuedAt: invoice.issuedAt,
+          paidAt: invoice.paidAt,
+          status: invoice.status,
+        }).catch((err) => {
+          toast.error(err instanceof Error ? err.message : "Failed to update invoice status");
+        });
+      })
+      .catch((err) => {
+        set((current) => ({ invoices: current.invoices.filter((inv) => inv.id !== invoice.id) }));
+        toast.error(err instanceof Error ? err.message : "Failed to create partial invoice");
+      });
+
+    return invoice;
   },
 
   createInvoiceFromFixedBill: (billAmount, billTitle, clientId, projectId, dueDate) => {

@@ -27,6 +27,9 @@ function createInitialProject(clientId = ""): Omit<Project, "id"> {
     hourlyRate: 0,
     maxPayoutCap: 0,
     capHandling: "warn_only",
+    projectBillingType: "hourly",
+    fixedProjectAmount: 0,
+    billingNotes: "",
     startDate: toDateOnlyString(new Date()),
     endDate: "",
     notes: "",
@@ -135,6 +138,47 @@ export function ProjectDialog({ clients, open, project, onOpenChange, onSubmit }
             <div className="space-y-1.5">
               <Label className="text-xs">Project End Date</Label>
               <Input type="date" value={formatDateForInput(form.endDate)} onChange={(event) => setForm((current) => ({ ...current, endDate: parseDateInput(event.target.value) || undefined }))} />
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-muted/20 p-4">
+            <p className="text-sm font-medium">Project Invoicing</p>
+            <p className="mt-1 text-xs text-muted-foreground">Configure split/milestone billing that does not require tracked hours.</p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Project billing type</Label>
+                <Select
+                  value={form.projectBillingType ?? "hourly"}
+                  onValueChange={(value) => setForm((current) => ({ ...current, projectBillingType: value as NonNullable<Project["projectBillingType"]> }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="fixed">Fixed</SelectItem>
+                    <SelectItem value="mixed">Mixed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fixed project amount</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.fixedProjectAmount || ""}
+                  onChange={(event) => setForm((current) => ({ ...current, fixedProjectAmount: Number(event.target.value || 0) }))}
+                />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              <Label className="text-xs">Billing notes</Label>
+              <Textarea
+                className="min-h-20 resize-none"
+                value={form.billingNotes || ""}
+                onChange={(event) => setForm((current) => ({ ...current, billingNotes: event.target.value }))}
+              />
             </div>
           </div>
 

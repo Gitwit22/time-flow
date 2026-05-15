@@ -2,6 +2,7 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Eye, FileText, FolderOpen, Save, TriangleAlert } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
+import { PartialProjectInvoiceDialog } from "@/components/invoices/PartialProjectInvoiceDialog";
 import { DocumentManager } from "@/components/shared/DocumentManager";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
-import { getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
+import { getInvoiceSourceTypeLabel } from "@/lib/invoice";
+import { getProjectBillingInvoices, getProjectBillingSnapshot, getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
 import {
   createTimeflowDocument,
   getTimeflowDocumentDownloadUrl,
@@ -35,7 +37,7 @@ export default function ProjectDetailPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const updateProject = useAppStore((state) => state.updateProject);
-  const createInvoiceFromFixedBill = useAppStore((state) => state.createInvoiceFromFixedBill);
+  const createPartialProjectInvoice = useAppStore((state) => state.createPartialProjectInvoice);
   const projectBills = useAppStore((state) => state.projectBills);
   const addProjectBill = useAppStore((state) => state.addProjectBill);
   const markProjectBillPaid = useAppStore((state) => state.markProjectBillPaid);
@@ -51,6 +53,7 @@ export default function ProjectDetailPage() {
     dueDate: "",
     notes: "",
   });
+  const [partialInvoiceDialogOpen, setPartialInvoiceDialogOpen] = useState(false);
 
   const client = useMemo(() => clients.find((item) => item.id === project?.clientId), [clients, project?.clientId]);
   const projectEntries = useMemo(
@@ -58,6 +61,14 @@ export default function ProjectDetailPage() {
     [project?.id, timeEntries],
   );
   const projectInvoices = useMemo(() => invoices.filter((invoice) => invoice.projectIds.includes(project?.id ?? "")), [invoices, project?.id]);
+  const projectBillingInvoices = useMemo(
+    () => (project ? getProjectBillingInvoices(project, invoices).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : []),
+    [invoices, project],
+  );
+  const projectBillingSnapshot = useMemo(
+    () => (project ? getProjectBillingSnapshot(project, invoices) : null),
+    [invoices, project],
+  );
   const projectFixedBills = useMemo(
     () =>
       projectBills
@@ -135,27 +146,39 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
-      {!isReadonly && project.maxPayoutCap > 0 ? (
-        <Button
-          size="sm"
-          onClick={() => {
-            const invoiceResult = createInvoiceFromFixedBill(
-              project.maxPayoutCap,
-              `${project.name} - Fixed Fee Contract`,
-              project.clientId,
-              project.id,
-              new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString("en-CA"),
-            );
-            if (invoiceResult) {
-              toast({
-                title: "Invoice created",
-                description: `Created invoice ${invoiceResult.id} for ${formatCurrency(project.maxPayoutCap)}`,
-              });
+      {!isReadonly && projectBillingSnapshot ? (
+        <PartialProjectInvoiceDialog
+          open={partialInvoiceDialogOpen}
+          onOpenChange={setPartialInvoiceDialogOpen}
+          project={project}
+          client={client}
+          fixedProjectAmount={projectBillingSnapshot.fixedProjectAmount}
+          remainingProjectBillableAmount={projectBillingSnapshot.remainingProjectBillableAmount}
+          trigger={<Button size="sm">Make Partial Invoice</Button>}
+          onSubmit={(value) => {
+            const createdInvoice = createPartialProjectInvoice({
+              amount: value.amount,
+              clientId: project.clientId,
+              description: value.description,
+              dueDate: value.dueDate,
+              markAsPaid: value.markAsPaid,
+              notes: value.notes,
+              projectId: project.id,
+              status: value.status,
+              title: value.title,
+            });
+
+            if (!createdInvoice) {
+              return;
             }
+
+            setPartialInvoiceDialogOpen(false);
+            toast({
+              title: "Partial invoice created",
+              description: `${createdInvoice.id} was created for ${formatCurrency(value.amount)}.`,
+            });
           }}
-        >
-          Bill as Invoice
-        </Button>
+        />
       ) : null}
       {warningMessage ? (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -176,6 +199,40 @@ export default function ProjectDetailPage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          {projectBillingSnapshot ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-heading">Project Billing</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-6">
+                <div>
+                  <p className="text-xs text-muted-foreground">Billing type</p>
+                  <p className="font-medium">{project.projectBillingType ?? "hourly"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Fixed project amount</p>
+                  <p className="font-medium">{typeof projectBillingSnapshot.fixedProjectAmount === "number" ? formatCurrency(projectBillingSnapshot.fixedProjectAmount) : "Not set"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Invoiced so far</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.totalProjectInvoiced)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Remaining to invoice</p>
+                  <p className="font-medium">{typeof projectBillingSnapshot.remainingProjectBillableAmount === "number" ? formatCurrency(projectBillingSnapshot.remainingProjectBillableAmount) : "Not capped"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paid so far</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.totalProjectPaid)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Outstanding balance</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.outstandingProjectInvoiceBalance)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
               <div>
@@ -372,6 +429,38 @@ export default function ProjectDetailPage() {
         </TabsContent>
 
         <TabsContent value="fixed-bills" className="space-y-4">
+          {projectBillingSnapshot ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading">Partial Invoices</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {projectBillingInvoices.length ? (
+                  <div className="space-y-3">
+                    {projectBillingInvoices.map((invoice) => (
+                      <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                        <div>
+                          <p className="font-medium">{invoice.id}</p>
+                          <p className="text-sm text-muted-foreground">{getInvoiceSourceTypeLabel(invoice)} • {invoice.status}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{formatCurrency(invoice.totalAmount)}</p>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/platform/invoices/${invoice.id}`}>
+                              <Eye className="mr-1.5 h-3.5 w-3.5" /> View invoice
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={FileText} title="No partial invoices yet" description="Use Make Partial Invoice to bill this project in milestones without time entries." />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
           {!isReadonly ? (
             <Card>
               <CardHeader className="pb-3">

@@ -18,6 +18,20 @@ export interface ProjectBudgetSnapshot {
   isBlocked: boolean;
 }
 
+export interface ProjectBillingSnapshot {
+  fixedProjectAmount?: number;
+  totalProjectInvoiced: number;
+  totalProjectPaid: number;
+  remainingProjectBillableAmount?: number;
+  outstandingProjectInvoiceBalance: number;
+}
+
+const PROJECT_BILLING_INVOICE_SOURCES: ReadonlySet<NonNullable<Invoice["invoiceSourceType"]>> = new Set([
+  "partial_project",
+  "manual_project",
+  "mixed",
+]);
+
 function roundCurrency(value: number) {
   return Number(value.toFixed(2));
 }
@@ -32,6 +46,18 @@ export function getProjectById(projectId: string | undefined, projects: Project[
   }
 
   return projects.find((project) => project.id === projectId);
+}
+
+export function getProjectFixedAmount(project: Project) {
+  if (typeof project.fixedProjectAmount === "number" && project.fixedProjectAmount > 0) {
+    return roundCurrency(project.fixedProjectAmount);
+  }
+
+  if (project.projectBillingType === "fixed" && project.maxPayoutCap > 0) {
+    return roundCurrency(project.maxPayoutCap);
+  }
+
+  return undefined;
 }
 
 export function getProjectClient(project: Project | undefined, clients: Client[]) {
@@ -170,6 +196,41 @@ export function getProjectWarningMessage(project: Project, snapshot: ProjectBudg
 
 export function getProjectLinkedInvoices(projectId: string, invoices: Invoice[]) {
   return invoices.filter((invoice) => invoice.projectIds.includes(projectId));
+}
+
+export function getProjectBillingInvoices(project: Project, invoices: Invoice[]) {
+  return invoices.filter((invoice) => {
+    const linkedToProject = invoice.projectId === project.id || invoice.projectIds.includes(project.id);
+    if (!linkedToProject) {
+      return false;
+    }
+
+    return Boolean(invoice.invoiceSourceType && PROJECT_BILLING_INVOICE_SOURCES.has(invoice.invoiceSourceType));
+  });
+}
+
+export function getProjectBillingSnapshot(project: Project, invoices: Invoice[]): ProjectBillingSnapshot {
+  const billingInvoices = getProjectBillingInvoices(project, invoices);
+  const fixedProjectAmount = getProjectFixedAmount(project);
+  const totalProjectInvoiced = roundCurrency(
+    billingInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0),
+  );
+  const totalProjectPaid = roundCurrency(
+    billingInvoices
+      .filter((invoice) => invoice.status === "paid" || Boolean(invoice.paidAt))
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0),
+  );
+  const remainingProjectBillableAmount = typeof fixedProjectAmount === "number"
+    ? roundCurrency(Math.max(0, fixedProjectAmount - totalProjectInvoiced))
+    : undefined;
+
+  return {
+    fixedProjectAmount,
+    totalProjectInvoiced,
+    totalProjectPaid,
+    remainingProjectBillableAmount,
+    outstandingProjectInvoiceBalance: roundCurrency(totalProjectInvoiced - totalProjectPaid),
+  };
 }
 
 export function getProjectDerivedMetrics(project: Project, entries: TimeEntry[], invoices: Invoice[], clients: Client[], projects: Project[]) {

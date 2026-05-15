@@ -13,6 +13,17 @@ export interface InvoiceProjectGroup {
   totalHours: number;
 }
 
+interface ProjectInvoicePreviewOptions {
+  clientId: string;
+  client: Client;
+  projectId: string;
+  amount: number;
+  dueDate: string;
+  title?: string;
+  sourceDescription?: string;
+  invoiceSourceType?: Invoice["invoiceSourceType"];
+}
+
 export function buildInvoiceDrafts(
   entries: TimeEntry[],
   clients: Client[],
@@ -49,40 +60,87 @@ export function createFixedBillInvoicePreview(
   projectId: string,
   dueDate: string,
 ): InvoiceDraftPreview {
+  return createProjectInvoicePreview({
+    amount: billAmount,
+    client,
+    clientId,
+    dueDate,
+    invoiceSourceType: "manual_project",
+    projectId,
+    sourceDescription: billTitle,
+    title: billTitle,
+  });
+}
+
+export function createProjectPartialInvoicePreview(options: ProjectInvoicePreviewOptions): InvoiceDraftPreview {
+  return createProjectInvoicePreview({
+    ...options,
+    invoiceSourceType: options.invoiceSourceType ?? "partial_project",
+  });
+}
+
+function createProjectInvoicePreview(options: ProjectInvoicePreviewOptions): InvoiceDraftPreview {
   const today = new Date().toISOString().split("T")[0];
+  const lineDescription = options.title?.trim() || options.sourceDescription?.trim() || "Partial project invoice";
+  const sourceDescription = options.sourceDescription?.trim() || lineDescription;
+
   return {
     billingMode: "range",
-    clientId,
-    clientName: client.name,
-    dueDate,
+    clientId: options.clientId,
+    clientName: options.client.name,
+    dueDate: options.dueDate,
     entryIds: [],
+    fixedBillingAmount: options.amount,
+    invoiceSourceType: options.invoiceSourceType,
     timeEntryIds: [],
     lineItems: [
       {
         id: `fixed-${crypto.randomUUID()}`,
-        description: billTitle,
+        description: lineDescription,
         date: today,
         hours: 0,
         lineType: "manual",
-        rate: billAmount,
-        amount: billAmount,
-        projectId,
+        rate: options.amount,
+        amount: options.amount,
+        projectId: options.projectId,
         expenseId: undefined,
         timeEntryIds: [],
       },
     ],
-    projectIds: [projectId],
+    projectId: options.projectId,
+    projectIds: [options.projectId],
+    sourceDescription,
     totalHours: 0,
     hourlyRate: 0,
     grouping: "none",
     periodStart: today,
     periodEnd: today,
-    subtotal: billAmount,
+    subtotal: options.amount,
     taxRate: 0,
     taxAmount: 0,
-    totalAmount: billAmount,
+    totalAmount: options.amount,
     hasMixedRates: false,
   };
+}
+
+export function getInvoiceSourceTypeLabel(invoice: Pick<Invoice, "invoiceSourceType">) {
+  if (invoice.invoiceSourceType === "partial_project") {
+    return "Partial Project Invoice";
+  }
+
+  if (invoice.invoiceSourceType === "manual_project") {
+    return "Manual Project Invoice";
+  }
+
+  if (invoice.invoiceSourceType === "expense_billback") {
+    return "Expense Billback";
+  }
+
+  if (invoice.invoiceSourceType === "mixed") {
+    return "Mixed Billing";
+  }
+
+  return "Time Entries";
 }
 
 export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoices: Invoice[], referenceDate = new Date()) {
@@ -95,18 +153,22 @@ export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoic
       billingMode: preview.billingMode ?? "range",
       createdAt,
       clientId: preview.clientId,
+      fixedBillingAmount: preview.fixedBillingAmount,
       dueDate: preview.dueDate,
       entryIds: preview.entryIds,
       grouping: preview.grouping ?? "none",
       hasMixedRates: preview.hasMixedRates,
       hourlyRate: preview.hourlyRate,
       id: nextInvoiceId(runningInvoices, referenceDate),
+      invoiceSourceType: preview.invoiceSourceType,
       lineItems: preview.lineItems ?? [],
       periodEnd: preview.periodEnd,
       periodStart: preview.periodStart,
+      projectId: preview.projectId,
       projectIds: preview.projectIds,
       rangeEnd: preview.rangeEnd,
       rangeStart: preview.rangeStart,
+      sourceDescription: preview.sourceDescription,
       status: "draft",
       subtotal: preview.subtotal ?? preview.totalAmount,
       taxAmount: preview.taxAmount ?? 0,
@@ -144,21 +206,40 @@ export function normalizeInvoiceRecord(
     subtotal?: number;
     taxRate?: number;
     taxAmount?: number;
+    invoiceSourceType?: Invoice["invoiceSourceType"];
+    projectId?: string;
+    sourceDescription?: string;
+    fixedBillingAmount?: number;
   }),
   entries: TimeEntry[] = [],
 ) {
   const normalizedStatus = invoice.status === "sent" ? "issued" : invoice.status ?? "draft";
   const linkedEntries = entries.filter((entry) => invoice.entryIds.includes(entry.id));
   const rates = Array.from(new Set(linkedEntries.map((entry) => entry.billingRate).filter((rate): rate is number => typeof rate === "number" && rate > 0)));
+  const normalizedProjectIds = invoice.projectIds ?? uniqueProjectIds(linkedEntries);
+  const hasExpenseOnlyLines = (invoice.lineItems ?? []).length > 0 && (invoice.lineItems ?? []).every((lineItem) => lineItem.lineType === "expense");
+  const hasManualLines = (invoice.lineItems ?? []).some((lineItem) => lineItem.lineType === "manual");
+  const inferredSourceType: Invoice["invoiceSourceType"] = invoice.invoiceSourceType
+    ?? ((invoice.timeEntryIds ?? invoice.entryIds ?? []).length > 0
+      ? "time_entries"
+      : hasExpenseOnlyLines
+        ? "expense_billback"
+        : hasManualLines
+          ? "manual_project"
+          : "time_entries");
 
   return {
     ...invoice,
     billingMode: invoice.billingMode ?? "range",
     createdAt: invoice.createdAt ?? invoice.issuedAt ?? new Date(invoice.periodEnd).toISOString(),
+    fixedBillingAmount: invoice.fixedBillingAmount,
     grouping: invoice.grouping ?? "none",
     hasMixedRates: invoice.hasMixedRates ?? rates.length > 1,
+    invoiceSourceType: inferredSourceType,
     lineItems: invoice.lineItems ?? [],
-    projectIds: invoice.projectIds ?? uniqueProjectIds(linkedEntries),
+    projectId: invoice.projectId ?? normalizedProjectIds[0],
+    projectIds: normalizedProjectIds,
+    sourceDescription: invoice.sourceDescription,
     status: normalizedStatus,
     subtotal: invoice.subtotal ?? invoice.totalAmount ?? 0,
     taxAmount: invoice.taxAmount ?? 0,

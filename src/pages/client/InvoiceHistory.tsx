@@ -9,7 +9,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
 import { formatCurrency, formatLongDate, formatPeriodLabel } from "@/lib/date";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
@@ -52,6 +52,7 @@ export default function ClientInvoiceHistory() {
                 <tr className="border-b text-muted-foreground">
                   <th className="text-left py-3 px-4 font-medium">Invoice #</th>
                   <th className="text-left py-3 px-4 font-medium">Billing Period</th>
+                  <th className="text-left py-3 px-4 font-medium">Source</th>
                   <th className="text-left py-3 px-4 font-medium">Issue Date</th>
                   <th className="text-left py-3 px-4 font-medium">Amount</th>
                   <th className="text-left py-3 px-4 font-medium">Status</th>
@@ -63,6 +64,7 @@ export default function ClientInvoiceHistory() {
                   <tr key={inv.id} className="border-b last:border-0">
                     <td className="py-3 px-4 font-medium">{inv.id}</td>
                     <td className="py-3 px-4">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</td>
+                    <td className="py-3 px-4">{getInvoiceSourceTypeLabel(inv)}</td>
                     <td className="py-3 px-4">{formatLongDate(inv.issuedAt ?? inv.createdAt)}</td>
                     <td className="py-3 px-4 font-semibold">{formatCurrency(inv.totalAmount)}</td>
                     <td className="py-3 px-4">

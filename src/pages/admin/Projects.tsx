@@ -91,12 +91,17 @@ export default function ProjectsPage() {
       return;
     }
 
-    if (value.hourlyRate <= 0) {
+    if ((value.projectBillingType ?? "hourly") !== "fixed" && value.hourlyRate <= 0) {
       toast({ title: "Hourly rate required", description: "Projects need an hourly rate to monitor billable value and cap usage.", variant: "destructive" });
       return;
     }
 
-    if (value.maxPayoutCap <= 0) {
+    if ((value.projectBillingType ?? "hourly") === "fixed" && (value.fixedProjectAmount ?? 0) <= 0) {
+      toast({ title: "Fixed amount required", description: "Set a fixed project amount for fixed project billing.", variant: "destructive" });
+      return;
+    }
+
+    if ((value.projectBillingType ?? "hourly") !== "fixed" && value.maxPayoutCap <= 0) {
       toast({ title: "Project cap required", description: "Set a payout cap so the project can track remaining budget and hours.", variant: "destructive" });
       return;
     }
@@ -187,7 +192,7 @@ export default function ProjectsPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
                   <div>
                     <p className="text-xs text-muted-foreground">Billing type</p>
-                    <p className="font-medium">{formatEnumLabel(project.billingType)}</p>
+                    <p className="font-medium">{project.projectBillingType ?? formatEnumLabel(project.billingType)}</p>
                   </div>
                   <div>
                     <p className="text-xs text-muted-foreground">Rate</p>

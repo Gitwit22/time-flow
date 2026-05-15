@@ -61,6 +61,12 @@ export function toClient(r: ApiRecord): Client {
 
 export function toProject(r: ApiRecord): Project {
   const isArchived = r.isActive === false;
+  const legacyBillingType = r.billingType as Project["billingType"];
+  const mappedProjectBillingType = legacyBillingType === "fixed_fee"
+    ? "fixed"
+    : "hourly";
+  const fixedProjectAmount = (r.fixedProjectAmount as number | undefined)
+    ?? (legacyBillingType === "fixed_fee" ? ((r.maxPayoutCap as number) || 0) : undefined);
   return {
     id: r.id as string,
     name: r.name as string,
@@ -71,6 +77,9 @@ export function toProject(r: ApiRecord): Project {
     hourlyRate: (r.hourlyRate as number) || 0,
     maxPayoutCap: (r.maxPayoutCap as number) || 0,
     capHandling: r.capHandling as Project["capHandling"],
+    projectBillingType: (r.projectBillingType as Project["projectBillingType"]) ?? mappedProjectBillingType,
+    fixedProjectAmount: fixedProjectAmount && fixedProjectAmount > 0 ? fixedProjectAmount : undefined,
+    billingNotes: (r.billingNotes as string) ?? undefined,
     startDate: r.startDate as string,
     endDate: (r.endDate as string) ?? undefined,
     notes: (r.notes as string) || "",
@@ -102,6 +111,10 @@ export function toInvoice(r: ApiRecord): Invoice {
   return {
     id: r.id as string,
     clientId: r.clientId as string,
+    projectId: (r.projectId as string) ?? undefined,
+    invoiceSourceType: (r.invoiceSourceType as Invoice["invoiceSourceType"]) ?? undefined,
+    sourceDescription: (r.sourceDescription as string) ?? undefined,
+    fixedBillingAmount: (r.fixedBillingAmount as number | undefined) ?? undefined,
     periodStart: (r.periodStart as string) || "",
     periodEnd: (r.periodEnd as string) || "",
     billingMode: r.billingMode as Invoice["billingMode"],

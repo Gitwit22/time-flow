@@ -1,12 +1,14 @@
 export type UserRole = "contractor" | "client_viewer";
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "archived";
 export type ProjectBillingType = "hourly_uncapped" | "hourly_capped" | "fixed_fee";
+export type ProjectInvoiceBillingType = "hourly" | "fixed" | "mixed";
 export type ProjectCapHandling = "allow_overage" | "warn_only" | "block_billable";
 export type AttachedDocumentStatus = "active" | "archived";
 export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
 export type ExpenseBillingTarget = "client" | "project";
 export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 export type ProjectBillStatus = "draft" | "issued" | "paid" | "void";
+export type InvoiceSourceType = "time_entries" | "manual_project" | "partial_project" | "expense_billback" | "mixed";
 
 export interface UserProfile {
   id: string;
@@ -71,6 +73,9 @@ export interface Project {
   hourlyRate: number;
   maxPayoutCap: number;
   capHandling: ProjectCapHandling;
+  projectBillingType?: ProjectInvoiceBillingType;
+  fixedProjectAmount?: number;
+  billingNotes?: string;
   startDate: string;
   endDate?: string;
   notes: string;
@@ -163,6 +168,10 @@ export interface WorkSession {
 export interface Invoice {
   id: string;
   clientId: string;
+  projectId?: string;
+  invoiceSourceType?: InvoiceSourceType;
+  sourceDescription?: string;
+  fixedBillingAmount?: number;
   periodStart: string;
   periodEnd: string;
   billingMode: InvoiceBillingMode;
@@ -217,6 +226,10 @@ export interface EmailDraft {
 export interface InvoiceDraftPreview {
   clientId: string;
   clientName: string;
+  projectId?: string;
+  invoiceSourceType?: InvoiceSourceType;
+  sourceDescription?: string;
+  fixedBillingAmount?: number;
   periodStart: string;
   periodEnd: string;
   billingMode: InvoiceBillingMode;

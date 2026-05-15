@@ -12,7 +12,7 @@ import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
@@ -109,6 +109,7 @@ export default function InvoiceCenter() {
                 <tr className="border-b text-muted-foreground">
                   <th className="text-left py-3 px-4 font-medium">Invoice #</th>
                   <th className="text-left py-3 px-4 font-medium">Client</th>
+                  <th className="text-left py-3 px-4 font-medium">Source</th>
                   <th className="text-left py-3 px-4 font-medium">Period</th>
                   <th className="text-left py-3 px-4 font-medium">Hours</th>
                   <th className="text-left py-3 px-4 font-medium">Rate</th>
@@ -123,6 +124,7 @@ export default function InvoiceCenter() {
                   <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{inv.id}</td>
                     <td className="py-3 px-4">{inv.clientName}</td>
+                    <td className="py-3 px-4">{getInvoiceSourceTypeLabel(inv)}</td>
                     <td className="py-3 px-4">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</td>
                     <td className="py-3 px-4">{formatHours(inv.totalHours)}</td>
                     <td className="py-3 px-4">{formatCurrency(inv.hourlyRate)}/hr</td>

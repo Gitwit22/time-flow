@@ -6,7 +6,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus, groupInvoiceLaborByProject } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
@@ -77,6 +77,10 @@ export default function ClientInvoiceDetail() {
   const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
   const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
   const displayStatus = getInvoiceDisplayStatus(invoice);
+  const sourceLabel = getInvoiceSourceTypeLabel(invoice);
+  const laborSectionTitle = invoice.invoiceSourceType === "partial_project" || invoice.invoiceSourceType === "manual_project"
+    ? "Project Billing Line Items"
+    : "Labor / Time Entry Line Items";
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -153,10 +157,21 @@ export default function ClientInvoiceDetail() {
               <span className={statusStyles[displayStatus]}>{displayStatus}</span>
             </div>
             <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Source</p>
+              <p className="font-medium text-sm mt-1">{sourceLabel}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Paid Date</p>
               <p className="font-medium text-sm mt-1">{invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid"}</p>
             </div>
           </div>
+
+          {invoice.sourceDescription ? (
+            <div className="mb-8 rounded-lg border bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Source Description</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap">{invoice.sourceDescription}</p>
+            </div>
+          ) : null}
 
           <div className="mb-8">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bill To</p>
@@ -171,7 +186,7 @@ export default function ClientInvoiceDetail() {
 
           <div className="space-y-6 mb-6">
             <div>
-              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Labor / Time Entry Line Items</p>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{laborSectionTitle}</p>
               {laborLineItems.length ? (
                 <div className="space-y-4">
                   {laborGroups.map((group) => (
