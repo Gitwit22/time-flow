@@ -1,6 +1,7 @@
 import { getBillingSummary } from "@/lib/billing";
 import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculations";
 import { formatClockTime } from "@/lib/date";
+import { isViewerLikeRole } from "@/lib/organization";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import type { AppState } from "@/store/appStore";
 import type { Client, Project, ProjectBill, TimeEntry } from "@/types";
@@ -156,7 +157,7 @@ export function applyClientClockInVisibility(
 }
 
 function resolveScopedViewerClientId(state: AppState) {
-  if (state.currentUser.role !== "client_viewer") {
+  if (!isViewerLikeRole(state.currentUser.role)) {
     return undefined;
   }
 
@@ -176,14 +177,14 @@ function resolveScopedViewerClientId(state: AppState) {
 }
 
 export function selectIsReadonly(state: AppState) {
-  return state.currentUser.role === "client_viewer";
+  return isViewerLikeRole(state.currentUser.role);
 }
 
 export function selectViewerScope(state: AppState) {
   const viewerClientId = resolveScopedViewerClientId(state);
   const activeClient = viewerClientId ? state.clients.find((client) => client.id === viewerClientId) : undefined;
 
-  if (state.currentUser.role !== "client_viewer") {
+  if (!isViewerLikeRole(state.currentUser.role)) {
     return {
       activeClient: undefined,
       clients: state.clients,
@@ -215,6 +216,24 @@ export function selectViewerScope(state: AppState) {
     timeEntries: state.timeEntries.filter((entry) => entry.clientId === viewerClientId),
     viewerClientId,
     viewerClientLocked: state.viewerClientLocked,
+  };
+}
+
+export function selectOrganizationScope(state: AppState) {
+  if (!state.activeOrganizationId) {
+    return {
+      clients: state.clients,
+      invoices: state.invoices,
+      projects: state.projects,
+      timeEntries: state.timeEntries,
+    };
+  }
+
+  return {
+    clients: state.clients.filter((client) => !client.organizationId || client.organizationId === state.activeOrganizationId),
+    invoices: state.invoices.filter((invoice) => !invoice.organizationId || invoice.organizationId === state.activeOrganizationId),
+    projects: state.projects.filter((project) => !project.organizationId || project.organizationId === state.activeOrganizationId),
+    timeEntries: state.timeEntries.filter((entry) => !entry.organizationId || entry.organizationId === state.activeOrganizationId),
   };
 }
 

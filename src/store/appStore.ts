@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { createFixedBillInvoicePreview, createProjectPartialInvoicePreview, materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
+import { normalizeOrganizationRole } from "@/lib/organization";
 import { getProjectBillingSnapshot, normalizeTimeEntryRecord } from "@/lib/projects";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
@@ -37,8 +38,12 @@ import type {
   Expense,
   Invoice,
   InvoiceDraftPreview,
+  Organization,
+  OrganizationMember,
   ProjectBill,
+  ProjectAssignment,
   Project,
+  EmployeeProfile,
   TimeEntry,
   UserProfile,
   UserRole,
@@ -67,6 +72,13 @@ type PartialProjectInvoiceDraft = {
   projectId: string;
   clientId: string;
 };
+type OrganizationMemberDraft = Omit<OrganizationMember, "id" | "status" | "invitedAt" | "joinedAt"> & {
+  status?: OrganizationMember["status"];
+  invitedAt?: string;
+  joinedAt?: string;
+};
+type ProjectAssignmentDraft = Omit<ProjectAssignment, "id">;
+type EmployeeProfileDraft = EmployeeProfile;
 
 const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
 const EXPENSE_STORAGE_KEY = "timeflow-expenses-v1";
@@ -216,10 +228,33 @@ function calculateDurationHours(startTime: string, endTime?: string) {
   return Math.max(0, Number(((end - start) / 60).toFixed(2)));
 }
 
+function canManageWorkspace(role: UserRole) {
+  return role === "contractor" || role === "owner" || role === "admin" || role === "manager";
+}
+
+function canTrackTime(role: UserRole) {
+  return canManageWorkspace(role) || role === "employee";
+}
+
+function createDefaultOrganization(user: UserProfile, businessName: string): Organization {
+  return {
+    id: `org-${user.id || "default"}`,
+    name: businessName || "Default Organization",
+    ownerUserId: user.id || "owner",
+    createdAt: new Date().toISOString(),
+    status: "active",
+  };
+}
+
 export interface AppState {
   authStatus: "unknown" | "authenticated" | "unauthenticated";
   hydrated: boolean;
   currentUser: UserProfile;
+  organizations: Organization[];
+  activeOrganizationId?: string;
+  organizationMembers: OrganizationMember[];
+  employeeProfiles: EmployeeProfile[];
+  projectAssignments: ProjectAssignment[];
   viewerClientId?: string;
   viewerClientLocked: boolean;
   settings: AppSettings;
@@ -236,6 +271,7 @@ export interface AppState {
   hydrateFromApi: () => Promise<void>;
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
+  setActiveOrganization: (organizationId: string) => void;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
@@ -255,9 +291,15 @@ export interface AppState {
   deleteProject: (id: string) => void;
   addProjectDocument: (projectId: string, document: AttachedDocumentDraft) => void;
   updateProjectDocument: (projectId: string, documentId: string, updates: Partial<AttachedDocument>) => void;
+  inviteOrganizationMember: (member: OrganizationMemberDraft, profile?: EmployeeProfileDraft) => void;
+  updateOrganizationMember: (id: string, updates: Partial<OrganizationMember>) => void;
+  addProjectAssignment: (assignment: ProjectAssignmentDraft) => void;
+  removeProjectAssignment: (id: string) => void;
   startSession: (clientId: string, notes?: string, projectId?: string) => boolean;
   updateActiveSession: (updates: Partial<WorkSession>) => void;
   stopSession: () => TimeEntry | null;
+  approveTimeEntry: (id: string) => void;
+  rejectTimeEntry: (id: string, reason: string) => void;
   addTimeEntry: (entry: TimeEntryDraft) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
@@ -311,6 +353,11 @@ const emptyState = {
   authStatus: "unknown" as const,
   hydrated: false,
   currentUser: defaultUser,
+  organizations: [] as Organization[],
+  activeOrganizationId: undefined as string | undefined,
+  organizationMembers: [] as OrganizationMember[],
+  employeeProfiles: [] as EmployeeProfile[],
+  projectAssignments: [] as ProjectAssignment[],
   viewerClientId: undefined as string | undefined,
   viewerClientLocked: false,
   settings: defaultSettings,
@@ -334,6 +381,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
     try {
       const { clients, projects, timeEntries, invoices, projectBills, settings } = await apiHydrateAll();
       const mergedSettings = { ...settings, ...readPersistedPayPeriodSettings() };
+      const state = get();
+      const defaultOrganization = createDefaultOrganization(state.currentUser, mergedSettings.businessName);
+      const activeOrganizationId = state.activeOrganizationId ?? defaultOrganization.id;
+      const organizations = state.organizations.length > 0
+        ? state.organizations
+        : [defaultOrganization];
+      const organizationMembers = state.organizationMembers.length > 0
+        ? state.organizationMembers
+        : [{
+            id: `member-${state.currentUser.id || "owner"}`,
+            organizationId: activeOrganizationId,
+            userId: state.currentUser.id || undefined,
+            email: state.currentUser.email,
+            name: state.currentUser.name || "Owner",
+            role: normalizeOrganizationRole(state.currentUser.role),
+            status: "active" as const,
+            joinedAt: new Date().toISOString(),
+          }];
       const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
       const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
       const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
@@ -341,8 +406,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const restoredSession = readPersistedActiveSession();
       const persistedExpenses = readPersistedExpenses();
       set({
+        activeOrganizationId,
         clients: normalizedClients,
+        employeeProfiles: state.employeeProfiles,
         projects: normalizedProjects,
+        organizations,
+        organizationMembers,
+        projectAssignments: state.projectAssignments,
         timeEntries: normalizedEntries,
         expenses: persistedExpenses,
         projectBills,
@@ -358,6 +428,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   setHydrated: (hydrated) => set({ hydrated }),
+
+  setActiveOrganization: (organizationId) => set({ activeOrganizationId: organizationId }),
 
   setRole: (role) =>
     set((state) => {
@@ -406,12 +478,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   syncCurrentUser: (updates) => set((state) => ({ currentUser: { ...state.currentUser, ...updates } })),
 
   updateCurrentUser: (updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({ currentUser: { ...state.currentUser, ...updates } }));
   },
 
   updateSettings: (updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().settings;
     const nextSettings = { ...prev, ...updates };
     writePersistedPayPeriodSettings({
@@ -440,9 +512,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addClient: (client) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const id = crypto.randomUUID();
-    const newClient: Client = { ...client, id, canViewActiveClockIns: client.canViewActiveClockIns ?? true, documents: [] };
+    const newClient: Client = {
+      ...client,
+      id,
+      organizationId: get().activeOrganizationId,
+      canViewActiveClockIns: client.canViewActiveClockIns ?? true,
+      documents: [],
+    };
     set((state) => ({ clients: [...state.clients, newClient] }));
     void apiCreateClient(newClient).catch((err) => {
       set((state) => ({ clients: state.clients.filter((c) => c.id !== id) }));
@@ -451,7 +529,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addClientDocument: (clientId, document) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({
       clients: state.clients.map((client) =>
         client.id === clientId ? { ...client, documents: [...client.documents, { ...document, id: createId("client-doc") }] } : client,
@@ -460,7 +538,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateClientDocument: (clientId, documentId, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({
       clients: state.clients.map((client) =>
         client.id === clientId
@@ -474,7 +552,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateClient: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().clients.find((c) => c.id === id);
     set((state) => ({ clients: state.clients.map((c) => (c.id === id ? { ...c, ...updates } : c)) }));
     void apiUpdateClient(id, updates).catch((err) => {
@@ -484,7 +562,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   archiveClient: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().clients.find((c) => c.id === id);
     set((state) => ({
       clients: state.clients.map((c) => (c.id === id ? { ...c, archived: true, archivedAt: new Date().toISOString() } : c)),
@@ -496,7 +574,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   restoreClient: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().clients.find((c) => c.id === id);
     set((state) => ({
       clients: state.clients.map((c) => (c.id === id ? { ...c, archived: false, archivedAt: undefined, archivedReason: undefined } : c)),
@@ -508,7 +586,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteClient: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const s = get();
     const snapshot = {
       clients: s.clients,
@@ -543,9 +621,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addProject: (project) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const id = crypto.randomUUID();
-    const newProject: Project = { ...project, id, documents: [] };
+    const newProject: Project = { ...project, id, organizationId: get().activeOrganizationId, documents: [] };
     set((state) => ({ projects: [...state.projects, newProject] }));
     void apiCreateProject(newProject).catch((err) => {
       set((state) => ({ projects: state.projects.filter((p) => p.id !== id) }));
@@ -554,7 +632,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateProject: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().projects.find((p) => p.id === id);
     set((state) => ({ projects: state.projects.map((p) => (p.id === id ? { ...p, ...updates } : p)) }));
     void apiUpdateProject(id, updates).catch((err) => {
@@ -564,7 +642,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   archiveProject: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().projects.find((p) => p.id === id);
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? { ...p, archived: true, archivedAt: new Date().toISOString() } : p)),
@@ -576,7 +654,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   restoreProject: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().projects.find((p) => p.id === id);
     set((state) => ({
       projects: state.projects.map((p) => (p.id === id ? { ...p, archived: false, archivedAt: undefined, archivedReason: undefined } : p)),
@@ -588,7 +666,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteProject: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const s = get();
     const snapshot = { projects: s.projects, timeEntries: s.timeEntries, projectBills: s.projectBills, activeSession: s.activeSession };
     set((state) => {
@@ -607,7 +685,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addProjectDocument: (projectId, document) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({
       projects: state.projects.map((project) =>
         project.id === projectId ? { ...project, documents: [...project.documents, { ...document, id: createId("project-doc") }] } : project,
@@ -616,7 +694,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateProjectDocument: (projectId, documentId, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({
       projects: state.projects.map((project) =>
         project.id === projectId
@@ -629,9 +707,68 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
   },
 
+  inviteOrganizationMember: (member, profile) => {
+    const state = get();
+    if (!canManageWorkspace(state.currentUser.role)) return;
+
+    const id = createId("member");
+    const invitedAt = member.invitedAt ?? new Date().toISOString();
+    const nextMember: OrganizationMember = {
+      ...member,
+      id,
+      invitedAt,
+      joinedAt: member.status === "active" ? member.joinedAt ?? invitedAt : undefined,
+      status: member.status ?? "invited",
+    };
+
+    set((current) => ({
+      organizationMembers: [nextMember, ...current.organizationMembers],
+      employeeProfiles:
+        profile
+          ? [
+              {
+                ...profile,
+                memberId: id,
+                organizationId: member.organizationId,
+              },
+              ...current.employeeProfiles,
+            ]
+          : current.employeeProfiles,
+    }));
+  },
+
+  updateOrganizationMember: (id, updates) => {
+    if (!canManageWorkspace(get().currentUser.role)) return;
+    set((state) => ({
+      organizationMembers: state.organizationMembers.map((member) =>
+        member.id === id ? { ...member, ...updates } : member,
+      ),
+    }));
+  },
+
+  addProjectAssignment: (assignment) => {
+    if (!canManageWorkspace(get().currentUser.role)) return;
+    set((state) => ({
+      projectAssignments: [
+        {
+          ...assignment,
+          id: createId("assignment"),
+        },
+        ...state.projectAssignments,
+      ],
+    }));
+  },
+
+  removeProjectAssignment: (id) => {
+    if (!canManageWorkspace(get().currentUser.role)) return;
+    set((state) => ({
+      projectAssignments: state.projectAssignments.filter((assignment) => assignment.id !== id),
+    }));
+  },
+
   startSession: (clientId, notes, projectId) => {
     const state = get();
-    if (state.activeSession.isActive || !clientId || state.currentUser.role === "client_viewer") return false;
+    if (state.activeSession.isActive || !clientId || !canTrackTime(state.currentUser.role)) return false;
 
     const session: WorkSession = {
       isActive: true,
@@ -651,7 +788,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateActiveSession: (updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canTrackTime(get().currentUser.role)) return;
     set((state) => {
       const next = { ...state.activeSession, ...updates };
       persistActiveSession(next);
@@ -661,7 +798,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   stopSession: () => {
     const state = get();
-    if (state.currentUser.role !== "contractor" || !state.activeSession.isActive || !state.activeSession.startedAt || !state.activeSession.clientId) {
+    if (!canTrackTime(state.currentUser.role) || !state.activeSession.isActive || !state.activeSession.startedAt || !state.activeSession.clientId) {
       return null;
     }
 
@@ -670,6 +807,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const activeTrackedSeconds = getTrackedSessionSeconds(state.activeSession, endedAt);
     const durationHours = Number((activeTrackedSeconds / 60 / 60).toFixed(2));
     const id = crypto.randomUUID();
+    const requiresApproval = state.currentUser.role === "employee";
     const entry: TimeEntry = {
       id,
       clientId: state.activeSession.clientId,
@@ -680,10 +818,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       durationHours,
       billingRate: state.activeSession.billingRate,
       notes: state.activeSession.notes?.trim() || "Tracked work session",
-      status: "completed",
+      status: requiresApproval ? "pending_approval" : "completed",
       billable: true,
       invoiced: false,
       invoiceId: null,
+      organizationId: state.activeOrganizationId,
     };
     const normalizedEntry = normalizeTimeEntryRecord(entry, state.clients, state.projects);
 
@@ -703,7 +842,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   addTimeEntry: (entry) => {
     const state = get();
-    if (state.currentUser.role !== "contractor") return;
+    if (!canTrackTime(state.currentUser.role)) return;
 
     const id = crypto.randomUUID();
     const nextEntry = normalizeTimeEntryRecord(
@@ -715,6 +854,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         billable: entry.billable ?? true,
         invoiced: entry.invoiced ?? false,
         invoiceId: entry.invoiceId ?? null,
+        organizationId: entry.organizationId ?? state.activeOrganizationId,
       },
       state.clients,
       state.projects,
@@ -729,7 +869,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateTimeEntry: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canTrackTime(get().currentUser.role)) return;
     const prev = get().timeEntries.find((e) => e.id === id);
     set((state) => ({
       timeEntries: state.timeEntries.map((entry) => {
@@ -748,7 +888,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteTimeEntry: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canTrackTime(get().currentUser.role)) return;
     const prev = get().timeEntries;
     set((state) => ({ timeEntries: state.timeEntries.filter((e) => e.id !== id) }));
     void apiDeleteTimeEntry(id).catch((err) => {
@@ -758,7 +898,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addExpense: (expense) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
 
     set((state) => {
       const expenses = [normalizeExpenseRecord({ id: crypto.randomUUID(), ...expense }), ...state.expenses];
@@ -768,7 +908,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateExpense: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
 
     set((state) => {
       const expenses = state.expenses.map((expense) => (expense.id === id ? normalizeExpenseRecord({ ...expense, ...updates }) : expense));
@@ -778,7 +918,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteExpense: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
 
     set((state) => {
       const expenses = state.expenses.filter((expense) => expense.id !== id);
@@ -788,12 +928,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addProjectBill: (bill) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
 
     const id = crypto.randomUUID();
     const now = new Date().toISOString();
     const next: ProjectBill = {
       ...bill,
+      organizationId: get().activeOrganizationId,
       amount: Number(bill.amount || 0),
       id,
       status: bill.status ?? "issued",
@@ -810,7 +951,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateProjectBill: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
 
     const prev = get().projectBills.find((projectBill) => projectBill.id === id);
     set((state) => ({
@@ -834,7 +975,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   markProjectBillPaid: (id, paidAt) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     get().updateProjectBill(id, {
       status: "paid",
       paidAt: paidAt ?? new Date().toISOString(),
@@ -843,7 +984,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   voidProjectBill: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     get().updateProjectBill(id, {
       status: "void",
       voidedAt: new Date().toISOString(),
@@ -852,7 +993,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteProjectBill: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().projectBills;
     set((state) => ({ projectBills: state.projectBills.filter((projectBill) => projectBill.id !== id) }));
     void apiDeleteProjectBill(id).catch((err) => {
@@ -862,7 +1003,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   markTimeEntryInvoiced: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().timeEntries;
     set((state) => ({
       timeEntries: state.timeEntries.map((e) => (e.id === id ? { ...e, status: "invoiced" as const, invoiced: true } : e)),
@@ -874,7 +1015,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   unmarkTimeEntryInvoiced: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().timeEntries;
     set((state) => ({
       timeEntries: state.timeEntries.map((e) =>
@@ -890,7 +1031,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   commitInvoiceDrafts: (previews) => {
     if (!previews.length) return [];
     const state = get();
-    if (state.currentUser.role !== "contractor") return [];
+    if (!canManageWorkspace(state.currentUser.role)) return [];
 
     const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
 
@@ -951,7 +1092,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   commitSingleInvoice: (preview) => {
     const state = get();
-    if (state.currentUser.role !== "contractor") return null;
+    if (!canManageWorkspace(state.currentUser.role)) return null;
 
     const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
     if (!invoice) return null;
@@ -998,7 +1139,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   updateInvoice: (id, updates) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().invoices.find((inv) => inv.id === id);
     if (!prev) return;
     const nextInvoice = { ...prev, ...updates };
@@ -1058,7 +1199,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   deleteInvoice: (id) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     const s = get();
     const invoice = s.invoices.find((inv) => inv.id === id);
     const linkedEntryIds = new Set(invoice?.entryIds ?? []);
@@ -1093,7 +1234,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   createPartialProjectInvoice: (draft) => {
     const state = get();
-    if (state.currentUser.role !== "contractor") return null;
+    if (!canManageWorkspace(state.currentUser.role)) return null;
 
     const project = state.projects.find((item) => item.id === draft.projectId);
     const client = state.clients.find((item) => item.id === draft.clientId);
@@ -1147,6 +1288,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ...baseInvoice,
       fixedBillingAmount: draft.amount,
       invoiceSourceType: preview.invoiceSourceType,
+      organizationId: state.activeOrganizationId,
       projectId: project.id,
       projectIds: [project.id],
       sourceDescription,
@@ -1181,7 +1323,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   createInvoiceFromFixedBill: (billAmount, billTitle, clientId, projectId, dueDate) => {
     const state = get();
-    if (state.currentUser.role !== "contractor") return null;
+    if (!canManageWorkspace(state.currentUser.role)) return null;
 
     const client = state.clients.find((c) => c.id === clientId);
     if (!client) {
@@ -1192,6 +1334,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const preview = createFixedBillInvoicePreview(clientId, client, billAmount, billTitle, projectId, dueDate);
     const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
     if (!invoice) return null;
+
+    invoice.organizationId = state.activeOrganizationId;
 
     set((current) => ({ invoices: [invoice, ...current.invoices] }));
 
@@ -1204,12 +1348,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   saveEmailDraft: (draft) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({ emailDrafts: { ...state.emailDrafts, [draft.invoiceId]: draft } }));
   },
 
   markEmailDraftReady: (invoiceId, ready) => {
-    if (get().currentUser.role !== "contractor") return;
+    if (!canManageWorkspace(get().currentUser.role)) return;
     set((state) => ({
       emailDrafts: {
         ...state.emailDrafts,
@@ -1232,5 +1376,39 @@ export const useAppStore = create<AppState>()((set, get) => ({
       authStatus: "unauthenticated",
       hydrated: true,
     });
+  },
+
+  approveTimeEntry: (id) => {
+    if (!canManageWorkspace(get().currentUser.role)) return;
+    set((state) => ({
+      timeEntries: state.timeEntries.map((entry) =>
+        entry.id === id
+          ? {
+              ...entry,
+              status: "approved",
+              rejectionReason: undefined,
+              reviewedBy: state.currentUser.id,
+              reviewedAt: new Date().toISOString(),
+            }
+          : entry,
+      ),
+    }));
+  },
+
+  rejectTimeEntry: (id, reason) => {
+    if (!canManageWorkspace(get().currentUser.role)) return;
+    set((state) => ({
+      timeEntries: state.timeEntries.map((entry) =>
+        entry.id === id
+          ? {
+              ...entry,
+              status: "rejected",
+              rejectionReason: reason,
+              reviewedBy: state.currentUser.id,
+              reviewedAt: new Date().toISOString(),
+            }
+          : entry,
+      ),
+    }));
   },
 }));

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight, Receipt } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight, Receipt, ShieldCheck } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -13,6 +13,7 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { useAppStore } from "@/store/appStore";
+import { canGenerateInvoices, canManageTeam, canViewAdminWorkspace, isEmployeeRole, isViewerLikeRole } from "@/lib/organization";
 
 const mainItems = [
   { title: "Dashboard", url: "/platform", icon: LayoutDashboard },
@@ -20,6 +21,8 @@ const mainItems = [
   { title: "Expenses", url: "/platform/expenses", icon: Receipt },
   { title: "Clients", url: "/platform/clients", icon: Users },
   { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
+  { title: "Team", url: "/platform/team", icon: Users },
+  { title: "Approvals", url: "/platform/approvals", icon: ShieldCheck },
   { title: "Invoices", url: "/platform/invoices", icon: FileText },
   { title: "Email Prep", url: "/platform/email", icon: Mail },
   { title: "Reports", url: "/platform/reports", icon: BarChart3 },
@@ -35,8 +38,33 @@ export function AdminSidebar() {
   const collapsed = state === "collapsed";
   const role = useAppStore((store) => store.currentUser.role);
   const settings = useAppStore((store) => store.settings);
-  const visibleMainItems = role === "client_viewer" ? mainItems.filter((item) => ["Dashboard", "Time Tracker", "Invoices", "Reports"].includes(item.title)) : mainItems;
-  const visibleBottomItems = role === "client_viewer" ? [] : bottomItems;
+  const employeeItems = [
+    { title: "Clock In / Out", url: "/employee", icon: Clock },
+    { title: "My Timesheets", url: "/employee/timesheets", icon: FileText },
+  ];
+  const viewerItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
+  const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Approvals", "Invoices", "Reports"].includes(item.title));
+  const adminItems = mainItems;
+
+  const visibleMainItems = isEmployeeRole(role)
+    ? employeeItems
+    : isViewerLikeRole(role)
+      ? viewerItems
+      : role === "manager"
+        ? managerItems
+        : canViewAdminWorkspace(role)
+          ? adminItems.filter((item) => {
+              if (item.title === "Team") {
+                return canManageTeam(role);
+              }
+              if (["Invoices", "Email Prep"].includes(item.title)) {
+                return canGenerateInvoices(role);
+              }
+              return true;
+            })
+          : viewerItems;
+
+  const visibleBottomItems = isEmployeeRole(role) || isViewerLikeRole(role) ? [] : bottomItems;
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">

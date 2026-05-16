@@ -46,6 +46,7 @@ export function toClient(r: ApiRecord): Client {
   const isArchived = r.isActive === false;
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     name: r.name as string,
     contactName: (r.contactName as string) ?? undefined,
     contactEmail: (r.contactEmail as string) ?? undefined,
@@ -69,6 +70,7 @@ export function toProject(r: ApiRecord): Project {
     ?? (legacyBillingType === "fixed_fee" ? ((r.maxPayoutCap as number) || 0) : undefined);
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     name: r.name as string,
     clientId: r.clientId as string,
     status: r.status as Project["status"],
@@ -92,11 +94,17 @@ export function toProject(r: ApiRecord): Project {
 export function toTimeEntry(r: ApiRecord): TimeEntry {
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
+    employeeMemberId: (r.employeeMemberId as string) ?? undefined,
+    userId: (r.userId as string) ?? undefined,
     clientId: r.clientId as string,
     projectId: (r.projectId as string) ?? undefined,
     date: r.date as string,
     startTime: r.startTime as string,
     endTime: (r.endTime as string) ?? undefined,
+    clockInAt: (r.clockInAt as string) ?? undefined,
+    clockOutAt: (r.clockOutAt as string) ?? undefined,
+    durationMinutes: (r.durationMinutes as number) ?? undefined,
     durationHours: (r.durationHours as number) || 0,
     billingRate: r.billingRate != null ? (r.billingRate as number) : undefined,
     billable: r.billable !== false,
@@ -104,12 +112,16 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
     invoiceId: (r.invoiceId as string) || null,
     notes: (r.notes as string) || "",
     status: r.status as TimeEntry["status"],
+    rejectionReason: (r.rejectionReason as string) ?? undefined,
+    reviewedBy: (r.reviewedBy as string) ?? undefined,
+    reviewedAt: (r.reviewedAt as string) ?? undefined,
   };
 }
 
 export function toInvoice(r: ApiRecord): Invoice {
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     clientId: r.clientId as string,
     projectId: (r.projectId as string) ?? undefined,
     invoiceSourceType: (r.invoiceSourceType as Invoice["invoiceSourceType"]) ?? undefined,
@@ -143,6 +155,7 @@ export function toInvoice(r: ApiRecord): Invoice {
 export function toProjectBill(r: ApiRecord): ProjectBill {
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     projectId: r.projectId as string,
     clientId: r.clientId as string,
     title: (r.title as string) || "",

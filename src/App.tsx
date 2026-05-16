@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireClientViewer } from "@/components/layout/RequireClientViewer";
+import { RequireEmployee } from "@/components/layout/RequireEmployee";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
@@ -23,14 +24,18 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import TimeTracker from "./pages/admin/TimeTracker";
 import Clients from "./pages/admin/Clients";
 import ProjectsPage from "./pages/admin/Projects";
+import TeamPage from "./pages/admin/Team";
 import ExpensesPage from "./pages/admin/Expenses";
 import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
 import EmailPrep from "./pages/admin/EmailPrep";
 import Reports from "./pages/admin/Reports";
+import ApprovalsPage from "./pages/admin/Approvals";
 import SettingsPage from "./pages/admin/Settings";
 import DataTransferPage from "./pages/admin/DataTransfer";
+import EmployeeClockPage from "./pages/employee/Clock";
+import MyTimesheetsPage from "./pages/employee/MyTimesheets";
 
 // Client layout + pages
 import { ClientLayout } from "./components/ClientLayout";
@@ -78,8 +83,8 @@ function AuthBootstrapper() {
       markAuthenticated();
 
       setViewerClientContext(
-        platformSession.user.role === "client_viewer" ? platformSession.user.organizationId : undefined,
-        platformSession.user.role === "client_viewer",
+        platformSession.user.role === "client_viewer" || platformSession.user.role === "viewer" ? platformSession.user.organizationId : undefined,
+        platformSession.user.role === "client_viewer" || platformSession.user.role === "viewer",
       );
 
       void hydrateFromApi();
@@ -98,8 +103,8 @@ function AuthBootstrapper() {
     markAuthenticated();
 
     setViewerClientContext(
-      activeUser.role === "client_viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
-      activeUser.role === "client_viewer",
+      activeUser.role === "client_viewer" || activeUser.role === "viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
+      activeUser.role === "client_viewer" || activeUser.role === "viewer",
     );
 
     void hydrateFromApi();
@@ -145,7 +150,9 @@ const App = () => (
             path="/platform"
             element={
               <RequireAuth>
-                <AdminLayout />
+                <RequireContractor>
+                  <AdminLayout />
+                </RequireContractor>
               </RequireAuth>
             }
           >
@@ -172,6 +179,22 @@ const App = () => (
               element={
                 <RequireContractor>
                   <ProjectsPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="team"
+              element={
+                <RequireContractor>
+                  <TeamPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="approvals"
+              element={
+                <RequireContractor>
+                  <ApprovalsPage />
                 </RequireContractor>
               }
             />
@@ -228,6 +251,20 @@ const App = () => (
 
           <Route path="/admin" element={<LegacyAdminRedirect />} />
           <Route path="/admin/*" element={<LegacyAdminRedirect />} />
+
+          <Route
+            path="/employee"
+            element={
+              <RequireAuth>
+                <RequireEmployee>
+                  <AdminLayout />
+                </RequireEmployee>
+              </RequireAuth>
+            }
+          >
+            <Route index element={<EmployeeClockPage />} />
+            <Route path="timesheets" element={<MyTimesheetsPage />} />
+          </Route>
 
           {/* Client Portal */}
           <Route

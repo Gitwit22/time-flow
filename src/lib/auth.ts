@@ -57,7 +57,20 @@ function clearSession() {
 }
 
 function toAuthUser(user: BackendAuthUser): AuthUser {
-	const normalizedRole: UserRole = user.role === "client_viewer" ? "client_viewer" : "contractor";
+	const normalizedRole: UserRole =
+		user.role === "owner"
+			? "owner"
+			: user.role === "admin"
+				? "admin"
+				: user.role === "manager"
+					? "manager"
+					: user.role === "employee"
+						? "employee"
+						: user.role === "viewer"
+							? "viewer"
+							: user.role === "client_viewer"
+								? "client_viewer"
+								: "contractor";
 	return {
 		id: user.id,
 		name: user.displayName?.trim() || user.email.split("@")[0] || user.email,

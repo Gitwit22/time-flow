@@ -21,7 +21,7 @@ export const TIMEFLOW_API_BASE =
 export interface PlatformUser {
   id: string;
   email: string;
-  role: "contractor" | "client_viewer";
+  role: "owner" | "admin" | "manager" | "employee" | "viewer" | "contractor" | "client_viewer";
   organizationId: string;
   programDomain: string;
 }

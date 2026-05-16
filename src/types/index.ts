@@ -1,4 +1,4 @@
-export type UserRole = "contractor" | "client_viewer";
+export type UserRole = "owner" | "admin" | "manager" | "employee" | "viewer" | "contractor" | "client_viewer";
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "archived";
 export type ProjectBillingType = "hourly_uncapped" | "hourly_capped" | "fixed_fee";
 export type ProjectInvoiceBillingType = "hourly" | "fixed" | "mixed";
@@ -9,6 +9,64 @@ export type ExpenseBillingTarget = "client" | "project";
 export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 export type ProjectBillStatus = "draft" | "issued" | "paid" | "void";
 export type InvoiceSourceType = "time_entries" | "manual_project" | "partial_project" | "expense_billback" | "mixed";
+export type OrganizationStatus = "active" | "archived";
+export type OrganizationMemberRole = "owner" | "admin" | "manager" | "employee" | "viewer";
+export type OrganizationMemberStatus = "invited" | "active" | "disabled";
+export type EmployeeType = "employee" | "contractor" | "volunteer";
+export type ProjectAssignmentRole = "worker" | "lead" | "manager";
+export type TimeEntryStatus =
+  | "running"
+  | "active"
+  | "open"
+  | "completed"
+  | "pending_approval"
+  | "approved"
+  | "rejected"
+  | "invoiced"
+  | "paid"
+  | "voided";
+
+export interface Organization {
+  id: string;
+  name: string;
+  ownerUserId: string;
+  createdAt: string;
+  status: OrganizationStatus;
+}
+
+export interface OrganizationMember {
+  id: string;
+  organizationId: string;
+  userId?: string;
+  email: string;
+  name: string;
+  role: OrganizationMemberRole;
+  status: OrganizationMemberStatus;
+  invitedAt?: string;
+  joinedAt?: string;
+}
+
+export interface EmployeeProfile {
+  memberId: string;
+  organizationId: string;
+  displayName: string;
+  email: string;
+  phone?: string;
+  employeeType: EmployeeType;
+  defaultHourlyRate?: number;
+  payPeriodType?: PayPeriodFrequency;
+  canClockIn: boolean;
+  active: boolean;
+}
+
+export interface ProjectAssignment {
+  id: string;
+  organizationId: string;
+  projectId: string;
+  memberId: string;
+  roleOnProject?: ProjectAssignmentRole;
+  active: boolean;
+}
 
 export interface UserProfile {
   id: string;
@@ -44,6 +102,7 @@ export interface ClientContact {
 
 export interface Client {
   id: string;
+  organizationId?: string;
   name: string;
   contactName?: string;
   contactEmail?: string;
@@ -65,6 +124,7 @@ export interface Client {
 
 export interface Project {
   id: string;
+  organizationId?: string;
   name: string;
   clientId: string;
   status: ProjectStatus;
@@ -87,6 +147,7 @@ export interface Project {
 
 export interface ProjectBill {
   id: string;
+  organizationId?: string;
   projectId: string;
   clientId: string;
   title: string;
@@ -103,23 +164,33 @@ export interface ProjectBill {
 
 export interface TimeEntry {
   id: string;
+  organizationId?: string;
+  employeeMemberId?: string;
+  userId?: string;
   clientId: string;
   projectId?: string;
   workerName?: string;
   date: string;
   startTime: string;
   endTime?: string;
+  clockInAt?: string;
+  clockOutAt?: string;
+  durationMinutes?: number;
   durationHours: number;
   billingRate?: number;
   billable: boolean;
   invoiced: boolean;
   invoiceId: string | null;
   notes: string;
-  status: "running" | "active" | "open" | "completed" | "invoiced";
+  status: TimeEntryStatus;
+  rejectionReason?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
 }
 
 export interface Expense {
   id: string;
+  organizationId?: string;
   amount: number;
   category: "travel" | "software" | "meals" | "supplies" | "other";
   billableToClient?: boolean;
@@ -167,6 +238,7 @@ export interface WorkSession {
 
 export interface Invoice {
   id: string;
+  organizationId?: string;
   clientId: string;
   projectId?: string;
   invoiceSourceType?: InvoiceSourceType;
