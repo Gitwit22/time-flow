@@ -82,11 +82,20 @@ type EmployeeProfileDraft = EmployeeProfile;
 
 const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
 const EXPENSE_STORAGE_KEY = "timeflow-expenses-v1";
+const WORKSPACE_STORAGE_KEY = "timeflow-workspaces-v1";
 
 type PersistedPayPeriodSettings = Pick<
   AppSettings,
   "invoiceFrequency" | "payPeriodFrequency" | "payPeriodStartDate" | "periodWeekStartsOn" | "periodTargetHours" | "periodTargetEarnings"
 >;
+
+type WorkspaceStateSnapshot = {
+  organizations: Organization[];
+  activeOrganizationId?: string;
+  organizationMembers: OrganizationMember[];
+  employeeProfiles: EmployeeProfile[];
+  projectAssignments: ProjectAssignment[];
+};
 
 function readPersistedPayPeriodSettings(): Partial<PersistedPayPeriodSettings> {
   if (typeof window === "undefined") {
@@ -136,6 +145,35 @@ function writePersistedExpenses(expenses: Expense[]) {
   }
 
   window.localStorage.setItem(EXPENSE_STORAGE_KEY, JSON.stringify(expenses));
+}
+
+function readPersistedWorkspaceState(): Partial<WorkspaceStateSnapshot> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+
+  try {
+    const raw = window.localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+
+    return JSON.parse(raw) as Partial<WorkspaceStateSnapshot>;
+  } catch {
+    return {};
+  }
+}
+
+function writePersistedWorkspaceState(state: WorkspaceStateSnapshot) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(state));
+}
+
+function persistWorkspaceSnapshot(state: WorkspaceStateSnapshot) {
+  writePersistedWorkspaceState(state);
 }
 
 
@@ -272,6 +310,7 @@ export interface AppState {
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
   setActiveOrganization: (organizationId: string) => void;
+  createOrganizationWorkspace: (name?: string) => string | undefined;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
@@ -382,14 +421,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const { clients, projects, timeEntries, invoices, projectBills, settings } = await apiHydrateAll();
       const mergedSettings = { ...settings, ...readPersistedPayPeriodSettings() };
       const state = get();
+      const persistedWorkspace = readPersistedWorkspaceState();
       const defaultOrganization = createDefaultOrganization(state.currentUser, mergedSettings.businessName);
-      const activeOrganizationId = state.activeOrganizationId ?? defaultOrganization.id;
-      const organizations = state.organizations.length > 0
-        ? state.organizations
-        : [defaultOrganization];
-      const organizationMembers = state.organizationMembers.length > 0
-        ? state.organizationMembers
-        : [{
+      const organizations = persistedWorkspace.organizations?.length
+        ? persistedWorkspace.organizations
+        : state.organizations.length > 0
+          ? state.organizations
+          : [defaultOrganization];
+      const activeOrganizationId = persistedWorkspace.activeOrganizationId ?? state.activeOrganizationId ?? organizations[0]?.id ?? defaultOrganization.id;
+      const organizationMembers = persistedWorkspace.organizationMembers?.length
+        ? persistedWorkspace.organizationMembers
+        : state.organizationMembers.length > 0
+          ? state.organizationMembers
+          : [{
             id: `member-${state.currentUser.id || "owner"}`,
             organizationId: activeOrganizationId,
             userId: state.currentUser.id || undefined,
@@ -399,6 +443,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
             status: "active" as const,
             joinedAt: new Date().toISOString(),
           }];
+      const employeeProfiles = persistedWorkspace.employeeProfiles?.length ? persistedWorkspace.employeeProfiles : state.employeeProfiles;
+      const projectAssignments = persistedWorkspace.projectAssignments?.length ? persistedWorkspace.projectAssignments : state.projectAssignments;
       const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
       const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
       const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
@@ -408,11 +454,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       set({
         activeOrganizationId,
         clients: normalizedClients,
-        employeeProfiles: state.employeeProfiles,
+        employeeProfiles,
         projects: normalizedProjects,
         organizations,
         organizationMembers,
-        projectAssignments: state.projectAssignments,
+        projectAssignments,
         timeEntries: normalizedEntries,
         expenses: persistedExpenses,
         projectBills,
@@ -420,6 +466,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
         settings: mergedSettings,
         ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
+      });
+      persistWorkspaceSnapshot({
+        organizations,
+        activeOrganizationId,
+        organizationMembers,
+        employeeProfiles,
+        projectAssignments,
       });
     } catch (err) {
       set({ hydrated: true });
@@ -429,7 +482,53 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setHydrated: (hydrated) => set({ hydrated }),
 
-  setActiveOrganization: (organizationId) => set({ activeOrganizationId: organizationId }),
+  setActiveOrganization: (organizationId) => {
+    set({ activeOrganizationId: organizationId });
+    const current = get();
+    persistWorkspaceSnapshot({
+      organizations: current.organizations,
+      activeOrganizationId: organizationId,
+      organizationMembers: current.organizationMembers,
+      employeeProfiles: current.employeeProfiles,
+      projectAssignments: current.projectAssignments,
+    });
+  },
+
+  createOrganizationWorkspace: (name) => {
+    if (!canManageWorkspace(get().currentUser.role)) return undefined;
+
+    const state = get();
+    const workspaceName = name?.trim() || `${state.settings.businessName || state.currentUser.name || "Workspace"} Team`;
+    const organizationId = `org-${crypto.randomUUID()}`;
+    const nextOrganization: Organization = {
+      id: organizationId,
+      name: workspaceName,
+      ownerUserId: state.currentUser.id || "owner",
+      createdAt: new Date().toISOString(),
+      status: "active",
+    };
+    const nextMember: OrganizationMember = {
+      id: `member-${crypto.randomUUID()}`,
+      organizationId,
+      userId: state.currentUser.id || undefined,
+      email: state.currentUser.email,
+      name: state.currentUser.name || "Owner",
+      role: normalizeOrganizationRole(state.currentUser.role),
+      status: "active",
+      joinedAt: new Date().toISOString(),
+    };
+    const organizations = [...state.organizations, nextOrganization];
+    const organizationMembers = [...state.organizationMembers, nextMember];
+    set({ organizations, organizationMembers, activeOrganizationId: organizationId });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: organizationId,
+      organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
+    return organizationId;
+  },
 
   setRole: (role) =>
     set((state) => {
@@ -735,6 +834,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
             ]
           : current.employeeProfiles,
     }));
+      const current = get();
+      persistWorkspaceSnapshot({
+        organizations: current.organizations,
+        activeOrganizationId: current.activeOrganizationId,
+        organizationMembers: current.organizationMembers,
+        employeeProfiles: current.employeeProfiles,
+        projectAssignments: current.projectAssignments,
+      });
   },
 
   updateOrganizationMember: (id, updates) => {
@@ -744,6 +851,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         member.id === id ? { ...member, ...updates } : member,
       ),
     }));
+    const current = get();
+    persistWorkspaceSnapshot({
+      organizations: current.organizations,
+      activeOrganizationId: current.activeOrganizationId,
+      organizationMembers: current.organizationMembers,
+      employeeProfiles: current.employeeProfiles,
+      projectAssignments: current.projectAssignments,
+    });
   },
 
   addProjectAssignment: (assignment) => {
@@ -757,6 +872,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...state.projectAssignments,
       ],
     }));
+    const current = get();
+    persistWorkspaceSnapshot({
+      organizations: current.organizations,
+      activeOrganizationId: current.activeOrganizationId,
+      organizationMembers: current.organizationMembers,
+      employeeProfiles: current.employeeProfiles,
+      projectAssignments: current.projectAssignments,
+    });
   },
 
   removeProjectAssignment: (id) => {
@@ -764,6 +887,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => ({
       projectAssignments: state.projectAssignments.filter((assignment) => assignment.id !== id),
     }));
+    const current = get();
+    persistWorkspaceSnapshot({
+      organizations: current.organizations,
+      activeOrganizationId: current.activeOrganizationId,
+      organizationMembers: current.organizationMembers,
+      employeeProfiles: current.employeeProfiles,
+      projectAssignments: current.projectAssignments,
+    });
   },
 
   startSession: (clientId, notes, projectId) => {

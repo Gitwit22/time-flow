@@ -16,6 +16,10 @@ export function canManageTeam(role: UserRole) {
   return role === "owner" || role === "admin";
 }
 
+export function canManageWorkspace(role: UserRole) {
+  return role === "contractor" || role === "owner" || role === "admin" || role === "manager";
+}
+
 export function canManageProjects(role: UserRole) {
   return role === "owner" || role === "admin" || role === "manager";
 }

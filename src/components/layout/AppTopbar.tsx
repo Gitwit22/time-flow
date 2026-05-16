@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
+import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
 import { getActiveUser, logoutActiveUser, updateActiveUserRole } from "@/lib/auth";
 import { clearPlatformSession } from "@/lib/platformApi";
 import { useShallow } from "zustand/react/shallow";
@@ -85,32 +86,33 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
           hasValidViewerSelection && viewerSelectValue ? (
-          <Select
-            value={viewerSelectValue}
-            onValueChange={(value) => {
-              if (value !== viewerClientId) {
-                setViewerClientContext(value, viewerClientLocked);
-              }
-            }}
-            disabled={viewerClientLocked || !availableViewerClients.length}
-          >
-            <SelectTrigger className="h-8 w-[220px] text-xs">
-              <SelectValue placeholder="Select company" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableViewerClients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <Select
+              value={viewerSelectValue}
+              onValueChange={(value) => {
+                if (value !== viewerClientId) {
+                  setViewerClientContext(value, viewerClientLocked);
+                }
+              }}
+              disabled={viewerClientLocked || !availableViewerClients.length}
+            >
+              <SelectTrigger className="h-8 w-[220px] text-xs">
+                <SelectValue placeholder="Select company" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableViewerClients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ) : (
             <Button variant="outline" size="sm" className="h-8 w-[220px] justify-start text-xs" disabled>
               Select company
             </Button>
           )
         ) : null}
+        <WorkspaceSwitcher />
         {canSwitchRoles ? (
           <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
             <SelectTrigger className="h-8 w-[170px] text-xs">
