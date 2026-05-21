@@ -122,6 +122,54 @@ function writePersistedPayPeriodSettings(settings: PersistedPayPeriodSettings) {
   window.localStorage.setItem(PAY_PERIOD_STORAGE_KEY, JSON.stringify(settings));
 }
 
+function pickPersistedPayPeriodSettings(settings: AppSettings): PersistedPayPeriodSettings {
+  return {
+    invoiceFrequency: settings.invoiceFrequency,
+    payPeriodFrequency: settings.payPeriodFrequency,
+    payPeriodStartDate: settings.payPeriodStartDate,
+    periodWeekStartsOn: settings.periodWeekStartsOn,
+    periodTargetHours: settings.periodTargetHours,
+    periodTargetEarnings: settings.periodTargetEarnings,
+  };
+}
+
+function buildHydratedSettings(settings: AppSettings, persisted: Partial<PersistedPayPeriodSettings>): AppSettings {
+  return {
+    ...settings,
+    invoiceFrequency: settings.invoiceFrequency,
+    payPeriodFrequency: settings.payPeriodFrequency || persisted.payPeriodFrequency || settings.invoiceFrequency,
+    payPeriodStartDate: settings.payPeriodStartDate ?? persisted.payPeriodStartDate,
+    periodWeekStartsOn: settings.periodWeekStartsOn ?? persisted.periodWeekStartsOn ?? 1,
+    periodTargetHours: settings.periodTargetHours ?? persisted.periodTargetHours ?? 0,
+    periodTargetEarnings: settings.periodTargetEarnings ?? persisted.periodTargetEarnings ?? 0,
+  };
+}
+
+function shouldPromotePersistedPayPeriodSettings(
+  server: AppSettings,
+  hydrated: AppSettings,
+  persisted: Partial<PersistedPayPeriodSettings>,
+): boolean {
+  const hasPersistedValue =
+    persisted.payPeriodFrequency !== undefined ||
+    persisted.payPeriodStartDate !== undefined ||
+    persisted.periodWeekStartsOn !== undefined ||
+    persisted.periodTargetHours !== undefined ||
+    persisted.periodTargetEarnings !== undefined;
+
+  if (!hasPersistedValue) {
+    return false;
+  }
+
+  return (
+    server.payPeriodFrequency !== hydrated.payPeriodFrequency ||
+    server.payPeriodStartDate !== hydrated.payPeriodStartDate ||
+    server.periodWeekStartsOn !== hydrated.periodWeekStartsOn ||
+    server.periodTargetHours !== hydrated.periodTargetHours ||
+    server.periodTargetEarnings !== hydrated.periodTargetEarnings
+  );
+}
+
 function readPersistedExpenses(): Expense[] {
   if (typeof window === "undefined") {
     return [];
@@ -419,7 +467,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   hydrateFromApi: async () => {
     try {
       const { clients, projects, timeEntries, invoices, projectBills, settings } = await apiHydrateAll();
-      const mergedSettings = { ...settings, ...readPersistedPayPeriodSettings() };
+      const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
+      const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const state = get();
       const persistedWorkspace = readPersistedWorkspaceState();
       const defaultOrganization = createDefaultOrganization(state.currentUser, mergedSettings.businessName);
@@ -467,6 +516,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
       });
+      writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(mergedSettings));
+
+      // Backward-compat bridge: if this browser still has older local pay period
+      // values, promote them to the API once so future device logins stay aligned.
+      if (shouldPromotePersistedPayPeriodSettings(settings, mergedSettings, persistedPayPeriodSettings)) {
+        void apiSaveSettings({
+          payPeriodFrequency: mergedSettings.payPeriodFrequency,
+          payPeriodStartDate: mergedSettings.payPeriodStartDate,
+          periodWeekStartsOn: mergedSettings.periodWeekStartsOn,
+          periodTargetHours: mergedSettings.periodTargetHours,
+          periodTargetEarnings: mergedSettings.periodTargetEarnings,
+        }).catch(() => undefined);
+      }
+
       persistWorkspaceSnapshot({
         organizations,
         activeOrganizationId,
@@ -585,24 +648,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().settings;
     const nextSettings = { ...prev, ...updates };
-    writePersistedPayPeriodSettings({
-      invoiceFrequency: nextSettings.invoiceFrequency,
-      payPeriodFrequency: nextSettings.payPeriodFrequency,
-      payPeriodStartDate: nextSettings.payPeriodStartDate,
-      periodWeekStartsOn: nextSettings.periodWeekStartsOn,
-      periodTargetHours: nextSettings.periodTargetHours,
-      periodTargetEarnings: nextSettings.periodTargetEarnings,
-    });
+    writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(nextSettings));
     set({ settings: nextSettings });
-    const { payPeriodFrequency: _payPeriodFrequency, payPeriodStartDate: _payPeriodStartDate, ...serverUpdates } = updates;
-    if (Object.keys(serverUpdates).length === 0) {
+    if (Object.keys(updates).length === 0) {
       return;
     }
 
-    void apiSaveSettings(serverUpdates)
+    void apiSaveSettings(updates)
       .then((savedSettings) => {
-        const mergedSettings = { ...savedSettings, ...readPersistedPayPeriodSettings() };
-        set({ settings: mergedSettings });
+        const normalizedSavedSettings = buildHydratedSettings(savedSettings, {});
+        writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(normalizedSavedSettings));
+        set({ settings: normalizedSavedSettings });
       })
       .catch((err) => {
         set({ settings: prev });
