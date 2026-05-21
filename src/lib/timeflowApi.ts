@@ -156,7 +156,7 @@ export function toProjectBill(r: ApiRecord): ProjectBill {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
-    projectId: r.projectId as string,
+    projectId: (r.projectId as string) ?? undefined,
     clientId: r.clientId as string,
     title: (r.title as string) || "",
     amount: (r.amount as number) || 0,

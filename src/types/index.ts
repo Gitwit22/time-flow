@@ -8,7 +8,7 @@ export type PayPeriodFrequency = "weekly" | "biweekly" | "monthly";
 export type ExpenseBillingTarget = "client" | "project";
 export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 export type ProjectBillStatus = "draft" | "issued" | "paid" | "void";
-export type InvoiceSourceType = "time_entries" | "manual_project" | "partial_project" | "expense_billback" | "mixed";
+export type InvoiceSourceType = "time_entries" | "manual_project" | "manual_client" | "partial_project" | "expense_billback" | "mixed";
 export type OrganizationStatus = "active" | "archived";
 export type OrganizationMemberRole = "owner" | "admin" | "manager" | "employee" | "viewer";
 export type OrganizationMemberStatus = "invited" | "active" | "disabled";
@@ -148,7 +148,7 @@ export interface Project {
 export interface ProjectBill {
   id: string;
   organizationId?: string;
-  projectId: string;
+  projectId?: string;
   clientId: string;
   title: string;
   amount: number;

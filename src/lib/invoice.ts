@@ -16,7 +16,7 @@ export interface InvoiceProjectGroup {
 interface ProjectInvoicePreviewOptions {
   clientId: string;
   client: Client;
-  projectId: string;
+  projectId?: string;
   amount: number;
   dueDate: string;
   title?: string;
@@ -57,7 +57,7 @@ export function createFixedBillInvoicePreview(
   client: Client,
   billAmount: number,
   billTitle: string,
-  projectId: string,
+  projectId: string | undefined,
   dueDate: string,
 ): InvoiceDraftPreview {
   return createProjectInvoicePreview({
@@ -65,7 +65,7 @@ export function createFixedBillInvoicePreview(
     client,
     clientId,
     dueDate,
-    invoiceSourceType: "manual_project",
+    invoiceSourceType: projectId ? "manual_project" : "manual_client",
     projectId,
     sourceDescription: billTitle,
     title: billTitle,
@@ -107,8 +107,8 @@ function createProjectInvoicePreview(options: ProjectInvoicePreviewOptions): Inv
         timeEntryIds: [],
       },
     ],
-    projectId: options.projectId,
-    projectIds: [options.projectId],
+        projectId: options.projectId,
+        projectIds: options.projectId ? [options.projectId] : [],
     sourceDescription,
     totalHours: 0,
     hourlyRate: 0,
@@ -130,6 +130,10 @@ export function getInvoiceSourceTypeLabel(invoice: Pick<Invoice, "invoiceSourceT
 
   if (invoice.invoiceSourceType === "manual_project") {
     return "Manual Project Invoice";
+  }
+
+  if (invoice.invoiceSourceType === "manual_client") {
+    return "Manual Client Invoice";
   }
 
   if (invoice.invoiceSourceType === "expense_billback") {
@@ -225,7 +229,7 @@ export function normalizeInvoiceRecord(
       : hasExpenseOnlyLines
         ? "expense_billback"
         : hasManualLines
-          ? "manual_project"
+          ? (normalizedProjectIds.length > 0 ? "manual_project" : "manual_client")
           : "time_entries");
 
   return {

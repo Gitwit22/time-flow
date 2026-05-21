@@ -405,7 +405,7 @@ export interface AppState {
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   deleteInvoice: (id: string) => void;
   createPartialProjectInvoice: (draft: PartialProjectInvoiceDraft) => Invoice | null;
-  createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string, dueDate: string) => Invoice | null;
+  createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string | undefined, dueDate: string) => Invoice | null;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
   resetApp: () => void;
