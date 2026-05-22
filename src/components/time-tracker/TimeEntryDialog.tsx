@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateForInput, parseDateInput, toDateOnlyString } from "@/lib/date";
-import { getProjectBudgetSnapshot, getProjectWarningMessage } from "@/lib/projects";
+import { getProjectBudgetSnapshot, getProjectWarningMessage, getSelectableProjects } from "@/lib/projects";
 import { getEntryType } from "@/lib/timeEntries";
 import type { Client, Project, TimeEntry } from "@/types";
 
@@ -54,7 +54,8 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
     setError("");
   }, [clients, entry, open]);
 
-  const selectedProject = projects.find((project) => project.id === form.projectId);
+  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
+  const selectedProject = selectableProjects.find((project) => project.id === form.projectId);
   const previewDuration = useMemo(() => {
     const [startHours, startMinutes] = form.startTime.split(":").map(Number);
     const [endHours, endMinutes] = (form.endTime ?? "00:00").split(":").map(Number);
@@ -213,7 +214,7 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
               </SelectTrigger>
               <SelectContent>
                 {linkMode === "project"
-                  ? projects.map((project) => (
+                  ? selectableProjects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name}
                       </SelectItem>

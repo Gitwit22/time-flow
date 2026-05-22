@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
+import { getSelectableProjects } from "@/lib/projects";
 import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
@@ -35,6 +36,7 @@ export default function TimeTracker() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
 
   const isReadonly = currentUser.role === "client_viewer";
   const filteredEntries = useMemo(() => {
@@ -191,7 +193,7 @@ export default function TimeTracker() {
                 <SelectContent>
                   <SelectItem value="all">All projects</SelectItem>
                   <SelectItem value="client-only">Client only</SelectItem>
-                  {projects.map((project) => (
+                  {selectableProjects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
                     </SelectItem>

@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { getSelectableProjects } from "@/lib/projects";
 import { useAppStore } from "@/store/appStore";
 
 export default function EmployeeClockPage() {
@@ -40,7 +41,7 @@ export default function EmployeeClockPage() {
   );
 
   const availableProjects = useMemo(
-    () => projects.filter((project) => project.organizationId === activeOrganizationId || assignedProjectIds.includes(project.id)),
+    () => getSelectableProjects(projects).filter((project) => project.organizationId === activeOrganizationId || assignedProjectIds.includes(project.id)),
     [activeOrganizationId, assignedProjectIds, projects],
   );
 

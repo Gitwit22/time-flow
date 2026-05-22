@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { canManageTeam } from "@/lib/organization";
+import { getSelectableProjects } from "@/lib/projects";
 import { useAppStore } from "@/store/appStore";
 import type { EmployeeType, OrganizationMemberRole } from "@/types";
 
@@ -37,6 +38,7 @@ export default function TeamPage() {
     () => members.filter((member) => member.organizationId === activeOrganizationId),
     [activeOrganizationId, members],
   );
+  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
 
   const canInvite = canManageTeam(role);
 
@@ -158,7 +160,7 @@ export default function TeamPage() {
                 <Select value={assignProjectId} onValueChange={setAssignProjectId}>
                   <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                   <SelectContent>
-                    {projects.map((project) => (
+                    {selectableProjects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>{project.name}</SelectItem>
                     ))}
                   </SelectContent>

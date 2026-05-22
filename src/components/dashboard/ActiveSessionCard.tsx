@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { getElapsedSeconds, getTrackedSessionSeconds, formatClockTime, formatDurationFromSeconds } from "@/lib/date";
-import { getProjectBudgetSnapshot, getProjectWarningMessage } from "@/lib/projects";
+import { getProjectBudgetSnapshot, getProjectWarningMessage, getSelectableProjects } from "@/lib/projects";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
 
@@ -27,6 +27,7 @@ export function ActiveSessionCard() {
   const [draftNotes, setDraftNotes] = useState(activeSession.notes ?? "");
   const [elapsedSeconds, setElapsedSeconds] = useState(getTrackedSessionSeconds(activeSession));
   const { isActive, startedAt, isPaused, pausedAt, pausedDurationSeconds } = activeSession;
+  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
 
   useEffect(() => {
     if (!selectedClientId && clients[0]?.id) {
@@ -35,10 +36,10 @@ export function ActiveSessionCard() {
   }, [clients, selectedClientId, settings.defaultClientId]);
 
   useEffect(() => {
-    if (!selectedProjectId && projects[0]?.id) {
-      setSelectedProjectId(projects[0].id);
+    if (!selectedProjectId && selectableProjects[0]?.id) {
+      setSelectedProjectId(selectableProjects[0].id);
     }
-  }, [projects, selectedProjectId]);
+  }, [selectableProjects, selectedProjectId]);
 
   useEffect(() => {
     setDraftNotes(activeSession.notes ?? "");
@@ -209,7 +210,7 @@ export function ActiveSessionCard() {
                       <SelectValue placeholder="Select a project" />
                     </SelectTrigger>
                     <SelectContent>
-                      {projects.map((project) => (
+                      {selectableProjects.map((project) => (
                         <SelectItem key={project.id} value={project.id}>
                           {project.name}
                         </SelectItem>

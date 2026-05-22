@@ -69,6 +69,10 @@ export function getProjectClient(project: Project | undefined, clients: Client[]
   return clients.find((client) => client.id === project.clientId);
 }
 
+export function getSelectableProjects(projects: Project[]) {
+  return projects.filter((project) => project.archived !== true && project.status !== "archived");
+}
+
 export function resolveTimeEntryBillingContext(entry: Pick<TimeEntry, "clientId" | "projectId" | "billingRate">, clients: Client[], projects: Project[]): ProjectBillingContext {
   const project = getProjectById(entry.projectId, projects);
   const clientId = project?.clientId ?? entry.clientId;
