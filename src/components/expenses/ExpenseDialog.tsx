@@ -7,14 +7,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateForInput, parseDateInput, toDateOnlyString } from "@/lib/date";
+import { getTimeflowDocumentDownloadUrl } from "@/lib/timeflowDocumentsApi";
 import { getSelectableProjects } from "@/lib/projects";
-import type { Client, Expense, Project } from "@/types";
+import type { AttachedDocument, Client, Expense, Project } from "@/types";
 
 interface ExpenseDialogProps {
+  attachments?: AttachedDocument[];
   clients: Client[];
   expense?: Expense | null;
+  onArchiveAttachment?: (documentId: string) => void;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (expense: Omit<Expense, "id">) => void;
+  onSubmit: (expense: Omit<Expense, "id">, files: File[]) => void;
   open: boolean;
   projects: Project[];
 }
@@ -39,7 +42,7 @@ function createInitialExpense(): Omit<Expense, "id"> {
   };
 }
 
-export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, projects }: ExpenseDialogProps) {
+export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAttachment, onOpenChange, onSubmit, open, projects }: ExpenseDialogProps) {
   const [form, setForm] = useState<Omit<Expense, "id">>(
     expense
       ? {
@@ -53,6 +56,8 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
         }
       : createInitialExpense(),
   );
+
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   useEffect(() => {
     setForm(
@@ -68,6 +73,7 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
           }
         : createInitialExpense(),
     );
+    setSelectedFiles([]);
   }, [expense, open]);
 
   const availableProjects = useMemo(() => {
@@ -215,20 +221,81 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
             <Label className="text-xs">Notes</Label>
             <Textarea className="min-h-24 resize-none" value={form.notes} onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))} />
           </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label className="text-xs">Receipt</Label>
-            <Select
-              value={form.receiptAttached ? "yes" : "no"}
-              onValueChange={(value) => setForm((current) => ({ ...current, receiptAttached: value === "yes" }))}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="yes">Receipt attached</SelectItem>
-                <SelectItem value="no">No receipt attached</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-2 sm:col-span-2">
+            <Label className="text-xs">Receipt / Attachment</Label>
+            <p className="text-xs text-muted-foreground">Accepted file types: PDF, PNG, JPG/JPEG, WEBP, CSV, XLS, XLSX</p>
+            <Input
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.webp,.csv,.xls,.xlsx"
+              onChange={(event) => {
+                const files = Array.from(event.target.files || []);
+                if (!files.length) {
+                  return;
+                }
+                setSelectedFiles((current) => [...current, ...files]);
+                event.currentTarget.value = "";
+              }}
+            />
+
+            {selectedFiles.length ? (
+              <div className="space-y-1 rounded-md border p-2">
+                {selectedFiles.map((file, index) => (
+                  <div key={`${file.name}-${file.size}-${index}`} className="flex items-center justify-between gap-2 text-sm">
+                    <span className="truncate">{file.name}</span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setSelectedFiles((current) => current.filter((_, fileIndex) => fileIndex !== index))}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            {expense ? (
+              <div className="space-y-1 rounded-md border p-2">
+                <p className="text-xs font-medium text-muted-foreground">Attached Receipts</p>
+                {attachments.length ? (
+                  attachments.map((attachment) => (
+                    <div key={attachment.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="truncate">{attachment.originalFilename || attachment.title}</span>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => window.open(getTimeflowDocumentDownloadUrl(attachment.id), "_blank", "noopener,noreferrer")}
+                        >
+                          View
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => window.open(getTimeflowDocumentDownloadUrl(attachment.id), "_blank", "noopener,noreferrer")}
+                        >
+                          Download
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => onArchiveAttachment?.(attachment.id)}
+                        >
+                          Archive
+                        </Button>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-muted-foreground">No receipts attached yet.</p>
+                )}
+              </div>
+            ) : null}
           </div>
         </div>
         <DialogFooter>
@@ -238,7 +305,15 @@ export function ExpenseDialog({ clients, expense, onOpenChange, onSubmit, open, 
           <Button
             className="bg-accent text-accent-foreground hover:bg-accent/90"
             disabled={form.billTo === "project" ? !form.projectId : !form.clientId}
-            onClick={() => onSubmit(form)}
+            onClick={() =>
+              onSubmit(
+                {
+                  ...form,
+                  receiptAttached: Boolean((expense ? attachments.length : 0) + selectedFiles.length),
+                },
+                selectedFiles,
+              )
+            }
           >
             {expense ? "Save expense" : "Add expense"}
           </Button>

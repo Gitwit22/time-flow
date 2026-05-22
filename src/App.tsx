@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useSearchParams } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -127,6 +127,14 @@ function InviteRedirect() {
   return <Navigate to={target} replace />;
 }
 
+function LegacyInvoiceDetailRedirect() {
+  const { id } = useParams();
+  if (!id) {
+    return <Navigate to="/platform/invoices" replace />;
+  }
+  return <Navigate to={`/platform/invoices/${encodeURIComponent(id)}`} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -214,6 +222,7 @@ const App = () => (
                 </RequireContractor>
               }
             />
+            <Route path="invoice" element={<Navigate to="/platform/invoices" replace />} />
             <Route
               path="invoices/:id"
               element={
@@ -222,6 +231,7 @@ const App = () => (
                 </RequireContractor>
               }
             />
+            <Route path="invoice/:id" element={<LegacyInvoiceDetailRedirect />} />
             <Route
               path="email"
               element={

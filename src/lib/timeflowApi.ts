@@ -7,6 +7,7 @@ import { getPlatformSession, TIMEFLOW_API_BASE } from "@/lib/platformApi";
 import type {
   AppSettings,
   Client,
+  Expense,
   Invoice,
   InvoiceDraftPreview,
   InvoiceLineItem,
@@ -159,6 +160,28 @@ export function toInvoice(r: ApiRecord): Invoice {
   };
 }
 
+export function toExpense(r: ApiRecord): Expense {
+  return {
+    id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
+    amount: (r.amount as number) || 0,
+    category: ((r.category as Expense["category"]) ?? "other"),
+    billableToClient: r.billableToClient !== false,
+    billTo: ((r.billTo as Expense["billTo"]) ?? "client"),
+    clientId: (r.clientId as string) ?? undefined,
+    date: (r.date as string) || new Date().toISOString().split("T")[0],
+    description: (r.description as string) || "",
+    excludedFromPayPeriod: r.excludedFromPayPeriod === true,
+    includedInPayPeriod: r.includedInPayPeriod === true,
+    invoiceId: (r.invoiceId as string) ?? null,
+    notes: (r.notes as string) || "",
+    projectId: (r.projectId as string) ?? undefined,
+    receiptAttached: r.receiptAttached === true,
+    status: (r.status as Expense["status"]) ?? "billable",
+    vendor: (r.vendor as string) ?? undefined,
+  };
+}
+
 export function toProjectBill(r: ApiRecord): ProjectBill {
   return {
     id: r.id as string,
@@ -258,6 +281,20 @@ export const apiBulkUpdateTimeEntries = (
   data: { invoiced?: boolean; invoiceId?: string | null; status?: string },
 ) => apiRequest<{ updated: number }>("PATCH", "/time-entries/bulk", { ids, ...data });
 
+// ─── Expenses ────────────────────────────────────────────────────────────────
+
+export const apiListExpenses = () =>
+  apiRequest<ApiRecord[]>("GET", "/expenses").then((rs) => rs.map(toExpense));
+
+export const apiCreateExpense = (data: Pick<Expense, "id"> & Omit<Expense, "id">) =>
+  apiRequest<ApiRecord>("POST", "/expenses", data).then(toExpense);
+
+export const apiUpdateExpense = (id: string, data: Partial<Omit<Expense, "id">>) =>
+  apiRequest<ApiRecord>("PUT", `/expenses/${id}`, data).then(toExpense);
+
+export const apiDeleteExpense = (id: string) =>
+  apiRequest<void>("DELETE", `/expenses/${id}`);
+
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 export const apiListInvoices = () =>
@@ -300,19 +337,21 @@ export interface TimeflowAllData {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
+  expenses: Expense[];
   invoices: Invoice[];
   projectBills: ProjectBill[];
   settings: AppSettings;
 }
 
 export async function apiHydrateAll(): Promise<TimeflowAllData> {
-  const [clients, projects, timeEntries, invoices, projectBills, settings] = await Promise.all([
+  const [clients, projects, timeEntries, expenses, invoices, projectBills, settings] = await Promise.all([
     apiListClients(),
     apiListProjects(),
     apiListTimeEntries(),
+    apiListExpenses(),
     apiListInvoices(),
     apiListProjectBills(),
     apiGetSettings(),
   ]);
-  return { clients, projects, timeEntries, invoices, projectBills, settings };
+  return { clients, projects, timeEntries, expenses, invoices, projectBills, settings };
 }

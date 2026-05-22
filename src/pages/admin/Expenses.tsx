@@ -1,5 +1,5 @@
-import { Pencil, Plus, Receipt, Search, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Paperclip, Pencil, Plus, Receipt, Search, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
@@ -11,9 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateDisplay } from "@/lib/date";
+import {
+  archiveTimeflowDocument,
+  createTimeflowDocument,
+  listTimeflowDocuments,
+  uploadTimeflowEntityDocumentFile,
+} from "@/lib/timeflowDocumentsApi";
 import { getCurrentPayPeriod, getExpensesForPayPeriod, getPayPeriodForDate, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
-import type { Expense } from "@/types";
+import type { AttachedDocument, Expense } from "@/types";
 
 type PayPeriodFilter = "all" | "current" | "previous";
 
@@ -33,6 +39,17 @@ export default function ExpensesPage() {
   const [payPeriodFilter, setPayPeriodFilter] = useState<PayPeriodFilter>("current");
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [expenseDocuments, setExpenseDocuments] = useState<Record<string, AttachedDocument[]>>({});
+
+  useEffect(() => {
+    void listTimeflowDocuments("expense")
+      .then((grouped) => {
+        setExpenseDocuments(grouped);
+      })
+      .catch(() => {
+        setExpenseDocuments({});
+      });
+  }, []);
 
   const payPeriodSettings = {
     payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
@@ -69,17 +86,82 @@ export default function ExpensesPage() {
   );
   const filteredExpenseTotal = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
 
-  const handleSaveExpense = (expense: Omit<Expense, "id">) => {
+  const uploadExpenseAttachments = async (expenseId: string, files: File[]) => {
+    const createdDocuments: AttachedDocument[] = [];
+
+    for (const file of files) {
+      const key = await uploadTimeflowEntityDocumentFile(file, "expense", expenseId);
+      const document = await createTimeflowDocument("expense", expenseId, {
+        title: file.name,
+        originalFilename: file.name,
+        uploadedBy: currentUser.name,
+        uploadedAt: new Date().toISOString(),
+        status: "active",
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        dataUrl: "",
+        storageKey: key,
+      });
+      createdDocuments.push(document);
+    }
+
+    if (createdDocuments.length > 0) {
+      setExpenseDocuments((current) => ({
+        ...current,
+        [expenseId]: [...(current[expenseId] || []), ...createdDocuments],
+      }));
+    }
+  };
+
+  const handleSaveExpense = async (expense: Omit<Expense, "id">, files: File[]) => {
+    let targetExpenseId = editingExpense?.id;
+
     if (editingExpense) {
       updateExpense(editingExpense.id, expense);
       toast({ title: "Expense updated", description: "Expense changes were saved." });
     } else {
-      addExpense(expense);
-      toast({ title: "Expense added", description: "Expense saved to this workspace." });
+      const created = addExpense(expense);
+      targetExpenseId = created?.id;
+      toast({ title: "Expense added", description: "Expense saved." });
+    }
+
+    if (targetExpenseId && files.length > 0) {
+      try {
+        await uploadExpenseAttachments(targetExpenseId, files);
+        updateExpense(targetExpenseId, { receiptAttached: true });
+        toast({ title: "Receipts uploaded", description: `${files.length} attachment${files.length === 1 ? "" : "s"} saved.` });
+      } catch (error) {
+        toast({
+          title: "Expense saved, but upload failed",
+          description: error instanceof Error ? error.message : "You can retry from Edit Expense.",
+          variant: "destructive",
+        });
+      }
     }
 
     setEditingExpense(null);
     setIsDialogOpen(false);
+  };
+
+  const handleArchiveExpenseAttachment = async (documentId: string) => {
+    if (!editingExpense) {
+      return;
+    }
+
+    try {
+      await archiveTimeflowDocument(documentId);
+      setExpenseDocuments((current) => ({
+        ...current,
+        [editingExpense.id]: (current[editingExpense.id] || []).filter((document) => document.id !== documentId),
+      }));
+      toast({ title: "Attachment archived", description: "The receipt is now archived." });
+    } catch (error) {
+      toast({
+        title: "Failed to archive attachment",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -208,7 +290,15 @@ export default function ExpensesPage() {
                         <td className="px-4 py-3">{formatDateDisplay(expense.date)}</td>
                         <td className="px-4 py-3">
                           <p className="font-medium">{expense.description}</p>
-                          {expense.notes ? <p className="text-xs text-muted-foreground">{expense.notes}</p> : null}
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            {expense.notes ? <span>{expense.notes}</span> : null}
+                            {(expenseDocuments[expense.id] || []).length > 0 ? (
+                              <span className="inline-flex items-center gap-1">
+                                <Paperclip className="h-3 w-3" />
+                                {(expenseDocuments[expense.id] || []).length}
+                              </span>
+                            ) : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 capitalize">{expense.category}</td>
                         <td className="px-4 py-3 capitalize">{billedTarget}</td>
@@ -239,7 +329,21 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      <ExpenseDialog clients={clients} expense={editingExpense} open={isDialogOpen} onOpenChange={(open) => { setIsDialogOpen(open); if (!open) { setEditingExpense(null); } }} onSubmit={handleSaveExpense} projects={projects} />
+      <ExpenseDialog
+        attachments={editingExpense ? expenseDocuments[editingExpense.id] || [] : []}
+        clients={clients}
+        expense={editingExpense}
+        onArchiveAttachment={handleArchiveExpenseAttachment}
+        open={isDialogOpen}
+        onOpenChange={(open) => {
+          setIsDialogOpen(open);
+          if (!open) {
+            setEditingExpense(null);
+          }
+        }}
+        onSubmit={handleSaveExpense}
+        projects={projects}
+      />
     </div>
   );
 }

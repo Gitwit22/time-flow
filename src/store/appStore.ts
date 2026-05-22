@@ -24,6 +24,9 @@ import {
   apiUpdateTimeEntry,
   apiDeleteTimeEntry,
   apiBulkUpdateTimeEntries,
+  apiCreateExpense,
+  apiUpdateExpense as apiUpdateExpenseRequest,
+  apiDeleteExpense as apiDeleteExpenseRequest,
   apiCreateInvoice,
   apiUpdateInvoice,
   apiDeleteInvoice,
@@ -390,7 +393,7 @@ export interface AppState {
   addTimeEntry: (entry: TimeEntryDraft) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
   deleteTimeEntry: (id: string) => void;
-  addExpense: (expense: ExpenseDraft) => void;
+  addExpense: (expense: ExpenseDraft) => Expense | null;
   updateExpense: (id: string, updates: Partial<Expense>) => void;
   deleteExpense: (id: string) => void;
   addProjectBill: (bill: ProjectBillDraft) => void;
@@ -466,7 +469,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   hydrateFromApi: async () => {
     try {
-      const { clients, projects, timeEntries, invoices, projectBills, settings } = await apiHydrateAll();
+      const { clients, projects, timeEntries, expenses, invoices, projectBills, settings } = await apiHydrateAll();
       const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
       const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const state = get();
@@ -500,6 +503,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const normalizedInvoices = invoices.map((inv) => normalizeInvoiceRecord(inv, normalizedEntries));
       const restoredSession = readPersistedActiveSession();
       const persistedExpenses = readPersistedExpenses();
+      const normalizedExpenses = expenses.length > 0
+        ? expenses.map(normalizeExpenseRecord)
+        : persistedExpenses;
       set({
         activeOrganizationId,
         clients: normalizedClients,
@@ -509,7 +515,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         organizationMembers,
         projectAssignments,
         timeEntries: normalizedEntries,
-        expenses: persistedExpenses,
+        expenses: normalizedExpenses,
         projectBills,
         invoices: normalizedInvoices,
         settings: mergedSettings,
@@ -517,6 +523,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         hydrated: true,
       });
       writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(mergedSettings));
+      writePersistedExpenses(normalizedExpenses);
 
       // Backward-compat bridge: if this browser still has older local pay period
       // values, promote them to the API once so future device logins stay aligned.
@@ -1085,32 +1092,68 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   addExpense: (expense) => {
-    if (!canManageWorkspace(get().currentUser.role)) return;
+    if (!canManageWorkspace(get().currentUser.role)) return null;
+
+    const id = crypto.randomUUID();
+    const nextExpense = normalizeExpenseRecord({ id, ...expense });
 
     set((state) => {
-      const expenses = [normalizeExpenseRecord({ id: crypto.randomUUID(), ...expense }), ...state.expenses];
+      const expenses = [nextExpense, ...state.expenses];
       writePersistedExpenses(expenses);
       return { expenses };
     });
+
+    void apiCreateExpense(nextExpense).catch((err) => {
+      set((state) => {
+        const expenses = state.expenses.filter((item) => item.id !== id);
+        writePersistedExpenses(expenses);
+        return { expenses };
+      });
+      toast.error(err instanceof Error ? err.message : "Failed to add expense");
+    });
+
+    return nextExpense;
   },
 
   updateExpense: (id, updates) => {
     if (!canManageWorkspace(get().currentUser.role)) return;
 
+    const prev = get().expenses.find((expense) => expense.id === id);
+    if (!prev) return;
+
+    const nextExpense = normalizeExpenseRecord({ ...prev, ...updates });
+
     set((state) => {
-      const expenses = state.expenses.map((expense) => (expense.id === id ? normalizeExpenseRecord({ ...expense, ...updates }) : expense));
+      const expenses = state.expenses.map((expense) => (expense.id === id ? nextExpense : expense));
       writePersistedExpenses(expenses);
       return { expenses };
+    });
+
+    void apiUpdateExpenseRequest(id, updates).catch((err) => {
+      set((state) => {
+        const expenses = state.expenses.map((expense) => (expense.id === id ? prev : expense));
+        writePersistedExpenses(expenses);
+        return { expenses };
+      });
+      toast.error(err instanceof Error ? err.message : "Failed to update expense");
     });
   },
 
   deleteExpense: (id) => {
     if (!canManageWorkspace(get().currentUser.role)) return;
 
+    const prev = get().expenses;
+
     set((state) => {
       const expenses = state.expenses.filter((expense) => expense.id !== id);
       writePersistedExpenses(expenses);
       return { expenses };
+    });
+
+    void apiDeleteExpenseRequest(id).catch((err) => {
+      set({ expenses: prev });
+      writePersistedExpenses(prev);
+      toast.error(err instanceof Error ? err.message : "Failed to delete expense");
     });
   },
 
@@ -1272,6 +1315,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
           toast.error(err instanceof Error ? err.message : "Failed to update time entries");
         });
       }
+
+      const linkedExpenseIds = getInvoiceExpenseIds(invoice);
+      linkedExpenseIds.forEach((expenseId) => {
+        void apiUpdateExpenseRequest(expenseId, {
+          invoiceId: invoice.id,
+          status: "invoiced",
+        }).catch(() => undefined);
+      });
     });
 
     return nextInvoices;
@@ -1322,6 +1373,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       });
     }
 
+    invoiceExpenseIds.forEach((expenseId) => {
+      void apiUpdateExpenseRequest(expenseId, {
+        invoiceId: invoice.id,
+        status: "invoiced",
+      }).catch(() => undefined);
+    });
+
     return invoice;
   },
 
@@ -1360,6 +1418,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
         expenses,
       };
     });
+
+    nextExpenseIds.forEach((expenseId) => {
+      void apiUpdateExpenseRequest(expenseId, {
+        invoiceId: id,
+        status: nextExpenseStatus,
+      }).catch(() => undefined);
+    });
+    previousExpenseIds.forEach((expenseId) => {
+      if (nextExpenseIds.has(expenseId)) {
+        return;
+      }
+      void apiUpdateExpenseRequest(expenseId, {
+        invoiceId: null,
+        status: "billable",
+      }).catch(() => undefined);
+    });
+
     void apiUpdateInvoice(id, updates).catch((err) => {
       set((state) => {
         const previousExpenseIds = new Set(getInvoiceExpenseIds(prev));
@@ -1412,6 +1487,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
         expenses,
       };
     });
+
+    linkedExpenseIds.forEach((expenseId) => {
+      void apiUpdateExpenseRequest(expenseId, {
+        invoiceId: null,
+        status: "billable",
+      }).catch(() => undefined);
+    });
+
     void apiDeleteInvoice(id).catch((err) => {
       set({ invoices: prevInvoices, timeEntries: prevEntries, expenses: prevExpenses });
       writePersistedExpenses(prevExpenses);
