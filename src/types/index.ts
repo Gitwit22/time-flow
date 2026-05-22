@@ -167,6 +167,8 @@ export interface TimeEntry {
   organizationId?: string;
   employeeMemberId?: string;
   userId?: string;
+  entryType?: "time" | "fixed";
+  fixedAmount?: number;
   clientId: string;
   projectId?: string;
   workerName?: string;

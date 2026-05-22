@@ -92,11 +92,18 @@ export function toProject(r: ApiRecord): Project {
 }
 
 export function toTimeEntry(r: ApiRecord): TimeEntry {
+  const entryType = r.entryType === "fixed" ? "fixed" : "time";
+  const fixedAmount = entryType === "fixed" && typeof r.fixedAmount === "number"
+    ? (r.fixedAmount as number)
+    : undefined;
+
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
     employeeMemberId: (r.employeeMemberId as string) ?? undefined,
     userId: (r.userId as string) ?? undefined,
+    entryType,
+    fixedAmount,
     clientId: r.clientId as string,
     projectId: (r.projectId as string) ?? undefined,
     date: r.date as string,
