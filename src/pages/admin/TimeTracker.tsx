@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
+import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
 
@@ -74,7 +75,7 @@ export default function TimeTracker() {
 
           return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
       })
-      .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`));
+      .sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a)));
         }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, statusFilter, timeEntries]);
 
   const handleAddManual = () => {
@@ -105,7 +106,10 @@ export default function TimeTracker() {
       toast({ title: "Entry updated", description: "Your time entry was updated." });
     } else {
       addTimeEntry(entry);
-      toast({ title: "Entry added", description: "Manual time entry saved." });
+      toast({
+        title: "Entry added",
+        description: getEntryType(entry) === "fixed" ? "Fixed amount entry saved." : "Manual time entry saved.",
+      });
     }
 
     setEditingEntry(null);

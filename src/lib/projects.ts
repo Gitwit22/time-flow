@@ -1,4 +1,5 @@
 import type { AttachedDocument, Client, Invoice, Project, ProjectCapHandling, TimeEntry } from "@/types";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 
 export interface ProjectBillingContext {
   client?: Client;
@@ -88,27 +89,50 @@ export function resolveTimeEntryBillingContext(entry: Pick<TimeEntry, "clientId"
 }
 
 export function normalizeTimeEntryRecord(entry: TimeEntry, clients: Client[], projects: Project[]): TimeEntry {
+  const entryType = getEntryType(entry);
   const project = getProjectById(entry.projectId, projects);
   const clientId = project?.clientId ?? entry.clientId;
   const client = clients.find((item) => item.id === clientId);
-  const billingRate = typeof entry.billingRate === "number" && entry.billingRate > 0
-    ? entry.billingRate
-    : project?.hourlyRate && project.hourlyRate > 0
-      ? project.hourlyRate
-      : client?.hourlyRate && client.hourlyRate > 0
-        ? client.hourlyRate
-        : undefined;
+  const billingRate = entryType === "fixed"
+    ? undefined
+    : typeof entry.billingRate === "number" && entry.billingRate > 0
+      ? entry.billingRate
+      : project?.hourlyRate && project.hourlyRate > 0
+        ? project.hourlyRate
+        : client?.hourlyRate && client.hourlyRate > 0
+          ? client.hourlyRate
+          : undefined;
 
   const billable = typeof entry.billable === "boolean" ? entry.billable : true;
   const invoiced = typeof entry.invoiced === "boolean" ? entry.invoiced : entry.status === "invoiced" || Boolean(entry.invoiceId);
+  const status = entryType === "fixed" && entry.status === "running"
+    ? "completed"
+    : invoiced
+      ? "invoiced"
+      : entry.status === "invoiced"
+        ? "completed"
+        : entry.status;
+
+  const fixedAmount = entryType === "fixed" && typeof entry.fixedAmount === "number" && Number.isFinite(entry.fixedAmount)
+    ? Number(entry.fixedAmount.toFixed(2))
+    : undefined;
+  const durationHours = entryType === "fixed"
+    ? 0
+    : getEntryHours(entry);
 
   return {
     ...entry,
+    entryType,
+    fixedAmount,
+    startTime: entry.startTime || "00:00",
+    endTime: entryType === "fixed" ? undefined : entry.endTime,
+    durationHours,
     billingRate,
     billable,
     invoiced,
+    invoiceStatus: status === "paid" ? "paid" : invoiced ? "invoiced" : "unbilled",
     invoiceId: invoiced ? entry.invoiceId ?? null : null,
-    status: invoiced ? "invoiced" : entry.status === "invoiced" ? "completed" : entry.status,
+    status,
     clientId,
     projectId: project?.id,
   };
@@ -116,12 +140,7 @@ export function normalizeTimeEntryRecord(entry: TimeEntry, clients: Client[], pr
 
 export function getTimeEntryAmount(entry: TimeEntry, clients: Client[], projects: Project[]) {
   const context = resolveTimeEntryBillingContext(entry, clients, projects);
-
-  if (!context.hourlyRate) {
-    return 0;
-  }
-
-  return roundCurrency(entry.durationHours * context.hourlyRate);
+  return getEntryBillableAmount(entry, context.hourlyRate);
 }
 
 export function getProjectBilledAmount(project: Project, entries: TimeEntry[], clients: Client[], projects: Project[]) {

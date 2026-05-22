@@ -130,6 +130,10 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     () => Number((finalPreview?.lineItems.filter((item) => item.lineType === "expense").reduce((sum, item) => sum + item.amount, 0) ?? 0).toFixed(2)),
     [finalPreview],
   );
+  const hasSelectedTimedEntries = useMemo(
+    () => (finalPreview?.lineItems.some((item) => item.lineType === "time") ?? false),
+    [finalPreview],
+  );
 
   const canPreview = !!clientId && (effectiveBillingMode === "outstanding" || (!!effectiveRangeStart && !!effectiveRangeEnd));
 
@@ -335,7 +339,9 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                                 </div>
                                 <div className="shrink-0 text-right">
                                   <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
-                                  <p className="text-xs text-muted-foreground">{formatHours(item.hours)} × {formatCurrency(item.rate)}/hr</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {item.lineType === "fixed" ? "Fixed amount entry" : `${formatHours(item.hours)} × ${formatCurrency(item.rate)}/hr`}
+                                  </p>
                                 </div>
                               </div>
                             );
@@ -412,6 +418,11 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rate</span>
                           <span className="font-medium text-amber-600">Mixed rates</span>
+                        </div>
+                      ) : !hasSelectedTimedEntries ? (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rate</span>
+                          <span className="font-medium">Fixed entries</span>
                         </div>
                       ) : (
                         <div className="flex justify-between text-sm">

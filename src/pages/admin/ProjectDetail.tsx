@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { getInvoiceSourceTypeLabel } from "@/lib/invoice";
 import { getProjectBillingInvoices, getProjectBillingSnapshot, getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
+import { getEntryHours, getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import {
   createTimeflowDocument,
   getTimeflowDocumentDownloadUrl,
@@ -57,7 +58,7 @@ export default function ProjectDetailPage() {
 
   const client = useMemo(() => clients.find((item) => item.id === project?.clientId), [clients, project?.clientId]);
   const projectEntries = useMemo(
-    () => [...timeEntries].filter((entry) => entry.projectId === project?.id).sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
+    () => [...timeEntries].filter((entry) => entry.projectId === project?.id).sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a))),
     [project?.id, timeEntries],
   );
   const projectInvoices = useMemo(() => invoices.filter((invoice) => invoice.projectIds.includes(project?.id ?? "")), [invoices, project?.id]);
@@ -307,12 +308,19 @@ export default function ProjectDetailPage() {
                     <div key={entry.id} className="rounded-xl border p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="font-medium">{entry.notes || "Tracked work"}</p>
-                          <p className="text-sm text-muted-foreground">{formatLongDate(entry.date)} • {entry.startTime} - {entry.endTime ?? "--"}</p>
+                          <p className="font-medium">{entry.notes || (getEntryType(entry) === "fixed" ? "Fixed charge" : "Tracked work")}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatLongDate(entry.date)}
+                            {getEntryType(entry) === "fixed" ? " • Fixed amount" : ` • ${entry.startTime} - ${entry.endTime ?? "--"}`}
+                          </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium">{formatHours(entry.durationHours)}</p>
-                          <p className="text-sm text-muted-foreground">{formatCurrency(entry.billingRate ?? project.hourlyRate)}</p>
+                          <p className="font-medium">
+                            {getEntryType(entry) === "fixed" ? formatCurrency(entry.fixedAmount ?? 0) : formatHours(getEntryHours(entry))}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {getEntryType(entry) === "fixed" ? "Fixed" : `${formatCurrency(entry.billingRate ?? project.hourlyRate)}/hr`}
+                          </p>
                         </div>
                       </div>
                     </div>

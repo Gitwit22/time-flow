@@ -3,6 +3,7 @@ import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculati
 import { formatClockTime } from "@/lib/date";
 import { isViewerLikeRole } from "@/lib/organization";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
+import { getEntryHours, getEntrySortKey } from "@/lib/timeEntries";
 import type { AppState } from "@/store/appStore";
 import type { Client, Project, ProjectBill, TimeEntry } from "@/types";
 
@@ -267,7 +268,7 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     entries: billingSummary.lines.map((line) => ({
       amount: line.amount,
       date: line.entry.date,
-      durationHours: line.entry.durationHours,
+      durationHours: getEntryHours(line.entry),
     })),
     expenses: input.expenses,
     invoices: input.invoices,
@@ -293,7 +294,7 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
 
   const recentEntries = [...input.timeEntries]
     .filter((entry) => entry.status !== "running")
-    .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
+    .sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a)))
     .slice(0, 6);
 
   return {

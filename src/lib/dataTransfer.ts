@@ -32,6 +32,8 @@ export interface ExportProject {
 
 export interface ExportTimeEntry {
   id: string;
+  entryType?: "time" | "fixed";
+  fixedAmount?: number;
   clientId: string;
   projectId?: string;
   date: string;
@@ -116,6 +118,8 @@ function toExportProject(project: Project): ExportProject {
 function toExportTimeEntry(entry: TimeEntry): ExportTimeEntry {
   return {
     id: entry.id,
+    entryType: entry.entryType,
+    fixedAmount: entry.fixedAmount,
     clientId: entry.clientId,
     projectId: entry.projectId,
     date: entry.date,
@@ -520,15 +524,18 @@ function entryFromExport(
     ? (projectIdMap.get(src.projectId) ?? (existingProjectIds.has(src.projectId) ? src.projectId : undefined))
     : undefined;
   return {
+    entryType: src.entryType === "fixed" ? "fixed" : "time",
+    fixedAmount: src.entryType === "fixed" ? src.fixedAmount : undefined,
     clientId: resolvedClientId,
     projectId: resolvedProjectId,
     date: src.date,
-    startTime: src.startTime,
-    endTime: src.endTime,
-    durationHours: src.durationHours,
-    billingRate: src.billingRate,
+    startTime: src.startTime || "00:00",
+    endTime: src.entryType === "fixed" ? undefined : src.endTime,
+    durationHours: src.entryType === "fixed" ? 0 : src.durationHours,
+    billingRate: src.entryType === "fixed" ? undefined : src.billingRate,
     billable: src.billable,
     invoiced: src.invoiced,
+    invoiceStatus: src.invoiced ? "invoiced" : "unbilled",
     invoiceId: null,
     notes: src.notes,
     status: src.status === "running" || src.status === "completed" ? src.status : "completed",

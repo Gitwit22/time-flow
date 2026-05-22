@@ -3,6 +3,7 @@ import { endOfMonth, format, isWithinInterval, parseISO, startOfMonth, subMonths
 import { getInvoiceDueDate, toDate, toIsoDate } from "@/lib/date";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { resolveTimeEntryBillingContext, uniqueProjectIds } from "@/lib/projects";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import type { AppSettings, Client, Expense, ExpenseBillingTarget, Invoice, InvoiceBillingMode, InvoiceDraftPreview, InvoiceGrouping, InvoiceLineItem, Project, ProjectBill, TimeEntry, UserProfile } from "@/types";
 
 interface BillingSummaryOptions {
@@ -97,13 +98,34 @@ export function getBillingSummary(entries: TimeEntry[], clients: Client[], proje
     const context = resolveTimeEntryBillingContext(entry, clients, projects);
     const client = context.client;
 
+    if (getEntryType(entry) === "fixed") {
+      if (!client) {
+        missingRateEntries.push(entry);
+        return;
+      }
+
+      const fixedAmount = getEntryBillableAmount(entry);
+      if (fixedAmount <= 0) {
+        return;
+      }
+
+      lines.push({
+        amount: fixedAmount,
+        client,
+        entry,
+        hourlyRate: 0,
+        project: context.project,
+      });
+      return;
+    }
+
     if (!client || !context.hourlyRate) {
       missingRateEntries.push(entry);
       return;
     }
 
     lines.push({
-      amount: Number((entry.durationHours * context.hourlyRate).toFixed(2)),
+      amount: getEntryBillableAmount(entry, context.hourlyRate),
       client,
       entry,
       hourlyRate: context.hourlyRate,
@@ -122,7 +144,7 @@ export function getBillingSummary(entries: TimeEntry[], clients: Client[], proje
     missingRateClientNames,
     missingRateEntries,
     totalAmount: Number(lines.reduce((sum, line) => sum + line.amount, 0).toFixed(2)),
-    totalHours: Number(lines.reduce((sum, line) => sum + line.entry.durationHours, 0).toFixed(2)),
+    totalHours: Number(lines.reduce((sum, line) => sum + getEntryHours(line.entry), 0).toFixed(2)),
   };
 }
 
@@ -170,12 +192,17 @@ export function buildInvoiceDraftSummary(
         id: `li-${i}`,
         description: line.entry.notes || (line.project ? line.project.name : line.client.name),
         date: line.entry.date,
-        hours: line.entry.durationHours,
-        rate: line.hourlyRate,
+        hours: getEntryHours(line.entry),
+        lineType: getEntryType(line.entry) === "fixed" ? "fixed" : "time",
+        rate: getEntryType(line.entry) === "fixed" ? 0 : line.hourlyRate,
         amount: line.amount,
         projectId: line.project?.id,
         timeEntryIds: [line.entry.id],
       }));
+      const timedRates = grouped
+        .filter((line) => getEntryType(line.entry) === "time")
+        .map((line) => line.hourlyRate)
+        .filter((rate) => rate > 0);
       return {
         billingMode: "range" as InvoiceBillingMode,
         clientId: groupClientId,
@@ -183,8 +210,8 @@ export function buildInvoiceDraftSummary(
         dueDate,
         entryIds,
         grouping: "none" as InvoiceGrouping,
-        hasMixedRates: new Set(grouped.map((line) => line.hourlyRate)).size > 1,
-        hourlyRate: grouped[0]?.hourlyRate ?? 0,
+        hasMixedRates: new Set(timedRates).size > 1,
+        hourlyRate: timedRates[0] ?? 0,
         lineItems,
         periodEnd: payPeriod.endDate,
         periodStart: payPeriod.startDate,
@@ -196,7 +223,7 @@ export function buildInvoiceDraftSummary(
         taxRate: 0,
         timeEntryIds: entryIds,
         totalAmount: subtotal,
-        totalHours: Number(grouped.reduce((sum, line) => sum + line.entry.durationHours, 0).toFixed(2)),
+        totalHours: Number(grouped.reduce((sum, line) => sum + getEntryHours(line.entry), 0).toFixed(2)),
       };
     }),
   };
@@ -407,13 +434,29 @@ export function buildSingleClientInvoicePreview(
   filtered.forEach((entry) => {
     const context = resolveTimeEntryBillingContext(entry, clients, projects);
 
+    if (getEntryType(entry) === "fixed") {
+      const amount = getEntryBillableAmount(entry);
+      if (amount <= 0) {
+        return;
+      }
+
+      lines.push({
+        amount,
+        client,
+        entry,
+        hourlyRate: 0,
+        project: context.project,
+      });
+      return;
+    }
+
     if (!context.hourlyRate) {
       missingRateEntries.push(entry);
       return;
     }
 
     lines.push({
-      amount: Number((entry.durationHours * context.hourlyRate).toFixed(2)),
+      amount: getEntryBillableAmount(entry, context.hourlyRate),
       client,
       entry,
       hourlyRate: context.hourlyRate,
@@ -422,18 +465,22 @@ export function buildSingleClientInvoicePreview(
   });
 
   const entryIds = lines.map((l) => l.entry.id);
-  const totalHours = Number(lines.reduce((sum, l) => sum + l.entry.durationHours, 0).toFixed(2));
+  const totalHours = Number(lines.reduce((sum, l) => sum + getEntryHours(l.entry), 0).toFixed(2));
   const subtotal = Number(lines.reduce((sum, l) => sum + l.amount, 0).toFixed(2));
-  const hasMixedRates = new Set(lines.map((l) => l.hourlyRate)).size > 1;
-  const hourlyRate = lines[0]?.hourlyRate ?? 0;
+  const timedRates = lines
+    .filter((l) => getEntryType(l.entry) === "time")
+    .map((l) => l.hourlyRate)
+    .filter((rate) => rate > 0);
+  const hasMixedRates = new Set(timedRates).size > 1;
+  const hourlyRate = timedRates[0] ?? 0;
 
   const lineItems: InvoiceLineItem[] = lines.map((l, i) => ({
     id: `li-${i}`,
     description: l.entry.notes || (l.project ? l.project.name : client.name),
     date: l.entry.date,
-    hours: l.entry.durationHours,
-    lineType: "time",
-    rate: l.hourlyRate,
+    hours: getEntryHours(l.entry),
+    lineType: getEntryType(l.entry) === "fixed" ? "fixed" : "time",
+    rate: getEntryType(l.entry) === "fixed" ? 0 : l.hourlyRate,
     amount: l.amount,
     projectId: l.project?.id,
     timeEntryIds: [l.entry.id],

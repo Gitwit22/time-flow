@@ -5,6 +5,7 @@ import {
   calculateInvoiceExpenseSubtotal,
   calculateInvoiceGrandTotal,
   calculateInvoiceLaborSubtotal,
+  getBillingSummary,
   getUninvoicedBillableExpenses,
 } from "@/lib/billing";
 
@@ -170,5 +171,104 @@ describe("invoice expense billing helpers", () => {
     expect(calculateInvoiceLaborSubtotal(invoice as any)).toBe(300);
     expect(calculateInvoiceExpenseSubtotal(invoice as any)).toBe(45);
     expect(calculateInvoiceGrandTotal(invoice as any)).toBe(379.5);
+  });
+
+  it("includes fixed entries in billable totals and excludes them from hours", () => {
+    const entries = [
+      {
+        id: "entry-time",
+        entryType: "time",
+        clientId: "client-1",
+        projectId: "project-1",
+        date: "2026-05-12",
+        startTime: "09:00",
+        endTime: "10:00",
+        durationHours: 1,
+        billingRate: 150,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "Timed work",
+        status: "completed",
+      },
+      {
+        id: "entry-fixed",
+        entryType: "fixed",
+        fixedAmount: 500,
+        clientId: "client-1",
+        projectId: "project-1",
+        date: "2026-05-13",
+        startTime: "00:00",
+        endTime: undefined,
+        durationHours: 0,
+        billingRate: undefined,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "Website design deposit",
+        status: "completed",
+      },
+    ];
+
+    const summary = getBillingSummary(entries as any, clients as any, projects as any);
+
+    expect(summary.totalAmount).toBe(650);
+    expect(summary.totalHours).toBe(1);
+    expect(summary.lines.find((line) => line.entry.id === "entry-fixed")?.amount).toBe(500);
+  });
+
+  it("builds invoice preview with fixed entries and legacy entries without entryType", () => {
+    const entries = [
+      {
+        id: "entry-legacy",
+        clientId: "client-1",
+        projectId: "project-1",
+        date: "2026-05-12",
+        startTime: "09:00",
+        endTime: "10:00",
+        durationHours: 1,
+        billingRate: 150,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "Legacy time entry",
+        status: "completed",
+      },
+      {
+        id: "entry-fixed",
+        entryType: "fixed",
+        fixedAmount: 250,
+        clientId: "client-1",
+        projectId: "project-1",
+        date: "2026-05-13",
+        startTime: "00:00",
+        durationHours: 0,
+        billable: true,
+        invoiced: false,
+        invoiceId: null,
+        notes: "Milestone fee",
+        status: "completed",
+      },
+    ];
+
+    const result = buildSingleClientInvoicePreview(
+      entries as any,
+      [],
+      clients as any,
+      projects as any,
+      [],
+      "client-1",
+      "range",
+      "2026-05-31",
+      {
+        rangeStart: "2026-05-01",
+        rangeEnd: "2026-05-31",
+      },
+    );
+
+    expect(result.preview?.entryIds).toEqual(["entry-legacy", "entry-fixed"]);
+    expect(result.preview?.totalHours).toBe(1);
+    expect(result.preview?.totalAmount).toBe(400);
+    expect(result.preview?.lineItems.find((item) => item.timeEntryIds.includes("entry-fixed"))?.lineType).toBe("fixed");
   });
 });

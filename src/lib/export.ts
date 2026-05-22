@@ -1,6 +1,7 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { groupInvoiceLaborByProject } from "@/lib/invoice";
 import { resolveTimeEntryBillingContext } from "@/lib/projects";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
 import type { Project } from "@/types";
@@ -58,16 +59,17 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
   const fallbackLineItems = entries.map((entry, index) => {
     const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
     const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
+    const isFixed = getEntryType(entry) === "fixed";
 
     return {
       id: `legacy-${entry.id}-${index}`,
-      description: entry.notes || "Tracked work",
+      description: entry.notes || (isFixed ? "Fixed charge" : "Tracked work"),
       date: entry.date,
-      hours: entry.durationHours,
-      lineType: "time" as const,
+      hours: getEntryHours(entry),
+      lineType: isFixed ? ("fixed" as const) : ("time" as const),
       projectId: entry.projectId,
-      rate: hourlyRate,
-      amount: entry.durationHours * hourlyRate,
+      rate: isFixed ? 0 : hourlyRate,
+      amount: isFixed ? getEntryBillableAmount(entry) : getEntryBillableAmount(entry, hourlyRate),
       timeEntryIds: [entry.id],
     };
   });
@@ -92,8 +94,8 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
         </tr>`;
 
       const rows = group.lineItems.map((lineItem) => {
-        const hours = formatHours(lineItem.hours);
-        const rate = formatCurrency(lineItem.rate);
+        const hours = lineItem.lineType === "fixed" ? "-" : formatHours(lineItem.hours);
+        const rate = lineItem.lineType === "fixed" ? "Fixed" : formatCurrency(lineItem.rate);
 
         return `
           <tr>

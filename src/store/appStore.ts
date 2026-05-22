@@ -5,6 +5,7 @@ import { createFixedBillInvoicePreview, createProjectPartialInvoicePreview, mate
 import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeOrganizationRole } from "@/lib/organization";
 import { getProjectBillingSnapshot, normalizeTimeEntryRecord } from "@/lib/projects";
+import { getEntryType } from "@/lib/timeEntries";
 import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveSession } from "@/lib/storage";
 import {
   apiArchiveClient,
@@ -997,6 +998,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const requiresApproval = state.currentUser.role === "employee";
     const entry: TimeEntry = {
       id,
+      entryType: "time",
       clientId: state.activeSession.clientId,
       projectId: state.activeSession.projectId,
       date: startedAt.toLocaleDateString("en-CA"),
@@ -1032,11 +1034,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!canTrackTime(state.currentUser.role)) return;
 
     const id = crypto.randomUUID();
+    const entryType = getEntryType(entry);
     const nextEntry = normalizeTimeEntryRecord(
       {
         id,
         ...entry,
-        durationHours: entry.durationHours ?? calculateDurationHours(entry.startTime, entry.endTime),
+        startTime: entry.startTime || "00:00",
+        durationHours: entryType === "fixed"
+          ? 0
+          : entry.durationHours ?? calculateDurationHours(entry.startTime || "00:00", entry.endTime),
         status: entry.status ?? "completed",
         billable: entry.billable ?? true,
         invoiced: entry.invoiced ?? false,
@@ -1062,7 +1068,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       timeEntries: state.timeEntries.map((entry) => {
         if (entry.id !== id) return entry;
         const nextEntry = { ...entry, ...updates };
-        if ((updates.startTime || updates.endTime) && nextEntry.endTime) {
+        if (getEntryType(nextEntry) === "time" && (updates.startTime || updates.endTime) && nextEntry.endTime) {
           nextEntry.durationHours = calculateDurationHours(nextEntry.startTime, nextEntry.endTime);
         }
         return normalizeTimeEntryRecord(nextEntry, state.clients, state.projects);

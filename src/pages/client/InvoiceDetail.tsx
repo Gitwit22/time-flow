@@ -8,6 +8,7 @@ import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "
 import { downloadInvoiceExport } from "@/lib/export";
 import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
@@ -62,14 +63,16 @@ export default function ClientInvoiceDetail() {
     ? invoice.lineItems
     : entries.map((entry, index) => ({
       id: `legacy-${entry.id}-${index}`,
-      description: entry.notes || "Tracked work",
+      description: entry.notes || (getEntryType(entry) === "fixed" ? "Fixed charge" : "Tracked work"),
       date: entry.date,
-      hours: entry.durationHours,
+      hours: getEntryHours(entry),
       projectId: entry.projectId,
-      rate: entry.billingRate ?? invoice.hourlyRate,
-      amount: entry.durationHours * (entry.billingRate ?? invoice.hourlyRate),
+      rate: getEntryType(entry) === "fixed" ? 0 : (entry.billingRate ?? invoice.hourlyRate),
+      amount: getEntryType(entry) === "fixed"
+        ? getEntryBillableAmount(entry)
+        : getEntryBillableAmount(entry, entry.billingRate ?? invoice.hourlyRate),
       timeEntryIds: [entry.id],
-      lineType: "time" as const,
+      lineType: getEntryType(entry) === "fixed" ? ("fixed" as const) : ("time" as const),
     }));
   const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
   const laborGroups = groupInvoiceLaborByProject(lineItems, entries, projects);
