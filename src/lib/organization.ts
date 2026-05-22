@@ -33,7 +33,7 @@ export function canEditTime(role: UserRole) {
 }
 
 export function canGenerateInvoices(role: UserRole) {
-  return role === "owner" || role === "admin" || role === "manager";
+  return role === "contractor" || role === "owner" || role === "admin" || role === "manager";
 }
 
 export function canViewAdminWorkspace(role: UserRole) {
