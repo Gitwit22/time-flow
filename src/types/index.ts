@@ -167,8 +167,6 @@ export interface TimeEntry {
   organizationId?: string;
   employeeMemberId?: string;
   userId?: string;
-  entryType?: "time" | "fixed";
-  fixedAmount?: number;
   clientId: string;
   projectId?: string;
   workerName?: string;
@@ -182,7 +180,6 @@ export interface TimeEntry {
   billingRate?: number;
   billable: boolean;
   invoiced: boolean;
-  invoiceStatus?: "unbilled" | "invoiced" | "paid";
   invoiceId: string | null;
   notes: string;
   status: TimeEntryStatus;
@@ -219,7 +216,7 @@ export interface InvoiceLineItem {
   description: string;
   date: string;
   hours: number;
-  lineType?: "time" | "fixed" | "expense" | "manual";
+  lineType?: "time" | "expense" | "manual";
   rate: number;
   amount: number;
   projectId?: string;
