@@ -7,11 +7,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { buildSingleClientInvoicePreview } from "@/lib/billing";
-import { formatCurrency, formatHours, formatLongDate, toIsoDate } from "@/lib/date";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, parseDateInput, toIsoDate } from "@/lib/date";
+import { getCurrentPayPeriod, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
 import type { InvoiceBillingMode, InvoiceDraftPreview } from "@/types";
@@ -21,19 +21,23 @@ interface GenerateInvoiceDialogProps {
 }
 
 type Step = "configure" | "review";
+type RangeMode = "current-period" | "previous-period" | "custom-range" | "outstanding";
 
 export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const { toast } = useToast();
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const currentUser = useAppStore((state) => state.currentUser);
+  const settings = useAppStore((state) => state.settings);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
+  const invoices = useAppStore((state) => state.invoices);
   const commitSingleInvoice = useAppStore((state) => state.commitSingleInvoice);
 
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<Step>("configure");
   const [clientId, setClientId] = useState<string>("");
-  const [billingMode, setBillingMode] = useState<InvoiceBillingMode>("outstanding");
+  const [rangeMode, setRangeMode] = useState<RangeMode>("current-period");
   const [rangeStart, setRangeStart] = useState<string>("");
   const [rangeEnd, setRangeEnd] = useState<string>("");
   const [dueDate, setDueDate] = useState<string>(() => {
@@ -41,33 +45,71 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     d.setDate(d.getDate() + (currentUser.invoiceDueDays ?? 30));
     return toIsoDate(d);
   });
-  const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
+  const [selectedTimeEntryIds, setSelectedTimeEntryIds] = useState<Set<string>>(new Set());
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(new Set());
 
   const selectedClient = clients.find((c) => c.id === clientId);
+  const payPeriodSettings = {
+    payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+    payPeriodStartDate: settings.payPeriodStartDate,
+    periodWeekStartsOn: settings.periodWeekStartsOn,
+  };
+  const currentPayPeriod = getCurrentPayPeriod(payPeriodSettings, new Date());
+  const previousPayPeriod = getPreviousPayPeriod(currentPayPeriod, payPeriodSettings);
+  const effectiveBillingMode: InvoiceBillingMode = rangeMode === "outstanding" ? "outstanding" : "range";
+  const effectiveRangeStart = rangeMode === "current-period"
+    ? currentPayPeriod.startDate
+    : rangeMode === "previous-period"
+      ? previousPayPeriod.startDate
+      : rangeStart;
+  const effectiveRangeEnd = rangeMode === "current-period"
+    ? currentPayPeriod.endDate
+    : rangeMode === "previous-period"
+      ? previousPayPeriod.endDate
+      : rangeEnd;
 
   const basePreviewResult = useMemo(() => {
     if (!clientId) return null;
-    if (billingMode === "range" && (!rangeStart || !rangeEnd)) return null;
+    if (effectiveBillingMode === "range" && (!effectiveRangeStart || !effectiveRangeEnd)) return null;
 
     return buildSingleClientInvoicePreview(
       timeEntries,
+      expenses,
       clients,
       projects,
+      invoices,
       clientId,
-      billingMode,
+      effectiveBillingMode,
       dueDate,
-      billingMode === "range" ? { rangeStart, rangeEnd } : {},
+      effectiveBillingMode === "range" ? { rangeStart: effectiveRangeStart, rangeEnd: effectiveRangeEnd } : {},
     );
-  }, [clientId, billingMode, rangeStart, rangeEnd, dueDate, timeEntries, clients, projects]);
+  }, [clientId, clients, dueDate, effectiveBillingMode, effectiveRangeEnd, effectiveRangeStart, expenses, invoices, projects, timeEntries]);
+
+  const expenseLookup = useMemo(() => {
+    return new Map(expenses.map((expense) => [expense.id, expense]));
+  }, [expenses]);
+
+  const baseTimeItems = useMemo(
+    () => (basePreviewResult?.preview?.lineItems ?? []).filter((item) => item.lineType !== "expense"),
+    [basePreviewResult?.preview?.lineItems],
+  );
+  const baseExpenseItems = useMemo(
+    () => (basePreviewResult?.preview?.lineItems ?? []).filter((item) => item.lineType === "expense"),
+    [basePreviewResult?.preview?.lineItems],
+  );
 
   const finalPreview = useMemo((): InvoiceDraftPreview | null => {
     const base = basePreviewResult?.preview;
     if (!base) return null;
-    if (deselectedIds.size === 0) return base;
 
-    const keptItems = base.lineItems.filter(
-      (item) => !item.timeEntryIds.some((id) => deselectedIds.has(id)),
-    );
+    const keptItems = base.lineItems.filter((item) => {
+      if (item.lineType === "expense") {
+        return item.expenseId ? selectedExpenseIds.has(item.expenseId) : false;
+      }
+
+      const timeEntryId = item.timeEntryIds[0];
+      return timeEntryId ? selectedTimeEntryIds.has(timeEntryId) : false;
+    });
     if (keptItems.length === 0) return null;
 
     const entryIds = keptItems.flatMap((item) => item.timeEntryIds);
@@ -77,37 +119,74 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     const totalAmount = Number((subtotal + taxAmount).toFixed(2));
 
     return { ...base, lineItems: keptItems, entryIds, timeEntryIds: entryIds, totalHours, subtotal, taxAmount, totalAmount };
-  }, [basePreviewResult, deselectedIds]);
+  }, [basePreviewResult, selectedExpenseIds, selectedTimeEntryIds]);
 
-  const canPreview = !!clientId && (billingMode === "outstanding" || (!!rangeStart && !!rangeEnd));
+  const laborSubtotal = useMemo(
+    () => Number((finalPreview?.lineItems.filter((item) => item.lineType !== "expense").reduce((sum, item) => sum + item.amount, 0) ?? 0).toFixed(2)),
+    [finalPreview],
+  );
+
+  const expenseSubtotal = useMemo(
+    () => Number((finalPreview?.lineItems.filter((item) => item.lineType === "expense").reduce((sum, item) => sum + item.amount, 0) ?? 0).toFixed(2)),
+    [finalPreview],
+  );
+  const hasSelectedTimedEntries = useMemo(
+    () => (finalPreview?.lineItems.some((item) => item.lineType === "time") ?? false),
+    [finalPreview],
+  );
+
+  const canPreview = !!clientId && (effectiveBillingMode === "outstanding" || (!!effectiveRangeStart && !!effectiveRangeEnd));
 
   function handleOpenChange(next: boolean) {
     setOpen(next);
     if (!next) {
       setStep("configure");
       setClientId("");
-      setBillingMode("outstanding");
+      setRangeMode("current-period");
       setRangeStart("");
       setRangeEnd("");
-      setDeselectedIds(new Set());
+      setSelectedTimeEntryIds(new Set());
+      setSelectedExpenseIds(new Set());
     }
   }
 
   function handleGoToReview() {
-    setDeselectedIds(new Set());
+    const base = basePreviewResult?.preview;
+    setSelectedTimeEntryIds(new Set((base?.lineItems ?? []).flatMap((item) => (item.lineType === "expense" ? [] : item.timeEntryIds))));
+    setSelectedExpenseIds(new Set((base?.lineItems ?? []).flatMap((item) => (item.lineType === "expense" && item.expenseId ? [item.expenseId] : []))));
     setStep("review");
   }
 
-  function handleToggleEntry(entryId: string, checked: boolean) {
-    setDeselectedIds((prev) => {
+  function handleToggleTimeEntry(entryId: string, checked: boolean) {
+    setSelectedTimeEntryIds((prev) => {
       const next = new Set(prev);
       if (checked) {
-        next.delete(entryId);
-      } else {
         next.add(entryId);
+      } else {
+        next.delete(entryId);
       }
       return next;
     });
+  }
+
+  function handleToggleExpense(expenseId: string, checked: boolean) {
+    setSelectedExpenseIds((prev) => {
+      const next = new Set(prev);
+      if (checked) {
+        next.add(expenseId);
+      } else {
+        next.delete(expenseId);
+      }
+      return next;
+    });
+  }
+
+  function handleSelectAllExpenses() {
+    setSelectedExpenseIds(new Set(baseExpenseItems.flatMap((item) => (item.expenseId ? [item.expenseId] : []))));
+  }
+
+  function handleClearExpenses() {
+    setSelectedExpenseIds(new Set());
   }
 
   function handleConfirm() {
@@ -120,9 +199,13 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
     }
 
     const count = finalPreview.entryIds.length;
+    const expenseLineCount = finalPreview.lineItems.filter((item) => item.lineType === "expense").length;
     toast({
       title: "Invoice created",
-      description: `${invoice.id} was created as a draft. ${count} time entr${count === 1 ? "y was" : "ies were"} marked as invoiced.`,
+      description:
+        count > 0
+          ? `${invoice.id} was created as a draft. ${count} time entr${count === 1 ? "y was" : "ies were"} marked as invoiced${expenseLineCount > 0 ? ` and ${expenseLineCount} expense${expenseLineCount === 1 ? "" : "s"} added.` : "."}`
+          : `${invoice.id} was created as a draft with ${expenseLineCount} expense line${expenseLineCount === 1 ? "" : "s"}.`,
     });
     handleOpenChange(false);
   }
@@ -157,45 +240,48 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
               </Select>
             </div>
 
-            {/* Billing mode */}
+            {!settings.payPeriodStartDate ? (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                Pay period start date is not set yet. Current and previous pay period presets are using a default anchor until you save your pay period settings.
+              </div>
+            ) : null}
+
+            {/* Invoice source */}
             <div className="space-y-2">
-              <Label>Billing mode</Label>
-              <RadioGroup
-                value={billingMode}
-                onValueChange={(v) => setBillingMode(v as InvoiceBillingMode)}
-                className="space-y-2"
-              >
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="outstanding" id="mode-outstanding" className="mt-0.5" />
-                  <Label htmlFor="mode-outstanding" className="cursor-pointer space-y-0.5 font-normal">
-                    <span className="font-medium">Generate from Outstanding Time</span>
-                    <p className="text-xs text-muted-foreground">
-                      Include all uninvoiced billable entries for this client regardless of date.
-                    </p>
-                  </Label>
-                </div>
-                <div className="flex items-start gap-3 rounded-lg border p-3">
-                  <RadioGroupItem value="range" id="mode-range" className="mt-0.5" />
-                  <Label htmlFor="mode-range" className="cursor-pointer space-y-0.5 font-normal">
-                    <span className="font-medium">Generate by Date Range</span>
-                    <p className="text-xs text-muted-foreground">
-                      Include uninvoiced billable entries within a specific billing period.
-                    </p>
-                  </Label>
-                </div>
-              </RadioGroup>
+              <Label>Generate Invoice From</Label>
+              <Select value={rangeMode} onValueChange={(value) => setRangeMode(value as RangeMode)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="current-period">Current Pay Period</SelectItem>
+                  <SelectItem value="previous-period">Previous Pay Period</SelectItem>
+                  <SelectItem value="custom-range">Custom Range</SelectItem>
+                  <SelectItem value="outstanding">All Unbilled Completed Entries</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Date range inputs */}
-            {billingMode === "range" && (
+            {rangeMode !== "outstanding" ? (
+              <div className="rounded-lg border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                {rangeMode === "current-period"
+                  ? `Current pay period: ${formatLongDate(currentPayPeriod.startDate)} → ${formatLongDate(currentPayPeriod.endDate)}`
+                  : rangeMode === "previous-period"
+                    ? `Previous pay period: ${formatLongDate(previousPayPeriod.startDate)} → ${formatLongDate(previousPayPeriod.endDate)}`
+                    : "Choose a custom invoice period below."}
+              </div>
+            ) : null}
+
+            {rangeMode === "custom-range" && (
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Start date</Label>
-                  <Input type="date" value={rangeStart} onChange={(e) => setRangeStart(e.target.value)} />
+                  <Label>Invoice Period Start</Label>
+                  <Input type="date" value={formatDateForInput(rangeStart)} onChange={(e) => setRangeStart(parseDateInput(e.target.value))} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>End date</Label>
-                  <Input type="date" value={rangeEnd} onChange={(e) => setRangeEnd(e.target.value)} />
+                  <Label>Invoice Period End</Label>
+                  <Input type="date" value={formatDateForInput(rangeEnd)} onChange={(e) => setRangeEnd(parseDateInput(e.target.value))} />
                 </div>
               </div>
             )}
@@ -203,7 +289,7 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
             {/* No entries warning */}
             {canPreview && basePreviewResult && !basePreviewResult.preview && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                No uninvoiced billable entries found{billingMode === "range" ? " in the selected date range" : ""} for{" "}
+                No uninvoiced billable time entries or expenses found{effectiveBillingMode === "range" ? " in the selected date range" : ""} for{" "}
                 {selectedClient?.name ?? "this client"}.
               </div>
             )}
@@ -222,54 +308,110 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                   <div className="flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                     <span className="min-w-0">
                       {selectedClient?.name} —{" "}
-                      {billingMode === "range"
-                        ? `${formatLongDate(rangeStart)} → ${formatLongDate(rangeEnd)}`
+                      {effectiveBillingMode === "range"
+                        ? `${formatLongDate(effectiveRangeStart)} → ${formatLongDate(effectiveRangeEnd)}`
                         : "All outstanding"}
                     </span>
                     <span className="status-badge-accent self-start sm:self-auto">
-                      {finalPreview.entryIds.length} entr{finalPreview.entryIds.length === 1 ? "y" : "ies"}
+                      {finalPreview.lineItems.length} line{finalPreview.lineItems.length === 1 ? "" : "s"} selected
                     </span>
                   </div>
 
-                  <div className="max-h-[40vh] overflow-y-auto rounded-lg border divide-y">
-                    {finalPreview.lineItems.map((item) => {
-                      const entryId = item.timeEntryIds[0] ?? item.id;
-                      const isSelected = !deselectedIds.has(entryId);
-                      return (
-                        <div
-                          key={item.id}
-                          className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}
-                        >
-                          <Checkbox
-                            id={`entry-${entryId}`}
-                            checked={isSelected}
-                            onCheckedChange={(checked) => handleToggleEntry(entryId, !!checked)}
-                            className="mt-1"
-                          />
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium leading-5 break-words">{item.description}</p>
-                            <p className="mt-1 text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
-                          </div>
-                          <div className="shrink-0 text-right">
-                            <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatHours(item.hours)} × {formatCurrency(item.rate)}/hr
-                            </p>
-                          </div>
+                  <div className="space-y-4">
+                    <div className="rounded-lg border">
+                      <div className="border-b px-3 py-2 text-sm font-medium">Labor / Time Entries</div>
+                      <div className="max-h-[28vh] overflow-y-auto divide-y">
+                        {baseTimeItems.length ? (
+                          baseTimeItems.map((item) => {
+                            const timeEntryId = item.timeEntryIds[0] ?? item.id;
+                            const isSelected = selectedTimeEntryIds.has(timeEntryId);
+                            return (
+                              <div key={item.id} className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}>
+                                <Checkbox
+                                  id={`time-${timeEntryId}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => handleToggleTimeEntry(timeEntryId, !!checked)}
+                                  className="mt-1"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium leading-5 break-words">{item.description}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">{formatLongDate(item.date)}</p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {item.lineType === "fixed" ? "Fixed amount entry" : `${formatHours(item.hours)} × ${formatCurrency(item.rate)}/hr`}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No eligible time entries.</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="rounded-lg border">
+                      <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
+                        <p className="text-sm font-medium">Expenses</p>
+                        <div className="flex items-center gap-2">
+                          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={handleSelectAllExpenses}>
+                            Select all eligible expenses
+                          </Button>
+                          <Button type="button" variant="ghost" size="sm" className="h-8" onClick={handleClearExpenses}>
+                            Clear expenses
+                          </Button>
                         </div>
-                      );
-                    })}
+                      </div>
+                      <div className="max-h-[28vh] overflow-y-auto divide-y">
+                        {baseExpenseItems.length ? (
+                          baseExpenseItems.map((item) => {
+                            if (!item.expenseId) {
+                              return null;
+                            }
+
+                            const expense = expenseLookup.get(item.expenseId);
+                            const projectName = expense?.projectId ? projects.find((project) => project.id === expense.projectId)?.name : undefined;
+                            const isSelected = selectedExpenseIds.has(item.expenseId);
+                            return (
+                              <div key={item.id} className={`flex items-start gap-3 px-3 py-3 transition-opacity ${!isSelected ? "opacity-40" : ""}`}>
+                                <Checkbox
+                                  id={`expense-${item.expenseId}`}
+                                  checked={isSelected}
+                                  onCheckedChange={(checked) => handleToggleExpense(item.expenseId!, !!checked)}
+                                  className="mt-1"
+                                />
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-medium leading-5 break-words">{expense?.vendor ? `${expense.vendor} — ${item.description}` : item.description}</p>
+                                  <p className="mt-1 text-xs text-muted-foreground">
+                                    {formatLongDate(item.date)} · {projectName ?? "Client"} · {expense?.category ?? "other"}
+                                    {expense?.receiptAttached ? " · Receipt" : ""}
+                                  </p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className="text-sm font-medium">{formatCurrency(item.amount)}</p>
+                                  <p className="text-xs text-muted-foreground">Expense reimbursement</p>
+                                </div>
+                              </div>
+                            );
+                          })
+                        ) : (
+                          <p className="px-3 py-3 text-sm text-muted-foreground">No eligible expenses.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
                     <div className="grid gap-1.5 sm:max-w-xs">
                       <Label>Due date</Label>
-                      <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                      <Input type="date" value={formatDateForInput(dueDate)} onChange={(e) => setDueDate(parseDateInput(e.target.value))} />
                     </div>
 
                     <div className="space-y-2 rounded-lg border p-4">
                       <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Total hours</span>
+                        <span className="text-muted-foreground">Selected hours</span>
                         <span className="font-medium">{formatHours(finalPreview.totalHours)}</span>
                       </div>
                       {finalPreview.hasMixedRates ? (
@@ -277,12 +419,25 @@ export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
                           <span className="text-muted-foreground">Rate</span>
                           <span className="font-medium text-amber-600">Mixed rates</span>
                         </div>
+                      ) : !hasSelectedTimedEntries ? (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Rate</span>
+                          <span className="font-medium">Fixed entries</span>
+                        </div>
                       ) : (
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Rate</span>
                           <span className="font-medium">{formatCurrency(finalPreview.hourlyRate)}/hr</span>
                         </div>
                       )}
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Selected labor total</span>
+                        <span className="font-medium">{formatCurrency(laborSubtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Selected expense total</span>
+                        <span className="font-medium">{formatCurrency(expenseSubtotal)}</span>
+                      </div>
                       <div className="flex justify-between text-sm">
                         <span className="text-muted-foreground">Subtotal</span>
                         <span className="font-medium">{formatCurrency(finalPreview.subtotal)}</span>

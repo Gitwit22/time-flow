@@ -1,15 +1,29 @@
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { groupInvoiceLaborByProject } from "@/lib/invoice";
 import { resolveTimeEntryBillingContext } from "@/lib/projects";
-import type { AppSettings, Client, Invoice, TimeEntry, UserProfile } from "@/types";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
+import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
+import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
 import type { Project } from "@/types";
+
+export interface InvoiceReceiptAttachment {
+  documentId: string;
+  filename: string;
+  mimeType: string;
+  /** Pre-signed inline/view URL — used for iframe embeds and links */
+  viewUrl: string;
+  expenseDescription: string;
+}
 
 interface InvoiceExportInput {
   invoice: Invoice;
   entries: TimeEntry[];
+  expenses: Expense[];
   client?: Client;
   currentUser: UserProfile;
   projects: Project[];
   settings: AppSettings;
+  receiptAttachments?: InvoiceReceiptAttachment[];
 }
 
 const PRINT_SCRIPT = `
@@ -34,7 +48,7 @@ function formatMultilineHtml(value: string) {
   return escapeHtml(value).replaceAll("\n", "<br />");
 }
 
-function buildInvoiceExportHtml({ invoice, entries, client, currentUser, projects, settings }: InvoiceExportInput) {
+function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUser, projects, settings, receiptAttachments }: InvoiceExportInput) {
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
@@ -52,24 +66,78 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
   const logoMarkup = settings.invoiceLogoDataUrl
     ? `<img class="logo" src="${escapeHtml(settings.invoiceLogoDataUrl)}" alt="${escapeHtml(businessName)} logo" />`
     : "";
-  const lineItems = entries
-    .map(
-      (entry) => {
-        const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
-        const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
+  const fallbackLineItems = entries.map((entry, index) => {
+    const billingContext = resolveTimeEntryBillingContext(entry, client ? [client] : [], projects);
+    const hourlyRate = billingContext.hourlyRate ?? invoice.hourlyRate;
+    const isFixed = getEntryType(entry) === "fixed";
+
+    return {
+      id: `legacy-${entry.id}-${index}`,
+      description: entry.notes || (isFixed ? "Fixed charge" : "Tracked work"),
+      date: entry.date,
+      hours: getEntryHours(entry),
+      lineType: isFixed ? ("fixed" as const) : ("time" as const),
+      projectId: entry.projectId,
+      rate: isFixed ? 0 : hourlyRate,
+      amount: isFixed ? getEntryBillableAmount(entry) : getEntryBillableAmount(entry, hourlyRate),
+      timeEntryIds: [entry.id],
+    };
+  });
+
+  const displayLineItems = invoice.lineItems.length > 0 ? invoice.lineItems : fallbackLineItems;
+  const expenseById = new Map(expenses.map((expense) => [expense.id, expense]));
+
+  const laborLineItems = displayLineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const groupedLaborLineItems = groupInvoiceLaborByProject(displayLineItems, entries, projects);
+  const expenseLineItems = displayLineItems.filter((lineItem) => lineItem.lineType === "expense");
+
+  const laborRows = groupedLaborLineItems
+    .map((group) => {
+      const groupHeader = `
+        <tr class="project-group-row">
+          <td colspan="5">
+            <div class="project-group-header">
+              <span class="project-group-title">Project: ${escapeHtml(group.projectName)}</span>
+              <span class="project-group-summary">${escapeHtml(formatHours(group.totalHours))} · ${escapeHtml(formatCurrency(group.subtotal))}</span>
+            </div>
+          </td>
+        </tr>`;
+
+      const rows = group.lineItems.map((lineItem) => {
+        const hours = lineItem.lineType === "fixed" ? "-" : formatHours(lineItem.hours);
+        const rate = lineItem.lineType === "fixed" ? "Fixed" : formatCurrency(lineItem.rate);
 
         return `
-        <tr>
-          <td>${escapeHtml(formatLongDate(entry.date))}</td>
-          <td>${escapeHtml(billingContext.project?.name ?? "Client-only")}</td>
-          <td>${escapeHtml(entry.notes || "Tracked work")}</td>
-          <td class="numeric">${escapeHtml(formatHours(entry.durationHours))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(hourlyRate))}</td>
-          <td class="numeric">${escapeHtml(formatCurrency(entry.durationHours * hourlyRate))}</td>
-        </tr>`;
-      },
-    )
+          <tr>
+            <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
+            <td>${escapeHtml(lineItem.description || "Tracked work")}</td>
+            <td class="numeric">${escapeHtml(hours)}</td>
+            <td class="numeric">${escapeHtml(rate)}</td>
+            <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
+          </tr>`;
+      }).join("");
+
+      return `${groupHeader}${rows}`;
+    })
     .join("");
+
+  const expenseRows = expenseLineItems
+    .map((lineItem) => {
+      const linkedExpense = lineItem.expenseId ? expenseById.get(lineItem.expenseId) : undefined;
+      const description = linkedExpense?.vendor ? `${linkedExpense.vendor} - ${lineItem.description}` : lineItem.description;
+
+      return `
+        <tr>
+          <td>${escapeHtml(formatLongDate(lineItem.date))}</td>
+          <td>${escapeHtml(linkedExpense?.category ?? "other")}</td>
+          <td>${escapeHtml(description || (linkedExpense ? `Expense (${linkedExpense.category})` : "Expense"))}</td>
+          <td class="numeric">${escapeHtml(formatCurrency(lineItem.amount))}</td>
+        </tr>`;
+    })
+    .join("");
+
+  const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems: displayLineItems });
+  const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems: displayLineItems });
 
   return `<!doctype html>
 <html lang="en">
@@ -92,6 +160,10 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
       table { width: 100%; border-collapse: collapse; margin-top: 24px; }
       th, td { border-bottom: 1px solid #d1d5db; padding: 10px 8px; text-align: left; vertical-align: top; }
       th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b7280; }
+      .project-group-row td { background: #f8fafc; border-bottom: 1px solid #e5e7eb; }
+      .project-group-header { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+      .project-group-title { font-weight: 600; }
+      .project-group-summary { font-size: 12px; color: #6b7280; }
       .numeric { text-align: right; }
       .totals { margin-top: 24px; justify-content: flex-end; }
       .totals-card { min-width: 280px; }
@@ -99,6 +171,14 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
       .totals-row.total { font-weight: 700; font-size: 18px; border-top: 1px solid #111827; margin-top: 8px; padding-top: 12px; }
       .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; }
       .status { display: inline-block; padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .receipts-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+      .receipt-item { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; max-width: 280px; }
+      .receipt-item img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #f8fafc; }
+      .receipt-caption { padding: 6px 8px; font-size: 11px; color: #6b7280; border-top: 1px solid #e5e7eb; word-break: break-word; }
+      .receipt-file { padding: 10px; font-size: 12px; color: #374151; background: #f8fafc; }
+      .receipt-file-link { color: #0f4bb8; text-decoration: underline; word-break: break-word; }
+      .receipt-file-link:visited { color: #4f46e5; }
+      .receipt-pdf-frame { display: block; width: 100%; height: 640px; border: 0; background: #ffffff; }
       @media (max-width: 720px) {
         body { margin: 20px; }
         .header, .meta { display: block; }
@@ -140,11 +220,11 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
       </div>
     </div>
 
+    <h2>Labor / Time Entry Line Items</h2>
     <table>
       <thead>
         <tr>
           <th>Date</th>
-          <th>Project</th>
           <th>Description</th>
           <th class="numeric">Hours</th>
           <th class="numeric">Hourly Rate</th>
@@ -152,14 +232,32 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
         </tr>
       </thead>
       <tbody>
-        ${lineItems}
+        ${laborRows || `<tr><td colspan="5">No labor items.</td></tr>`}
+      </tbody>
+    </table>
+
+    <h2 style="margin-top: 24px;">Expense Reimbursements</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Category</th>
+          <th>Description</th>
+          <th class="numeric">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${expenseRows || `<tr><td colspan="4">No expense reimbursements.</td></tr>`}
       </tbody>
     </table>
 
     <div class="totals">
       <div class="totals-card">
         <div class="totals-row"><span>Total Hours</span><span>${escapeHtml(formatHours(invoice.totalHours))}</span></div>
-        <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(invoice.totalAmount))}</span></div>
+        <div class="totals-row"><span>Subtotal labor</span><span>${escapeHtml(formatCurrency(laborSubtotal))}</span></div>
+        <div class="totals-row"><span>Subtotal expenses</span><span>${escapeHtml(formatCurrency(expenseSubtotal))}</span></div>
+        <div class="totals-row"><span>Subtotal</span><span>${escapeHtml(formatCurrency(invoice.subtotal || invoice.totalAmount))}</span></div>
+        ${invoice.taxAmount > 0 ? `<div class="totals-row"><span>Tax</span><span>${escapeHtml(formatCurrency(invoice.taxAmount))}</span></div>` : ""}
         <div class="totals-row total"><span>Total</span><span>${escapeHtml(formatCurrency(invoice.totalAmount))}</span></div>
       </div>
     </div>
@@ -170,6 +268,42 @@ function buildInvoiceExportHtml({ invoice, entries, client, currentUser, project
       <h2>Notes</h2>
       <p>${formatMultilineHtml(settings.invoiceNotes || "No invoice notes set.")}</p>
     </div>
+
+    ${receiptAttachments && receiptAttachments.length > 0 ? `
+    <div class="footer" style="margin-top: 32px; page-break-before: always;">
+      <h2>Expense Receipts</h2>
+      <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">${receiptAttachments.length} receipt${receiptAttachments.length === 1 ? "" : "s"} attached to this invoice.</p>
+      <div class="receipts-grid">
+        ${receiptAttachments.map((receipt) => {
+          const isImage = receipt.mimeType.startsWith("image/");
+          const isPdf = receipt.mimeType === "application/pdf";
+          const safeName = escapeHtml(receipt.filename || "Receipt");
+          const safeDesc = escapeHtml(receipt.expenseDescription || "");
+          if (isImage) {
+            return `<div class="receipt-item">
+              <img src="${escapeHtml(receipt.viewUrl)}" alt="${safeName}" />
+              <div class="receipt-caption">${safeName}${safeDesc ? ` · ${safeDesc}` : ""}</div>
+            </div>`;
+          }
+          if (isPdf && receipt.viewUrl) {
+            return `<div class="receipt-item" style="max-width: 840px; width: 100%;">
+              <iframe class="receipt-pdf-frame" src="${escapeHtml(receipt.viewUrl)}" title="${safeName}"></iframe>
+              <div class="receipt-file">
+                <a class="receipt-file-link" href="${escapeHtml(receipt.viewUrl)}" target="_blank" rel="noopener noreferrer">Open ${safeName}</a>
+                ${safeDesc ? `<div style="margin-top:4px;color:#6b7280;">${safeDesc}</div>` : ""}
+              </div>
+            </div>`;
+          }
+          return `<div class="receipt-item">
+            <div class="receipt-file">
+              ${receipt.viewUrl ? `<a class="receipt-file-link" href="${escapeHtml(receipt.viewUrl)}" target="_blank" rel="noopener noreferrer">Open ${safeName}</a>` : safeName}
+              ${safeDesc ? `<div style="margin-top:4px;color:#6b7280;">${safeDesc}</div>` : ""}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+    ` : ""}
   </body>
 </html>`;
 }
@@ -190,8 +324,7 @@ export function downloadInvoiceExport(input: InvoiceExportInput) {
       </div>
     `;
 
-    const html = buildInvoiceExportHtml(input);
-    const blob = new Blob([html], { type: "text/html" });
+    const html = buildInvoiceExportHtml(input);    const blob = new Blob([html], { type: "text/html" });
     const objectUrl = URL.createObjectURL(blob);
     printWindow.location.replace(objectUrl);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);

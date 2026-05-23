@@ -3,7 +3,9 @@ import { useMemo } from "react";
 
 import { DataTable } from "@/components/shared/DataTable";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { formatHours, formatLongDate } from "@/lib/date";
+import { formatCurrency, formatHours, formatLongDate } from "@/lib/date";
+import { getTimeEntryAmount } from "@/lib/projects";
+import { getEntryHours, getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
@@ -11,11 +13,11 @@ import { selectViewerScope } from "@/store/selectors";
 export default function ClientTimeLogs() {
   const { activeClient, clients, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
   const rows = useMemo(
-    () => [...timeEntries].sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
+    () => [...timeEntries].sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a))),
     [timeEntries],
   );
 
-  const totalHours = rows.reduce((sum, entry) => sum + entry.durationHours, 0);
+  const totalHours = rows.reduce((sum, entry) => sum + getEntryHours(entry), 0);
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -46,19 +48,29 @@ export default function ClientTimeLogs() {
                 render: (entry) => <span className="font-medium">{formatLongDate(entry.date)}</span>,
               },
               {
+                id: "type",
+                header: "Type",
+                render: (entry) => getEntryType(entry) === "fixed" ? "Fixed" : "Time",
+              },
+              {
                 id: "start",
                 header: "Start",
-                render: (entry) => entry.startTime,
+                render: (entry) => getEntryType(entry) === "fixed" ? "-" : entry.startTime,
               },
               {
                 id: "end",
                 header: "End",
-                render: (entry) => entry.endTime ?? "-",
+                render: (entry) => getEntryType(entry) === "fixed" ? "-" : entry.endTime ?? "-",
               },
               {
                 id: "hours",
                 header: "Hours",
-                render: (entry) => <span className="font-medium">{formatHours(entry.durationHours)}</span>,
+                render: (entry) => <span className="font-medium">{getEntryType(entry) === "fixed" ? "-" : formatHours(getEntryHours(entry))}</span>,
+              },
+              {
+                id: "amount",
+                header: "Amount",
+                render: (entry) => <span className="font-medium">{formatCurrency(getTimeEntryAmount(entry, clients, projects))}</span>,
               },
               {
                 id: "client",

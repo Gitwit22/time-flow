@@ -1,16 +1,17 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RequireContractor } from "@/components/layout/RequireContractor";
+import { RequireClientViewer } from "@/components/layout/RequireClientViewer";
+import { RequireEmployee } from "@/components/layout/RequireEmployee";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
 import { AppModeProvider } from "@/context/AppModeContext";
-import { WorkspaceProvider } from "@/context/WorkspaceContext";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
@@ -23,16 +24,22 @@ import AdminDashboard from "./pages/admin/Dashboard";
 import TimeTracker from "./pages/admin/TimeTracker";
 import Clients from "./pages/admin/Clients";
 import ProjectsPage from "./pages/admin/Projects";
+import TeamPage from "./pages/admin/Team";
+import ExpensesPage from "./pages/admin/Expenses";
 import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
-import EmailPrep from "./pages/admin/EmailPrep";
+import ExportCenter from "./pages/admin/ExportCenter";
 import Reports from "./pages/admin/Reports";
+import ApprovalsPage from "./pages/admin/Approvals";
 import SettingsPage from "./pages/admin/Settings";
 import DataTransferPage from "./pages/admin/DataTransfer";
+import EmployeeClockPage from "./pages/employee/Clock";
+import MyTimesheetsPage from "./pages/employee/MyTimesheets";
 
 // Client layout + pages
 import { ClientLayout } from "./components/ClientLayout";
+import { ClientErrorBoundary } from "./components/layout/ClientErrorBoundary";
 import ClientDashboard from "./pages/client/Dashboard";
 import ClientTimeLogs from "./pages/client/TimeLogs";
 import ClientInvoiceHistory from "./pages/client/InvoiceHistory";
@@ -76,8 +83,8 @@ function AuthBootstrapper() {
       markAuthenticated();
 
       setViewerClientContext(
-        platformSession.user.role === "client_viewer" ? platformSession.user.organizationId : undefined,
-        platformSession.user.role === "client_viewer",
+        platformSession.user.role === "client_viewer" || platformSession.user.role === "viewer" ? platformSession.user.organizationId : undefined,
+        platformSession.user.role === "client_viewer" || platformSession.user.role === "viewer",
       );
 
       void hydrateFromApi();
@@ -96,8 +103,8 @@ function AuthBootstrapper() {
     markAuthenticated();
 
     setViewerClientContext(
-      activeUser.role === "client_viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
-      activeUser.role === "client_viewer",
+      activeUser.role === "client_viewer" || activeUser.role === "viewer" ? getViewerClientIdForUser(activeUser.id) : undefined,
+      activeUser.role === "client_viewer" || activeUser.role === "viewer",
     );
 
     void hydrateFromApi();
@@ -113,6 +120,21 @@ function AuthBootstrapper() {
   return null;
 }
 
+function InviteRedirect() {
+  const [searchParams] = useSearchParams();
+  const code = searchParams.get("code");
+  const target = code ? `/login?mode=invite&code=${encodeURIComponent(code)}` : "/login?mode=invite";
+  return <Navigate to={target} replace />;
+}
+
+function LegacyInvoiceDetailRedirect() {
+  const { id } = useParams();
+  if (!id) {
+    return <Navigate to="/platform/invoices" replace />;
+  }
+  return <Navigate to={`/platform/invoices/${encodeURIComponent(id)}`} replace />;
+}
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
@@ -121,10 +143,6 @@ const App = () => (
       <AuthBootstrapper />
       <BrowserRouter>
       <AppModeProvider>
-        {/* WorkspaceProvider wraps the whole app so any component can call useWorkspace().
-            [WORKSPACE-BRANCH] workspace switcher UI: add <WorkspaceSwitcher> inside
-            AdminLayout's nav bar once the UI is ready. */}
-        <WorkspaceProvider>
         <Routes>
           {/* Suite launch entry point (optional SSO hand-off) */}
           <Route path="/launch" element={<PlatformLaunch />} />
@@ -133,19 +151,29 @@ const App = () => (
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
-          <Route path="/invite" element={<Navigate to="/login?mode=invite" replace />} />
+          <Route path="/invite" element={<InviteRedirect />} />
 
           {/* Contractor workspace */}
           <Route
             path="/platform"
             element={
               <RequireAuth>
-                <AdminLayout />
+                <RequireContractor>
+                  <AdminLayout />
+                </RequireContractor>
               </RequireAuth>
             }
           >
             <Route index element={<AdminDashboard />} />
             <Route path="time" element={<TimeTracker />} />
+            <Route
+              path="expenses"
+              element={
+                <RequireContractor>
+                  <ExpensesPage />
+                </RequireContractor>
+              }
+            />
             <Route
               path="clients"
               element={
@@ -163,6 +191,22 @@ const App = () => (
               }
             />
             <Route
+              path="team"
+              element={
+                <RequireContractor>
+                  <TeamPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="approvals"
+              element={
+                <RequireContractor>
+                  <ApprovalsPage />
+                </RequireContractor>
+              }
+            />
+            <Route
               path="projects/:id"
               element={
                 <RequireContractor>
@@ -170,13 +214,30 @@ const App = () => (
                 </RequireContractor>
               }
             />
-            <Route path="invoices" element={<InvoiceCenter />} />
-            <Route path="invoices/:id" element={<InvoiceDetail />} />
             <Route
-              path="email"
+              path="invoices"
               element={
                 <RequireContractor>
-                  <EmailPrep />
+                  <InvoiceCenter />
+                </RequireContractor>
+              }
+            />
+            <Route path="invoice" element={<Navigate to="/platform/invoices" replace />} />
+            <Route
+              path="invoices/:id"
+              element={
+                <RequireContractor>
+                  <InvoiceDetail />
+                </RequireContractor>
+              }
+            />
+            <Route path="invoice/:id" element={<LegacyInvoiceDetailRedirect />} />
+            <Route path="email" element={<Navigate to="/platform/export-center" replace />} />
+            <Route
+              path="export-center"
+              element={
+                <RequireContractor>
+                  <ExportCenter />
                 </RequireContractor>
               }
             />
@@ -202,12 +263,30 @@ const App = () => (
           <Route path="/admin" element={<LegacyAdminRedirect />} />
           <Route path="/admin/*" element={<LegacyAdminRedirect />} />
 
+          <Route
+            path="/employee"
+            element={
+              <RequireAuth>
+                <RequireEmployee>
+                  <AdminLayout />
+                </RequireEmployee>
+              </RequireAuth>
+            }
+          >
+            <Route index element={<EmployeeClockPage />} />
+            <Route path="timesheets" element={<MyTimesheetsPage />} />
+          </Route>
+
           {/* Client Portal */}
           <Route
             path="/client"
             element={
               <RequireAuth>
-                <ClientLayout />
+                <RequireClientViewer>
+                  <ClientErrorBoundary>
+                    <ClientLayout />
+                  </ClientErrorBoundary>
+                </RequireClientViewer>
               </RequireAuth>
             }
           >
@@ -221,7 +300,6 @@ const App = () => (
 
           <Route path="*" element={<NotFound />} />
         </Routes>
-        </WorkspaceProvider>
       </AppModeProvider>
       </BrowserRouter>
     </TooltipProvider>

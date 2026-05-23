@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Eye, Mail, Pencil, Plus, Trash2 } from "lucide-react";
+import { Archive, Eye, Mail, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 
 import { ClientDialog } from "@/components/clients/ClientDialog";
 import { DocumentManager } from "@/components/shared/DocumentManager";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { generateViewerInvite } from "@/lib/auth";
 import { formatCurrency } from "@/lib/date";
@@ -24,17 +25,32 @@ export default function Clients() {
   const clients = useAppStore((state) => state.clients);
   const addClient = useAppStore((state) => state.addClient);
   const updateClient = useAppStore((state) => state.updateClient);
+  const archiveClient = useAppStore((state) => state.archiveClient);
+  const restoreClient = useAppStore((state) => state.restoreClient);
   const deleteClient = useAppStore((state) => state.deleteClient);
   const currentUser = useAppStore((state) => state.currentUser);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
+  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active");
   const loadedKeyRef = useRef("");
 
   const clientIdsKey = useMemo(
     () => [...clients].map((client) => client.id).sort().join("|"),
     [clients],
   );
+
+  const visibleClients = useMemo(() => {
+    if (archiveFilter === "all") {
+      return clients;
+    }
+
+    if (archiveFilter === "archived") {
+      return clients.filter((client) => client.archived);
+    }
+
+    return clients.filter((client) => !client.archived);
+  }, [archiveFilter, clients]);
 
   useEffect(() => {
     if (!clientIdsKey || loadedKeyRef.current === clientIdsKey) {
@@ -102,24 +118,37 @@ export default function Clients() {
           <p className="page-subtitle">Manage your clients, rates, and portal access.</p>
         </div>
 
-        {!isReadonly ? (
-          <Button
-            className="bg-accent text-accent-foreground hover:bg-accent/90"
-            onClick={() => {
-              setEditingClient(null);
-              setIsDialogOpen(true);
-            }}
-          >
-            <Plus className="mr-2 h-4 w-4" />
-            Add Client
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-2">
+          <Select value={archiveFilter} onValueChange={(value) => setArchiveFilter(value as "active" | "archived" | "all")}>
+            <SelectTrigger className="w-36">
+              <SelectValue placeholder="Visibility" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+              <SelectItem value="all">All</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {!isReadonly ? (
+            <Button
+              className="bg-accent text-accent-foreground hover:bg-accent/90"
+              onClick={() => {
+                setEditingClient(null);
+                setIsDialogOpen(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add Client
+            </Button>
+          ) : null}
+        </div>
       </div>
 
       {isReadonly ? <div className="readonly-banner">Viewer mode: client management is disabled.</div> : null}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {clients.map((client) => {
+        {visibleClients.map((client) => {
           const visibleContacts = getVisibleContacts(client);
 
           return (
@@ -136,6 +165,7 @@ export default function Clients() {
                       <Eye className="h-3 w-3" /> Portal Active
                     </Badge>
                   )}
+                  {client.archived ? <Badge variant="outline">Archived</Badge> : null}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm mb-4">
@@ -189,7 +219,7 @@ export default function Clients() {
                     onClick={async () => {
                       updateClient(client.id, { companyViewerEnabled: true });
                       try {
-                        const invite = generateViewerInvite(client.id, currentUser.email);
+                        const invite = await generateViewerInvite(client.id, currentUser.email);
                         const inviteUrl = `${window.location.origin}/invite?code=${encodeURIComponent(invite.code)}`;
                         await navigator.clipboard.writeText(inviteUrl);
                         toast({ title: "Invite link copied", description: `${client.name} viewer link copied to clipboard.` });
@@ -203,6 +233,24 @@ export default function Clients() {
                     }}
                   >
                     <Mail className="mr-1.5 h-3.5 w-3.5" /> Invite Viewer
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      if (client.archived) {
+                        restoreClient(client.id);
+                        toast({ title: "Client restored", description: `${client.name} is active again.` });
+                        return;
+                      }
+
+                      archiveClient(client.id);
+                      toast({ title: "Client archived", description: `${client.name} was archived.` });
+                    }}
+                  >
+                    {client.archived ? <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> : <Archive className="mr-1.5 h-3.5 w-3.5" />}
+                    {client.archived ? "Restore" : "Archive"}
                   </Button>
                   <Button
                     variant="outline"

@@ -5,7 +5,8 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { getActiveUser, logoutActiveUser } from "@/lib/auth";
+import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
+import { getActiveUser, logoutActiveUser, updateActiveUserRole } from "@/lib/auth";
 import { clearPlatformSession } from "@/lib/platformApi";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
@@ -35,13 +36,29 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
+  const switchToViewerMode = useAppStore((state) => state.switchToViewerMode);
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
+  const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
+  const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
 
   const handleRoleChange = (role: UserRole) => {
-    setRole(role);
-    navigate(role === "contractor" ? "/platform" : "/client");
+    updateActiveUserRole(role);
+
+    if (role === "client_viewer") {
+      // Use a single atomic store update to avoid intermediate renders with
+      // role="client_viewer" and viewerClientId=undefined, which can crash the
+      // controlled Select component (Radix UI uses flushSync in onValueChange).
+      switchToViewerMode();
+    } else {
+      setRole(role);
+    }
+
+    // Defer navigation to avoid unmount timing issues while Select is finishing its internal state updates.
+    window.setTimeout(() => {
+      navigate(role === "contractor" ? "/platform" : "/client", { replace: true });
+    }, 0);
   };
 
   const handleLogout = () => {
@@ -68,19 +85,34 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       </div>
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
-          <Select value={viewerClientId} onValueChange={(value) => setViewerClientContext(value, viewerClientLocked)} disabled={viewerClientLocked || !availableViewerClients.length}>
-            <SelectTrigger className="h-8 w-[220px] text-xs">
-              <SelectValue placeholder="Select company" />
-            </SelectTrigger>
-            <SelectContent>
-              {availableViewerClients.map((client) => (
-                <SelectItem key={client.id} value={client.id}>
-                  {client.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          hasValidViewerSelection && viewerSelectValue ? (
+            <Select
+              value={viewerSelectValue}
+              onValueChange={(value) => {
+                if (value !== viewerClientId) {
+                  setViewerClientContext(value, viewerClientLocked);
+                }
+              }}
+              disabled={viewerClientLocked || !availableViewerClients.length}
+            >
+              <SelectTrigger className="h-8 w-[220px] text-xs">
+                <SelectValue placeholder="Select company" />
+              </SelectTrigger>
+              <SelectContent>
+                {availableViewerClients.map((client) => (
+                  <SelectItem key={client.id} value={client.id}>
+                    {client.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Button variant="outline" size="sm" className="h-8 w-[220px] justify-start text-xs" disabled>
+              Select company
+            </Button>
+          )
         ) : null}
+        <WorkspaceSwitcher />
         {canSwitchRoles ? (
           <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
             <SelectTrigger className="h-8 w-[170px] text-xs">

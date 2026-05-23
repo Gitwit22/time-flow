@@ -6,7 +6,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
+import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
@@ -24,6 +26,7 @@ export default function ClientInvoiceDetail() {
 
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
+  const expenses = useAppStore((state) => state.expenses);
   const { activeClient, clients, invoices, projects, timeEntries } = useAppStore(useShallow(selectViewerScope));
 
   const invoice = invoices.find((item) => item.id === id);
@@ -56,7 +59,31 @@ export default function ClientInvoiceDetail() {
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const lineItems = invoice.lineItems.length > 0
+    ? invoice.lineItems
+    : entries.map((entry, index) => ({
+      id: `legacy-${entry.id}-${index}`,
+      description: entry.notes || (getEntryType(entry) === "fixed" ? "Fixed charge" : "Tracked work"),
+      date: entry.date,
+      hours: getEntryHours(entry),
+      projectId: entry.projectId,
+      rate: getEntryType(entry) === "fixed" ? 0 : (entry.billingRate ?? invoice.hourlyRate),
+      amount: getEntryType(entry) === "fixed"
+        ? getEntryBillableAmount(entry)
+        : getEntryBillableAmount(entry, entry.billingRate ?? invoice.hourlyRate),
+      timeEntryIds: [entry.id],
+      lineType: getEntryType(entry) === "fixed" ? ("fixed" as const) : ("time" as const),
+    }));
+  const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const laborGroups = groupInvoiceLaborByProject(lineItems, entries, projects);
+  const expenseLineItems = lineItems.filter((lineItem) => lineItem.lineType === "expense");
+  const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
+  const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
   const displayStatus = getInvoiceDisplayStatus(invoice);
+  const sourceLabel = getInvoiceSourceTypeLabel(invoice);
+  const laborSectionTitle = invoice.invoiceSourceType === "partial_project" || invoice.invoiceSourceType === "manual_project"
+    ? "Project Billing Line Items"
+    : "Labor / Time Entry Line Items";
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -74,6 +101,7 @@ export default function ClientInvoiceDetail() {
             downloadInvoiceExport({
               invoice,
               entries,
+              expenses,
               client,
               currentUser,
               projects,
@@ -132,10 +160,21 @@ export default function ClientInvoiceDetail() {
               <span className={statusStyles[displayStatus]}>{displayStatus}</span>
             </div>
             <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Source</p>
+              <p className="font-medium text-sm mt-1">{sourceLabel}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Paid Date</p>
               <p className="font-medium text-sm mt-1">{invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid"}</p>
             </div>
           </div>
+
+          {invoice.sourceDescription ? (
+            <div className="mb-8 rounded-lg border bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Source Description</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap">{invoice.sourceDescription}</p>
+            </div>
+          ) : null}
 
           <div className="mb-8">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bill To</p>
@@ -148,37 +187,105 @@ export default function ClientInvoiceDetail() {
             ))}
           </div>
 
-          <table className="w-full text-sm mb-6">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} className="border-b last:border-0">
-                  <td className="py-2.5">{formatLongDate(entry.date)}</td>
-                  <td className="py-2.5">{entry.notes || "Tracked work"}</td>
-                  <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
-                  <td className="py-2.5 text-right">{formatCurrency(entry.billingRate ?? invoice.hourlyRate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * (entry.billingRate ?? invoice.hourlyRate))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-6 mb-6">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{laborSectionTitle}</p>
+              {laborLineItems.length ? (
+                <div className="space-y-4">
+                  {laborGroups.map((group) => (
+                    <div key={group.id} className="rounded-lg border">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium">Project: {group.projectName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatHours(group.totalHours)} · {formatCurrency(group.subtotal)}
+                        </p>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                            <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.lineItems.map((lineItem) => (
+                            <tr key={lineItem.id} className="border-b last:border-0">
+                              <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                              <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
+                              <td className="py-2.5 text-right">{formatHours(lineItem.hours)}</td>
+                              <td className="py-2.5 text-right">{formatCurrency(lineItem.rate)}</td>
+                              <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border px-3 py-3 text-sm text-muted-foreground">No labor items on this invoice.</div>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Expense Reimbursements</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Category</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseLineItems.length ? (
+                    expenseLineItems.map((lineItem) => {
+                      const linkedExpense = lineItem.expenseId ? expenses.find((expense) => expense.id === lineItem.expenseId) : undefined;
+                      return (
+                        <tr key={lineItem.id} className="border-b last:border-0">
+                          <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                          <td className="py-2.5">{linkedExpense?.vendor ? `${linkedExpense.vendor} — ${lineItem.description}` : lineItem.description}</td>
+                          <td className="py-2.5 capitalize text-muted-foreground">{linkedExpense?.category ?? "other"}</td>
+                          <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-3 text-sm text-muted-foreground">No expense reimbursements on this invoice.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <Separator className="my-4" />
 
           <div className="flex justify-end">
             <div className="w-64 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatCurrency(invoice.totalAmount)}</span>
+                <span className="text-muted-foreground">Subtotal labor</span>
+                <span className="font-medium">{formatCurrency(laborSubtotal)}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal expenses</span>
+                <span className="font-medium">{formatCurrency(expenseSubtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatCurrency(invoice.subtotal || invoice.totalAmount)}</span>
+              </div>
+              {invoice.taxAmount > 0 ? (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span className="font-medium">{formatCurrency(invoice.taxAmount)}</span>
+                </div>
+              ) : null}
               <Separator />
               <div className="flex justify-between text-lg">
                 <span className="font-heading font-bold">Total Due</span>

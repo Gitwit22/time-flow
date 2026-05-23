@@ -2,6 +2,7 @@ import { eachWeekOfInterval, endOfMonth, endOfWeek, format, isWithinInterval, pa
 
 import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { getBillingPeriod, toIsoDate } from "@/lib/date";
+import { getEntryHours } from "@/lib/timeEntries";
 import type { AppSettings, Client, Invoice, Project, TimeEntry, UserProfile, WorkSession } from "@/types";
 
 function getTrackedEntries(entries: TimeEntry[]) {
@@ -26,7 +27,7 @@ export function getTodaysHours(entries: TimeEntry[], today = new Date()) {
 
   return getTrackedEntries(entries)
     .filter((entry) => entry.date === todayKey && isTrackedEntry(entry))
-    .reduce((total, entry) => total + entry.durationHours, 0);
+    .reduce((total, entry) => total + getEntryHours(entry), 0);
 }
 
 export function getPeriodHours(entries: TimeEntry[], start: string | Date, end: string | Date) {
@@ -38,11 +39,11 @@ export function getPeriodHours(entries: TimeEntry[], start: string | Date, end: 
       const entryDate = parseISO(entry.date);
       return isTrackedEntry(entry) && isWithinInterval(entryDate, { start: startDate, end: endDate });
     })
-    .reduce((total, entry) => total + entry.durationHours, 0);
+    .reduce((total, entry) => total + getEntryHours(entry), 0);
 }
 
 export function getPeriodEarnings(entries: TimeEntry[], rate: number, start?: string | Date, end?: string | Date) {
-  const hours = start && end ? getPeriodHours(entries, start, end) : entries.filter(isTrackedEntry).reduce((total, entry) => total + entry.durationHours, 0);
+  const hours = start && end ? getPeriodHours(entries, start, end) : entries.filter(isTrackedEntry).reduce((total, entry) => total + getEntryHours(entry), 0);
   return hours * rate;
 }
 

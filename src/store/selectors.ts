@@ -1,12 +1,164 @@
 import { getBillingSummary } from "@/lib/billing";
 import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculations";
-import { formatClockTime, getBillingPeriod } from "@/lib/date";
-import { getUserRoleInWorkspace } from "@/lib/workspace";
+import { formatClockTime } from "@/lib/date";
+import { isViewerLikeRole } from "@/lib/organization";
+import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
+import { getEntryHours, getEntrySortKey } from "@/lib/timeEntries";
 import type { AppState } from "@/store/appStore";
-import type { Workspace, WorkspaceMember, WorkspaceMemberRole } from "@/types/workspace";
+import type { Client, Expense, Invoice, Project, ProjectBill, TimeEntry } from "@/types";
+
+export interface ActiveClockInRow {
+  entryId: string;
+  workerName: string;
+  projectName: string;
+  clientName: string;
+  clockedInSince: string;
+  durationLabel: string;
+  durationMinutes: number;
+  status: "Active";
+}
+
+interface ClientClockInVisibility {
+  canViewActiveClockIns: boolean;
+  canViewWorkerNames: boolean;
+  canViewProjectNames: boolean;
+  canViewLiveDuration: boolean;
+}
+
+function getClientClockInVisibility(client?: Client): ClientClockInVisibility {
+  return {
+    canViewActiveClockIns:
+      client?.clientVisibility?.canViewActiveClockIns ??
+      client?.canViewActiveClockIns ??
+      true,
+    canViewWorkerNames: client?.clientVisibility?.canViewWorkerNames ?? true,
+    canViewProjectNames: client?.clientVisibility?.canViewProjectNames ?? true,
+    canViewLiveDuration: client?.clientVisibility?.canViewLiveDuration ?? true,
+  };
+}
+
+function isActiveTimeEntry(entry: TimeEntry) {
+  const normalizedStatus = String(entry.status ?? "").toLowerCase();
+  const hasClockIn = Boolean(entry.startTime);
+  const hasClockOut = Boolean(entry.endTime);
+  const activeStatus = normalizedStatus === "running" || normalizedStatus === "active" || normalizedStatus === "open";
+
+  return hasClockIn && !hasClockOut && activeStatus;
+}
+
+function toClockInDate(entry: TimeEntry) {
+  const candidate = new Date(`${entry.date}T${entry.startTime.length === 5 ? `${entry.startTime}:00` : entry.startTime}`);
+  return Number.isNaN(candidate.getTime()) ? null : candidate;
+}
+
+function formatDurationLabel(durationMinutes: number) {
+  const safe = Math.max(0, durationMinutes);
+  const hours = Math.floor(safe / 60);
+  const minutes = safe % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+function buildActiveClockInRow(
+  entry: TimeEntry,
+  projects: Project[],
+  clients: Client[],
+  currentUserName: string,
+  now: Date,
+): ActiveClockInRow | null {
+  const clockInDate = toClockInDate(entry);
+  if (!clockInDate) {
+    return null;
+  }
+
+  const durationMinutes = Math.max(0, Math.floor((now.getTime() - clockInDate.getTime()) / (1000 * 60)));
+  const project = entry.projectId ? projects.find((item) => item.id === entry.projectId) : undefined;
+  const client = clients.find((item) => item.id === entry.clientId);
+
+  return {
+    entryId: entry.id,
+    workerName: entry.workerName || currentUserName,
+    projectName: project?.name ?? "Client-only task",
+    clientName: client?.name ?? "Unknown client",
+    clockedInSince: formatClockTime(clockInDate),
+    durationLabel: formatDurationLabel(durationMinutes),
+    durationMinutes,
+    status: "Active",
+  };
+}
+
+export function canClientViewActiveClockIns(client?: Client) {
+  return getClientClockInVisibility(client).canViewActiveClockIns;
+}
+
+export function getActiveTimeEntriesForClient(
+  clientId: string,
+  timeEntries: TimeEntry[],
+  projects: Project[],
+  clients: Client[],
+  options: {
+    currentUserName: string;
+    now?: Date;
+  },
+) {
+  const now = options.now ?? new Date();
+
+  return timeEntries
+    .filter((entry) => entry.clientId === clientId)
+    .filter(isActiveTimeEntry)
+    .filter((entry) => {
+      if (!entry.projectId) {
+        return true;
+      }
+
+      const project = projects.find((item) => item.id === entry.projectId);
+      return Boolean(project && project.clientId === clientId);
+    })
+    .map((entry) => buildActiveClockInRow(entry, projects, clients, options.currentUserName, now))
+    .filter((row): row is ActiveClockInRow => Boolean(row));
+}
+
+export function getActiveTimeEntries(
+  timeEntries: TimeEntry[],
+  projects: Project[],
+  clients: Client[],
+  options: {
+    currentUserName: string;
+    now?: Date;
+  },
+) {
+  const now = options.now ?? new Date();
+
+  return timeEntries
+    .filter(isActiveTimeEntry)
+    .map((entry) => buildActiveClockInRow(entry, projects, clients, options.currentUserName, now))
+    .filter((row): row is ActiveClockInRow => Boolean(row));
+}
+
+export function applyClientClockInVisibility(
+  rows: ActiveClockInRow[],
+  client?: Client,
+) {
+  const visibility = getClientClockInVisibility(client);
+
+  if (!visibility.canViewActiveClockIns) {
+    return [];
+  }
+
+  return rows.map((row) => ({
+    ...row,
+    workerName: visibility.canViewWorkerNames ? row.workerName : "Team Member",
+    projectName: visibility.canViewProjectNames ? row.projectName : "Client Project",
+    durationLabel: visibility.canViewLiveDuration ? row.durationLabel : "Active",
+  }));
+}
 
 function resolveScopedViewerClientId(state: AppState) {
-  if (state.currentUser.role !== "client_viewer") {
+  if (!isViewerLikeRole(state.currentUser.role)) {
     return undefined;
   }
 
@@ -26,14 +178,14 @@ function resolveScopedViewerClientId(state: AppState) {
 }
 
 export function selectIsReadonly(state: AppState) {
-  return state.currentUser.role === "client_viewer";
+  return isViewerLikeRole(state.currentUser.role);
 }
 
 export function selectViewerScope(state: AppState) {
   const viewerClientId = resolveScopedViewerClientId(state);
   const activeClient = viewerClientId ? state.clients.find((client) => client.id === viewerClientId) : undefined;
 
-  if (state.currentUser.role !== "client_viewer") {
+  if (!isViewerLikeRole(state.currentUser.role)) {
     return {
       activeClient: undefined,
       clients: state.clients,
@@ -68,6 +220,97 @@ export function selectViewerScope(state: AppState) {
   };
 }
 
+export function selectOrganizationScope(state: AppState) {
+  const activeWorkspaceId = state.activeOrganizationId;
+
+  if (!activeWorkspaceId) {
+    return {
+      clients: state.clients,
+      expenses: state.expenses,
+      invoices: state.invoices,
+      projectBills: state.projectBills,
+      projects: state.projects,
+      timeEntries: state.timeEntries,
+    };
+  }
+
+  const clientsById = new Map(state.clients.map((client) => [client.id, client]));
+  const projectsById = new Map(state.projects.map((project) => [project.id, project]));
+
+  const resolveWorkspaceId = (record: {
+    workspaceId?: string;
+    organizationId?: string;
+    clientId?: string;
+    projectId?: string;
+  }): string | undefined => {
+    if (record.workspaceId) return record.workspaceId;
+    if (record.organizationId) return record.organizationId;
+
+    if (record.projectId) {
+      const project = projectsById.get(record.projectId);
+      if (project?.workspaceId) return project.workspaceId;
+      if (project?.organizationId) return project.organizationId;
+      if (project?.clientId) {
+        const projectClient = clientsById.get(project.clientId);
+        if (projectClient?.workspaceId) return projectClient.workspaceId;
+        if (projectClient?.organizationId) return projectClient.organizationId;
+      }
+    }
+
+    if (record.clientId) {
+      const client = clientsById.get(record.clientId);
+      if (client?.workspaceId) return client.workspaceId;
+      if (client?.organizationId) return client.organizationId;
+    }
+
+    return undefined;
+  };
+
+  const isInActiveWorkspace = (record: {
+    workspaceId?: string;
+    organizationId?: string;
+    clientId?: string;
+    projectId?: string;
+  }) => {
+    const resolvedWorkspaceId = resolveWorkspaceId(record);
+    if (resolvedWorkspaceId) {
+      return resolvedWorkspaceId === activeWorkspaceId;
+    }
+
+    // Legacy records with no scoping metadata stay visible in the active workspace.
+    return true;
+  };
+
+  return {
+    clients: state.clients.filter((client) => isInActiveWorkspace(client)),
+    expenses: state.expenses.filter((expense) => isInActiveWorkspace(expense)),
+    invoices: state.invoices.filter((invoice) => isInActiveWorkspace(invoice)),
+    projectBills: state.projectBills.filter((projectBill) => isInActiveWorkspace(projectBill)),
+    projects: state.projects.filter((project) => isInActiveWorkspace(project)),
+    timeEntries: state.timeEntries.filter((entry) => isInActiveWorkspace(entry)),
+  };
+}
+
+export function selectWorkspaceClients(state: AppState): Client[] {
+  return selectOrganizationScope(state).clients;
+}
+
+export function selectWorkspaceProjects(state: AppState): Project[] {
+  return selectOrganizationScope(state).projects;
+}
+
+export function selectWorkspaceTimeEntries(state: AppState): TimeEntry[] {
+  return selectOrganizationScope(state).timeEntries;
+}
+
+export function selectWorkspaceInvoices(state: AppState): Invoice[] {
+  return selectOrganizationScope(state).invoices;
+}
+
+export function selectWorkspaceExpenses(state: AppState): Expense[] {
+  return selectOrganizationScope(state).expenses;
+}
+
 interface DashboardMetricsInput {
   clients: AppState["clients"];
   currentUser: Pick<AppState["currentUser"], "invoiceFrequency">;
@@ -75,19 +318,45 @@ interface DashboardMetricsInput {
   projects: AppState["projects"];
   timeEntries: AppState["timeEntries"];
   activeSession: AppState["activeSession"];
-  settings: Pick<AppState["settings"], "invoiceFrequency" | "periodWeekStartsOn">;
+  expenses: AppState["expenses"];
+  projectBills: AppState["projectBills"];
+  settings: Pick<AppState["settings"], "invoiceFrequency" | "payPeriodFrequency" | "payPeriodStartDate" | "periodWeekStartsOn">;
 }
 
 export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDate = new Date()) {
-  const billingFrequency = input.settings.invoiceFrequency ?? input.currentUser.invoiceFrequency;
-  const billingPeriod = getBillingPeriod(referenceDate, billingFrequency, input.settings.periodWeekStartsOn);
+  const billingPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: input.settings.payPeriodFrequency ?? input.settings.invoiceFrequency ?? input.currentUser.invoiceFrequency,
+      payPeriodStartDate: input.settings.payPeriodStartDate,
+      periodWeekStartsOn: input.settings.periodWeekStartsOn,
+    },
+    referenceDate,
+  );
   const billingSummary = getBillingSummary(input.timeEntries, input.clients, input.projects, {
-    end: billingPeriod.end,
+    end: billingPeriod.endDate,
     invoices: input.invoices,
-    start: billingPeriod.start,
+    start: billingPeriod.startDate,
+  });
+  const payPeriodSummary = summarizePayPeriod({
+    entries: billingSummary.lines.map((line) => ({
+      amount: line.amount,
+      date: line.entry.date,
+      durationHours: getEntryHours(line.entry),
+    })),
+    expenses: input.expenses,
+    invoices: input.invoices,
+    period: billingPeriod,
   });
   const todayHours = getTodaysHours(input.timeEntries, referenceDate);
-  const periodHours = getPeriodHours(input.timeEntries, billingPeriod.start, billingPeriod.end);
+  const periodHours = getPeriodHours(input.timeEntries, billingPeriod.startDate, billingPeriod.endDate);
+  const periodProjectBills = input.projectBills.filter((bill: ProjectBill) => {
+    if (bill.status === "void") {
+      return false;
+    }
+
+    return bill.issueDate >= billingPeriod.startDate && bill.issueDate <= billingPeriod.endDate;
+  });
+  const periodProjectBillRevenue = Number(periodProjectBills.reduce((sum, bill) => sum + bill.amount, 0).toFixed(2));
   const status = getActiveStatus(input.activeSession);
   const statusSince =
     input.activeSession.isPaused && input.activeSession.pausedAt
@@ -98,7 +367,7 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
 
   const recentEntries = [...input.timeEntries]
     .filter((entry) => entry.status !== "running")
-    .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`))
+    .sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a)))
     .slice(0, 6);
 
   return {
@@ -106,113 +375,16 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     statusSince,
     todayHours,
     periodHours,
-    periodEarnings: billingSummary.totalAmount,
-    periodStart: billingPeriod.start,
-    periodEnd: billingPeriod.end,
+    periodEarnings: payPeriodSummary.timeEarnings,
+    periodFixedBillRevenue: periodProjectBillRevenue,
+    periodRevenue: Number((payPeriodSummary.timeEarnings + periodProjectBillRevenue).toFixed(2)),
+    periodExpenses: payPeriodSummary.expenseTotal,
+    periodInvoiceTotal: payPeriodSummary.invoiceTotal,
+    periodNet: payPeriodSummary.netAmount,
+    periodStart: billingPeriod.startDate,
+    periodEnd: billingPeriod.endDate,
+    payPeriodConfigured: Boolean(input.settings.payPeriodStartDate),
     recentEntries,
     unratedEntryCount: billingSummary.missingRateEntries.length,
   };
-}
-
-// ─── Workspace-aware selectors ────────────────────────────────────────────────
-
-/**
- * Return the currently active Workspace record, or undefined when no
- * workspace has been bootstrapped yet.
- *
- * [WORKSPACE-BRANCH] workspace switcher UI: display this in the nav bar
- *   to show the user which workspace is active.
- */
-export function selectActiveWorkspace(state: AppState): Workspace | undefined {
-  if (!state.activeWorkspaceId) return undefined;
-  return state.workspaces.find(
-    (ws) => ws.id === state.activeWorkspaceId && ws.status === "active",
-  );
-}
-
-/**
- * Return all workspaces the current user owns or belongs to, filtered to
- * only active workspaces.
- *
- * [WORKSPACE-BRANCH] workspace switcher UI: render the list of workspaces
- *   the user can switch between.
- */
-export function selectAccessibleWorkspaces(state: AppState): Workspace[] {
-  const userId = state.currentUser.id;
-  const memberWorkspaceIds = new Set(
-    state.workspaceMembers
-      .filter((m) => m.userId === userId)
-      .map((m) => m.workspaceId),
-  );
-  return state.workspaces.filter(
-    (ws) => ws.status === "active" && (ws.ownerUserId === userId || memberWorkspaceIds.has(ws.id)),
-  );
-}
-
-/**
- * Return the calling user's role in the currently active workspace.
- * Returns undefined when there is no active workspace or the user has no
- * membership (e.g. during initial bootstrap).
- *
- * [WORKSPACE-BRANCH] company UI: use this to drive permission gating
- *   throughout the app once team roles are exposed in the UI.
- */
-export function selectActiveWorkspaceRole(state: AppState): WorkspaceMemberRole | undefined {
-  if (!state.activeWorkspaceId) return undefined;
-  return getUserRoleInWorkspace(
-    state.workspaceMembers,
-    state.activeWorkspaceId,
-    state.currentUser.id,
-  );
-}
-
-/**
- * Return all membership records for the active workspace.
- *
- * [WORKSPACE-BRANCH] company UI: render the team-members list from this.
- */
-export function selectActiveWorkspaceMembers(state: AppState): WorkspaceMember[] {
-  if (!state.activeWorkspaceId) return [];
-  return state.workspaceMembers.filter((m) => m.workspaceId === state.activeWorkspaceId);
-}
-
-/**
- * Return clients that belong to the active workspace.
- *
- * When no workspace is active (legacy / pre-bootstrap state) all clients
- * are returned so existing behaviour is preserved.
- *
- * [WORKSPACE-BRANCH] workspace-aware queries: switch from the raw
- *   state.clients array to this selector once workspaceId is reliably
- *   set on all records.
- */
-export function selectWorkspaceClients(state: AppState) {
-  if (!state.activeWorkspaceId) return state.clients;
-  return state.clients.filter(
-    (c) => !c.workspaceId || c.workspaceId === state.activeWorkspaceId,
-  );
-}
-
-/** Return projects scoped to the active workspace (falls back to all). */
-export function selectWorkspaceProjects(state: AppState) {
-  if (!state.activeWorkspaceId) return state.projects;
-  return state.projects.filter(
-    (p) => !p.workspaceId || p.workspaceId === state.activeWorkspaceId,
-  );
-}
-
-/** Return time entries scoped to the active workspace (falls back to all). */
-export function selectWorkspaceTimeEntries(state: AppState) {
-  if (!state.activeWorkspaceId) return state.timeEntries;
-  return state.timeEntries.filter(
-    (e) => !e.workspaceId || e.workspaceId === state.activeWorkspaceId,
-  );
-}
-
-/** Return invoices scoped to the active workspace (falls back to all). */
-export function selectWorkspaceInvoices(state: AppState) {
-  if (!state.activeWorkspaceId) return state.invoices;
-  return state.invoices.filter(
-    (inv) => !inv.workspaceId || inv.workspaceId === state.activeWorkspaceId,
-  );
 }

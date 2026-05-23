@@ -1,7 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/shared/DataTable";
-import { formatLongDate, formatHours } from "@/lib/date";
+import { formatCurrency, formatLongDate, formatHours } from "@/lib/date";
+import { getTimeEntryAmount } from "@/lib/projects";
+import { getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { Pencil, RotateCcw, Trash2 } from "lucide-react";
 import type { Client, Project, TimeEntry } from "@/types";
 
@@ -54,19 +56,38 @@ export function RecentTimeEntriesTable({ entries, clients, projects, readOnly, o
           render: (entry) => getProjectName(entry.projectId),
         },
         {
+          id: "entry-type",
+          header: "Type",
+          render: (entry) =>
+            getEntryType(entry) === "fixed"
+              ? <Badge variant="secondary">Fixed</Badge>
+              : <Badge variant="outline">Time</Badge>,
+        },
+        {
           id: "notes",
-          header: "Task / Notes",
+          header: "Description",
           render: (entry) => <span className="text-muted-foreground">{entry.notes}</span>,
         },
         {
           id: "hours",
           header: "Hours",
-          render: (entry) => <span className="font-medium">{formatHours(entry.durationHours)}</span>,
+          render: (entry) =>
+            getEntryType(entry) === "fixed"
+              ? <span className="font-medium text-muted-foreground">-</span>
+              : <span className="font-medium">{formatHours(getEntryHours(entry))}</span>,
         },
         {
           id: "rate",
           header: "Rate",
-          render: (entry) => <span className="font-medium">{entry.billingRate ? `$${entry.billingRate.toFixed(2)}/hr` : "Unrated"}</span>,
+          render: (entry) =>
+            getEntryType(entry) === "fixed"
+              ? <span className="font-medium text-muted-foreground">Fixed</span>
+              : <span className="font-medium">{entry.billingRate ? `$${entry.billingRate.toFixed(2)}/hr` : "Unrated"}</span>,
+        },
+        {
+          id: "amount",
+          header: "Total",
+          render: (entry) => <span className="font-medium">{formatCurrency(getTimeEntryAmount(entry, clients, projects))}</span>,
         },
         {
           id: "status",

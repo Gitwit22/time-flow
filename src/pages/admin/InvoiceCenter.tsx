@@ -10,9 +10,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Link } from "react-router-dom";
 import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
@@ -30,6 +30,7 @@ export default function InvoiceCenter() {
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const [clientFilter, setClientFilter] = useState<string>("all");
@@ -108,6 +109,7 @@ export default function InvoiceCenter() {
                 <tr className="border-b text-muted-foreground">
                   <th className="text-left py-3 px-4 font-medium">Invoice #</th>
                   <th className="text-left py-3 px-4 font-medium">Client</th>
+                  <th className="text-left py-3 px-4 font-medium">Source</th>
                   <th className="text-left py-3 px-4 font-medium">Period</th>
                   <th className="text-left py-3 px-4 font-medium">Hours</th>
                   <th className="text-left py-3 px-4 font-medium">Rate</th>
@@ -122,6 +124,7 @@ export default function InvoiceCenter() {
                   <tr key={inv.id} className="border-b last:border-0 hover:bg-muted/50 transition-colors">
                     <td className="py-3 px-4 font-medium">{inv.id}</td>
                     <td className="py-3 px-4">{inv.clientName}</td>
+                    <td className="py-3 px-4">{getInvoiceSourceTypeLabel(inv)}</td>
                     <td className="py-3 px-4">{formatPeriodLabel(inv.periodStart, inv.periodEnd)}</td>
                     <td className="py-3 px-4">{formatHours(inv.totalHours)}</td>
                     <td className="py-3 px-4">{formatCurrency(inv.hourlyRate)}/hr</td>
@@ -132,8 +135,8 @@ export default function InvoiceCenter() {
                       ) : (
                         <input
                           type="date"
-                          value={inv.dueDate}
-                          onChange={(event) => updateInvoice(inv.id, { dueDate: event.target.value })}
+                          value={formatDateForInput(inv.dueDate)}
+                          onChange={(event) => updateInvoice(inv.id, { dueDate: parseDateInput(event.target.value) })}
                           className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                         />
                       )}
@@ -158,6 +161,7 @@ export default function InvoiceCenter() {
                             const opened = downloadInvoiceExport({
                               invoice: inv,
                               entries,
+                              expenses,
                               client,
                               currentUser,
                               projects,
@@ -179,7 +183,7 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: new Date().toISOString(), status: "issued" });
+                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: toDateOnlyString(new Date()), status: "issued" });
                               toast({ title: "Invoice issued", description: `${inv.id} is now ready to share with the client.` });
                             }}
                           >
@@ -192,7 +196,7 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-success"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: new Date().toISOString(), status: "paid" });
+                              updateInvoice(inv.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
                               toast({ title: "Invoice paid", description: `${inv.id} marked as paid.` });
                             }}
                           >
@@ -224,7 +228,8 @@ export default function InvoiceCenter() {
                                 <AlertDialogTitle>Void invoice {inv.id}?</AlertDialogTitle>
                                 <AlertDialogDescription>
                                   This will permanently delete the invoice and release all linked time entries back to
-                                  billable status so they can be re-invoiced. This action cannot be undone.
+                                  billable status so they can be re-invoiced. Linked billable expenses will also be
+                                  released back to uninvoiced status. This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -235,7 +240,7 @@ export default function InvoiceCenter() {
                                     deleteInvoice(inv.id);
                                     toast({
                                       title: "Invoice voided",
-                                      description: `${inv.id} was deleted and its time entries were released back to billable status.`,
+                                      description: `${inv.id} was deleted and its linked time entries and expenses were released back to billable status.`,
                                     });
                                   }}
                                 >

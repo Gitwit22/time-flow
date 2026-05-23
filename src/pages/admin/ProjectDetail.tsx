@@ -2,16 +2,20 @@ import { ChangeEvent, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Eye, FileText, FolderOpen, Save, TriangleAlert } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
+import { PartialProjectInvoiceDialog } from "@/components/invoices/PartialProjectInvoiceDialog";
 import { DocumentManager } from "@/components/shared/DocumentManager";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
-import { getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
+import { getInvoiceSourceTypeLabel } from "@/lib/invoice";
+import { getProjectBillingInvoices, getProjectBillingSnapshot, getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
+import { getEntryHours, getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import {
   createTimeflowDocument,
   getTimeflowDocumentDownloadUrl,
@@ -34,17 +38,45 @@ export default function ProjectDetailPage() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const invoices = useAppStore((state) => state.invoices);
   const updateProject = useAppStore((state) => state.updateProject);
+  const createPartialProjectInvoice = useAppStore((state) => state.createPartialProjectInvoice);
+  const projectBills = useAppStore((state) => state.projectBills);
+  const addProjectBill = useAppStore((state) => state.addProjectBill);
+  const markProjectBillPaid = useAppStore((state) => state.markProjectBillPaid);
+  const voidProjectBill = useAppStore((state) => state.voidProjectBill);
   const isReadonly = useAppStore((state) => state.currentUser.role === "client_viewer");
 
   const project = projects.find((item) => item.id === id);
   const [noteDraft, setNoteDraft] = useState(project?.notes ?? "");
+  const [billDraft, setBillDraft] = useState({
+    title: "",
+    amount: "",
+    issueDate: new Date().toLocaleDateString("en-CA"),
+    dueDate: "",
+    notes: "",
+  });
+  const [partialInvoiceDialogOpen, setPartialInvoiceDialogOpen] = useState(false);
 
   const client = useMemo(() => clients.find((item) => item.id === project?.clientId), [clients, project?.clientId]);
   const projectEntries = useMemo(
-    () => [...timeEntries].filter((entry) => entry.projectId === project?.id).sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`)),
+    () => [...timeEntries].filter((entry) => entry.projectId === project?.id).sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a))),
     [project?.id, timeEntries],
   );
   const projectInvoices = useMemo(() => invoices.filter((invoice) => invoice.projectIds.includes(project?.id ?? "")), [invoices, project?.id]);
+  const projectBillingInvoices = useMemo(
+    () => (project ? getProjectBillingInvoices(project, invoices).sort((a, b) => b.createdAt.localeCompare(a.createdAt)) : []),
+    [invoices, project],
+  );
+  const projectBillingSnapshot = useMemo(
+    () => (project ? getProjectBillingSnapshot(project, invoices) : null),
+    [invoices, project],
+  );
+  const projectFixedBills = useMemo(
+    () =>
+      projectBills
+        .filter((bill) => bill.projectId === project?.id)
+        .sort((a, b) => `${b.issueDate}-${b.createdAt}`.localeCompare(`${a.issueDate}-${a.createdAt}`)),
+    [project?.id, projectBills],
+  );
   const metrics = useMemo(
     () => (project ? getProjectDerivedMetrics(project, timeEntries, invoices, clients, projects) : null),
     [clients, invoices, project, projects, timeEntries],
@@ -59,7 +91,6 @@ export default function ProjectDetailPage() {
     if (!project?.id) {
       return;
     }
-
     let cancelled = false;
 
     void (async () => {
@@ -116,6 +147,40 @@ export default function ProjectDetailPage() {
         </div>
       </div>
 
+      {!isReadonly && projectBillingSnapshot ? (
+        <PartialProjectInvoiceDialog
+          open={partialInvoiceDialogOpen}
+          onOpenChange={setPartialInvoiceDialogOpen}
+          project={project}
+          client={client}
+          fixedProjectAmount={projectBillingSnapshot.fixedProjectAmount}
+          remainingProjectBillableAmount={projectBillingSnapshot.remainingProjectBillableAmount}
+          trigger={<Button size="sm">Make Partial Invoice</Button>}
+          onSubmit={(value) => {
+            const createdInvoice = createPartialProjectInvoice({
+              amount: value.amount,
+              clientId: project.clientId,
+              description: value.description,
+              dueDate: value.dueDate,
+              markAsPaid: value.markAsPaid,
+              notes: value.notes,
+              projectId: project.id,
+              status: value.status,
+              title: value.title,
+            });
+
+            if (!createdInvoice) {
+              return;
+            }
+
+            setPartialInvoiceDialogOpen(false);
+            toast({
+              title: "Partial invoice created",
+              description: `${createdInvoice.id} was created for ${formatCurrency(value.amount)}.`,
+            });
+          }}
+        />
+      ) : null}
       {warningMessage ? (
         <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -130,10 +195,45 @@ export default function ProjectDetailPage() {
           <TabsTrigger value="budget">Budget</TabsTrigger>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
+          <TabsTrigger value="fixed-bills">Fixed Bills</TabsTrigger>
           <TabsTrigger value="notes">Notes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          {projectBillingSnapshot ? (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base font-heading">Project Billing</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-6">
+                <div>
+                  <p className="text-xs text-muted-foreground">Billing type</p>
+                  <p className="font-medium">{project.projectBillingType ?? "hourly"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Fixed project amount</p>
+                  <p className="font-medium">{typeof projectBillingSnapshot.fixedProjectAmount === "number" ? formatCurrency(projectBillingSnapshot.fixedProjectAmount) : "Not set"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Invoiced so far</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.totalProjectInvoiced)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Remaining to invoice</p>
+                  <p className="font-medium">{typeof projectBillingSnapshot.remainingProjectBillableAmount === "number" ? formatCurrency(projectBillingSnapshot.remainingProjectBillableAmount) : "Not capped"}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Paid so far</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.totalProjectPaid)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Outstanding balance</p>
+                  <p className="font-medium">{formatCurrency(projectBillingSnapshot.outstandingProjectInvoiceBalance)}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent className="grid gap-4 p-5 md:grid-cols-2 xl:grid-cols-4">
               <div>
@@ -208,12 +308,19 @@ export default function ProjectDetailPage() {
                     <div key={entry.id} className="rounded-xl border p-4">
                       <div className="flex items-start justify-between gap-4">
                         <div>
-                          <p className="font-medium">{entry.notes || "Tracked work"}</p>
-                          <p className="text-sm text-muted-foreground">{formatLongDate(entry.date)} • {entry.startTime} - {entry.endTime ?? "--"}</p>
+                          <p className="font-medium">{entry.notes || (getEntryType(entry) === "fixed" ? "Fixed charge" : "Tracked work")}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {formatLongDate(entry.date)}
+                            {getEntryType(entry) === "fixed" ? " • Fixed amount" : ` • ${entry.startTime} - ${entry.endTime ?? "--"}`}
+                          </p>
                         </div>
                         <div className="text-right">
-                          <p className="font-medium">{formatHours(entry.durationHours)}</p>
-                          <p className="text-sm text-muted-foreground">{formatCurrency(entry.billingRate ?? project.hourlyRate)}</p>
+                          <p className="font-medium">
+                            {getEntryType(entry) === "fixed" ? formatCurrency(entry.fixedAmount ?? 0) : formatHours(getEntryHours(entry))}
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            {getEntryType(entry) === "fixed" ? "Fixed" : `${formatCurrency(entry.billingRate ?? project.hourlyRate)}/hr`}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -324,6 +431,146 @@ export default function ProjectDetailPage() {
                 </div>
               ) : (
                 <EmptyState icon={FileText} title="No invoices linked yet" description="Invoices will appear here once project-linked time entries are included in a billing run." />
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="fixed-bills" className="space-y-4">
+          {projectBillingSnapshot ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading">Partial Invoices</CardTitle>
+              </CardHeader>
+              <CardContent>
+                {projectBillingInvoices.length ? (
+                  <div className="space-y-3">
+                    {projectBillingInvoices.map((invoice) => (
+                      <div key={invoice.id} className="flex items-center justify-between gap-4 rounded-xl border p-4">
+                        <div>
+                          <p className="font-medium">{invoice.id}</p>
+                          <p className="text-sm text-muted-foreground">{getInvoiceSourceTypeLabel(invoice)} • {invoice.status}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{formatCurrency(invoice.totalAmount)}</p>
+                          <Button variant="outline" size="sm" asChild>
+                            <Link to={`/platform/invoices/${invoice.id}`}>
+                              <Eye className="mr-1.5 h-3.5 w-3.5" /> View invoice
+                            </Link>
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState icon={FileText} title="No partial invoices yet" description="Use Make Partial Invoice to bill this project in milestones without time entries." />
+                )}
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {!isReadonly ? (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading">Add Fixed-Price Bill</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    placeholder="Bill title"
+                    value={billDraft.title}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, title: event.target.value }))}
+                  />
+                  <Input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    placeholder="Amount"
+                    value={billDraft.amount}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, amount: event.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <Input
+                    type="date"
+                    value={billDraft.issueDate}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, issueDate: event.target.value }))}
+                  />
+                  <Input
+                    type="date"
+                    value={billDraft.dueDate}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setBillDraft((prev) => ({ ...prev, dueDate: event.target.value }))}
+                  />
+                </div>
+                <Textarea
+                  placeholder="Optional notes"
+                  value={billDraft.notes}
+                  onChange={(event) => setBillDraft((prev) => ({ ...prev, notes: event.target.value }))}
+                />
+                <Button
+                  onClick={() => {
+                    const amount = Number(billDraft.amount);
+                    if (!billDraft.title.trim() || !Number.isFinite(amount) || amount <= 0) {
+                      toast({ title: "Invalid bill", description: "Add a title and amount greater than zero.", variant: "destructive" });
+                      return;
+                    }
+
+                    addProjectBill({
+                      projectId: project.id,
+                      clientId: project.clientId,
+                      title: billDraft.title.trim(),
+                      amount,
+                      issueDate: billDraft.issueDate || new Date().toLocaleDateString("en-CA"),
+                      dueDate: billDraft.dueDate || undefined,
+                      notes: billDraft.notes.trim() || undefined,
+                    });
+                    setBillDraft({ title: "", amount: "", issueDate: new Date().toLocaleDateString("en-CA"), dueDate: "", notes: "" });
+                    toast({ title: "Fixed bill added", description: "The project bill is now included in reporting." });
+                  }}
+                >
+                  Add Fixed Bill
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-heading">Project Bills</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {projectFixedBills.length ? (
+                <div className="space-y-3">
+                  {projectFixedBills.map((bill) => (
+                    <div key={bill.id} className="rounded-xl border p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{bill.title}</p>
+                          <p className="text-sm text-muted-foreground">Issued {formatLongDate(bill.issueDate)}{bill.dueDate ? ` • Due ${formatLongDate(bill.dueDate)}` : ""}</p>
+                          {bill.notes ? <p className="text-sm text-muted-foreground mt-1">{bill.notes}</p> : null}
+                        </div>
+                        <div className="text-right">
+                          <p className="font-medium">{formatCurrency(bill.amount)}</p>
+                          <p className="text-xs uppercase tracking-wide text-muted-foreground">{bill.status}</p>
+                        </div>
+                      </div>
+                      {!isReadonly && bill.status !== "void" ? (
+                        <div className="mt-3 flex gap-2">
+                          {bill.status !== "paid" ? (
+                            <Button size="sm" variant="outline" onClick={() => markProjectBillPaid(bill.id)}>
+                              Mark Paid
+                            </Button>
+                          ) : null}
+                          <Button size="sm" variant="ghost" className="text-muted-foreground hover:text-destructive" onClick={() => voidProjectBill(bill.id)}>
+                            Void
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState icon={FileText} title="No fixed bills yet" description="Add manual/fixed project bills to capture non-hourly revenue." />
               )}
             </CardContent>
           </Card>

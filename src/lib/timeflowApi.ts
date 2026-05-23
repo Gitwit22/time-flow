@@ -7,9 +7,11 @@ import { getPlatformSession, TIMEFLOW_API_BASE } from "@/lib/platformApi";
 import type {
   AppSettings,
   Client,
+  Expense,
   Invoice,
   InvoiceDraftPreview,
   InvoiceLineItem,
+  ProjectBill,
   Project,
   TimeEntry,
 } from "@/types";
@@ -17,7 +19,9 @@ import type {
 type ApiRecord = Record<string, unknown>;
 
 function buildHeaders(): HeadersInit {
-  const token = getActiveAuthToken() ?? getPlatformSession()?.token;
+  // Prefer suite-launched platform identity when present.
+  // This prevents stale local sessions from masking platform-scoped data.
+  const token = getPlatformSession()?.token ?? getActiveAuthToken();
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -40,21 +44,34 @@ async function apiRequest<T>(method: string, path: string, body?: unknown): Prom
 // ─── Mappers ──────────────────────────────────────────────────────────────────
 
 export function toClient(r: ApiRecord): Client {
+  const isArchived = r.isActive === false;
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     name: r.name as string,
     contactName: (r.contactName as string) ?? undefined,
     contactEmail: (r.contactEmail as string) ?? undefined,
     contacts: (r.contacts as Client["contacts"]) ?? [],
     hourlyRate: r.hourlyRate != null ? (r.hourlyRate as number) : undefined,
     companyViewerEnabled: r.companyViewerEnabled === true,
+    canViewActiveClockIns: r.canViewActiveClockIns !== false,
+    archived: isArchived,
+    archivedAt: isArchived ? ((r.updatedAt as string) ?? new Date().toISOString()) : undefined,
     documents: [],
   };
 }
 
 export function toProject(r: ApiRecord): Project {
+  const isArchived = r.isActive === false;
+  const legacyBillingType = r.billingType as Project["billingType"];
+  const mappedProjectBillingType = legacyBillingType === "fixed_fee"
+    ? "fixed"
+    : "hourly";
+  const fixedProjectAmount = (r.fixedProjectAmount as number | undefined)
+    ?? (legacyBillingType === "fixed_fee" ? ((r.maxPayoutCap as number) || 0) : undefined);
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     name: r.name as string,
     clientId: r.clientId as string,
     status: r.status as Project["status"],
@@ -63,21 +80,39 @@ export function toProject(r: ApiRecord): Project {
     hourlyRate: (r.hourlyRate as number) || 0,
     maxPayoutCap: (r.maxPayoutCap as number) || 0,
     capHandling: r.capHandling as Project["capHandling"],
+    projectBillingType: (r.projectBillingType as Project["projectBillingType"]) ?? mappedProjectBillingType,
+    fixedProjectAmount: fixedProjectAmount && fixedProjectAmount > 0 ? fixedProjectAmount : undefined,
+    billingNotes: (r.billingNotes as string) ?? undefined,
     startDate: r.startDate as string,
     endDate: (r.endDate as string) ?? undefined,
     notes: (r.notes as string) || "",
+    archived: isArchived,
+    archivedAt: isArchived ? ((r.updatedAt as string) ?? new Date().toISOString()) : undefined,
     documents: [],
   };
 }
 
 export function toTimeEntry(r: ApiRecord): TimeEntry {
+  const entryType = r.entryType === "fixed" ? "fixed" : "time";
+  const fixedAmount = entryType === "fixed" && typeof r.fixedAmount === "number"
+    ? (r.fixedAmount as number)
+    : undefined;
+
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
+    employeeMemberId: (r.employeeMemberId as string) ?? undefined,
+    userId: (r.userId as string) ?? undefined,
+    entryType,
+    fixedAmount,
     clientId: r.clientId as string,
     projectId: (r.projectId as string) ?? undefined,
     date: r.date as string,
     startTime: r.startTime as string,
     endTime: (r.endTime as string) ?? undefined,
+    clockInAt: (r.clockInAt as string) ?? undefined,
+    clockOutAt: (r.clockOutAt as string) ?? undefined,
+    durationMinutes: (r.durationMinutes as number) ?? undefined,
     durationHours: (r.durationHours as number) || 0,
     billingRate: r.billingRate != null ? (r.billingRate as number) : undefined,
     billable: r.billable !== false,
@@ -85,13 +120,23 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
     invoiceId: (r.invoiceId as string) || null,
     notes: (r.notes as string) || "",
     status: r.status as TimeEntry["status"],
+    rejectionReason: (r.rejectionReason as string) ?? undefined,
+    reviewedBy: (r.reviewedBy as string) ?? undefined,
+    reviewedAt: (r.reviewedAt as string) ?? undefined,
+    timeType: (r.timeType as TimeEntry["timeType"]) ?? "worked",
+    leaveType: (r.leaveType as TimeEntry["leaveType"]) ?? null,
   };
 }
 
 export function toInvoice(r: ApiRecord): Invoice {
   return {
     id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
     clientId: r.clientId as string,
+    projectId: (r.projectId as string) ?? undefined,
+    invoiceSourceType: (r.invoiceSourceType as Invoice["invoiceSourceType"]) ?? undefined,
+    sourceDescription: (r.sourceDescription as string) ?? undefined,
+    fixedBillingAmount: (r.fixedBillingAmount as number | undefined) ?? undefined,
     periodStart: (r.periodStart as string) || "",
     periodEnd: (r.periodEnd as string) || "",
     billingMode: r.billingMode as Invoice["billingMode"],
@@ -117,17 +162,62 @@ export function toInvoice(r: ApiRecord): Invoice {
   };
 }
 
+export function toExpense(r: ApiRecord): Expense {
+  return {
+    id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
+    amount: (r.amount as number) || 0,
+    category: ((r.category as Expense["category"]) ?? "other"),
+    billableToClient: r.billableToClient !== false,
+    billTo: ((r.billTo as Expense["billTo"]) ?? "client"),
+    clientId: (r.clientId as string) ?? undefined,
+    date: (r.date as string) || new Date().toISOString().split("T")[0],
+    description: (r.description as string) || "",
+    excludedFromPayPeriod: r.excludedFromPayPeriod === true,
+    includedInPayPeriod: r.includedInPayPeriod === true,
+    invoiceId: (r.invoiceId as string) ?? null,
+    notes: (r.notes as string) || "",
+    projectId: (r.projectId as string) ?? undefined,
+    receiptAttached: r.receiptAttached === true,
+    status: (r.status as Expense["status"]) ?? "billable",
+    vendor: (r.vendor as string) ?? undefined,
+  };
+}
+
+export function toProjectBill(r: ApiRecord): ProjectBill {
+  return {
+    id: r.id as string,
+    organizationId: (r.organizationId as string) ?? undefined,
+    projectId: (r.projectId as string) ?? undefined,
+    clientId: r.clientId as string,
+    title: (r.title as string) || "",
+    amount: (r.amount as number) || 0,
+    issueDate: (r.issueDate as string) || "",
+    dueDate: (r.dueDate as string) ?? undefined,
+    notes: (r.notes as string) || undefined,
+    status: (r.status as ProjectBill["status"]) || "issued",
+    paidAt: (r.paidAt as string) ?? undefined,
+    voidedAt: (r.voidedAt as string) ?? undefined,
+    createdAt: (r.createdAt as string) || new Date().toISOString(),
+    updatedAt: (r.updatedAt as string) || (r.createdAt as string) || new Date().toISOString(),
+  };
+}
+
 export function toSettings(r: ApiRecord): AppSettings {
+  const invoiceFrequency = ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly");
+
   return {
     businessName: (r.businessName as string) || "",
     defaultClientId: (r.defaultClientId as string) ?? undefined,
-    invoiceFrequency: ((r.invoiceFrequency as AppSettings["invoiceFrequency"]) ?? "monthly"),
+    invoiceFrequency,
     invoiceNotes: (r.invoiceNotes as string) || "",
     paymentInstructions: (r.paymentInstructions as string) || "",
     invoiceLogoDataUrl: (r.invoiceLogoDataUrl as string) ?? undefined,
     invoiceBannerDataUrl: (r.invoiceBannerDataUrl as string) ?? undefined,
     companyViewerAccess: r.companyViewerAccess === true,
     emailTemplate: (r.emailTemplate as string) || "",
+    payPeriodFrequency: ((r.payPeriodFrequency as AppSettings["payPeriodFrequency"]) ?? invoiceFrequency),
+    payPeriodStartDate: (r.payPeriodStartDate as string) ?? undefined,
     periodWeekStartsOn: ((r.periodWeekStartsOn as number) ?? 1) as 0 | 1 | 2 | 3 | 4 | 5 | 6,
     periodTargetHours: (r.periodTargetHours as number) ?? 0,
     periodTargetEarnings: (r.periodTargetEarnings as number) ?? 0,
@@ -148,6 +238,12 @@ export const apiUpdateClient = (id: string, data: Partial<Omit<Client, "id" | "d
 export const apiDeleteClient = (id: string) =>
   apiRequest<void>("DELETE", `/clients/${id}`);
 
+export const apiArchiveClient = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/clients/${id}/archive`).then(toClient);
+
+export const apiRestoreClient = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/clients/${id}/restore`).then(toClient);
+
 // ─── Projects ─────────────────────────────────────────────────────────────────
 
 export const apiListProjects = () =>
@@ -161,6 +257,12 @@ export const apiUpdateProject = (id: string, data: Partial<Omit<Project, "id" | 
 
 export const apiDeleteProject = (id: string) =>
   apiRequest<void>("DELETE", `/projects/${id}`);
+
+export const apiArchiveProject = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/projects/${id}/archive`).then(toProject);
+
+export const apiRestoreProject = (id: string) =>
+  apiRequest<ApiRecord>("PATCH", `/projects/${id}/restore`).then(toProject);
 
 // ─── Time entries ─────────────────────────────────────────────────────────────
 
@@ -181,6 +283,20 @@ export const apiBulkUpdateTimeEntries = (
   data: { invoiced?: boolean; invoiceId?: string | null; status?: string },
 ) => apiRequest<{ updated: number }>("PATCH", "/time-entries/bulk", { ids, ...data });
 
+// ─── Expenses ────────────────────────────────────────────────────────────────
+
+export const apiListExpenses = () =>
+  apiRequest<ApiRecord[]>("GET", "/expenses").then((rs) => rs.map(toExpense));
+
+export const apiCreateExpense = (data: Pick<Expense, "id"> & Omit<Expense, "id">) =>
+  apiRequest<ApiRecord>("POST", "/expenses", data).then(toExpense);
+
+export const apiUpdateExpense = (id: string, data: Partial<Omit<Expense, "id">>) =>
+  apiRequest<ApiRecord>("PUT", `/expenses/${id}`, data).then(toExpense);
+
+export const apiDeleteExpense = (id: string) =>
+  apiRequest<void>("DELETE", `/expenses/${id}`);
+
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 
 export const apiListInvoices = () =>
@@ -194,6 +310,20 @@ export const apiUpdateInvoice = (id: string, data: Partial<Invoice>) =>
 
 export const apiDeleteInvoice = (id: string) =>
   apiRequest<void>("DELETE", `/invoices/${id}`);
+
+// ─── Project bills ────────────────────────────────────────────────────────────
+
+export const apiListProjectBills = () =>
+  apiRequest<ApiRecord[]>("GET", "/project-bills").then((rs) => rs.map(toProjectBill));
+
+export const apiCreateProjectBill = (data: Pick<ProjectBill, "id"> & Omit<ProjectBill, "id" | "createdAt" | "updatedAt">) =>
+  apiRequest<ApiRecord>("POST", "/project-bills", data).then(toProjectBill);
+
+export const apiUpdateProjectBill = (id: string, data: Partial<Omit<ProjectBill, "id" | "createdAt" | "updatedAt">>) =>
+  apiRequest<ApiRecord>("PUT", `/project-bills/${id}`, data).then(toProjectBill);
+
+export const apiDeleteProjectBill = (id: string) =>
+  apiRequest<void>("DELETE", `/project-bills/${id}`);
 
 // ─── Settings ─────────────────────────────────────────────────────────────────
 
@@ -209,17 +339,21 @@ export interface TimeflowAllData {
   clients: Client[];
   projects: Project[];
   timeEntries: TimeEntry[];
+  expenses: Expense[];
   invoices: Invoice[];
+  projectBills: ProjectBill[];
   settings: AppSettings;
 }
 
 export async function apiHydrateAll(): Promise<TimeflowAllData> {
-  const [clients, projects, timeEntries, invoices, settings] = await Promise.all([
+  const [clients, projects, timeEntries, expenses, invoices, projectBills, settings] = await Promise.all([
     apiListClients(),
     apiListProjects(),
     apiListTimeEntries(),
+    apiListExpenses(),
     apiListInvoices(),
+    apiListProjectBills(),
     apiGetSettings(),
   ]);
-  return { clients, projects, timeEntries, invoices, settings };
+  return { clients, projects, timeEntries, expenses, invoices, projectBills, settings };
 }

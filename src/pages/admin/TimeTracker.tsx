@@ -11,7 +11,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getBillingPeriod } from "@/lib/date";
+import { getCurrentPayPeriod } from "@/lib/payPeriods";
+import { getSelectableProjects } from "@/lib/projects";
+import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
 
@@ -34,13 +36,19 @@ export default function TimeTracker() {
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
+  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
 
   const isReadonly = currentUser.role === "client_viewer";
-  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
-
   const filteredEntries = useMemo(() => {
     const now = new Date();
-    const period = getBillingPeriod(now, billingFrequency, settings.periodWeekStartsOn);
+    const period = getCurrentPayPeriod(
+      {
+        payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+        payPeriodStartDate: settings.payPeriodStartDate,
+        periodWeekStartsOn: settings.periodWeekStartsOn,
+      },
+      now,
+    );
     const todayStart = startOfDay(now);
     const weekStart = startOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
     const weekEnd = endOfWeek(now, { weekStartsOn: settings.periodWeekStartsOn });
@@ -65,12 +73,12 @@ export default function TimeTracker() {
               ? isWithinInterval(entryDate, { start: todayStart, end: now })
               : dateFilter === "week"
                 ? isWithinInterval(entryDate, { start: weekStart, end: weekEnd })
-                : isWithinInterval(entryDate, { start: period.start, end: period.end });
+                : isWithinInterval(entryDate, { start: parseISO(period.startDate), end: parseISO(period.endDate) });
 
           return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
       })
-      .sort((a, b) => `${b.date}T${b.startTime}`.localeCompare(`${a.date}T${a.startTime}`));
-        }, [billingFrequency, clientFilter, clients, dateFilter, projectFilter, projects, searchQuery, settings.periodWeekStartsOn, statusFilter, timeEntries]);
+      .sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a)));
+        }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, statusFilter, timeEntries]);
 
   const handleAddManual = () => {
     if (isReadonly) {
@@ -100,7 +108,10 @@ export default function TimeTracker() {
       toast({ title: "Entry updated", description: "Your time entry was updated." });
     } else {
       addTimeEntry(entry);
-      toast({ title: "Entry added", description: "Manual time entry saved." });
+      toast({
+        title: "Entry added",
+        description: getEntryType(entry) === "fixed" ? "Fixed amount entry saved." : "Manual time entry saved.",
+      });
     }
 
     setEditingEntry(null);
@@ -182,7 +193,7 @@ export default function TimeTracker() {
                 <SelectContent>
                   <SelectItem value="all">All projects</SelectItem>
                   <SelectItem value="client-only">Client only</SelectItem>
-                  {projects.map((project) => (
+                  {selectableProjects.map((project) => (
                     <SelectItem key={project.id} value={project.id}>
                       {project.name}
                     </SelectItem>

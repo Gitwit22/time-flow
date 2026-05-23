@@ -1,16 +1,22 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, FileText, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText, Paperclip, RotateCcw, Trash2 } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
-import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
-import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus } from "@/lib/invoice";
+import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
+import { downloadInvoiceExport, type InvoiceReceiptAttachment } from "@/lib/export";
+import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
+import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
+import { listTimeflowDocuments, getTimeflowDocumentViewUrl } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
+import type { AttachedDocument } from "@/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
@@ -31,11 +37,46 @@ export default function InvoiceDetail() {
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
   const timeEntries = useAppStore((state) => state.timeEntries);
+  const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const isReadonly = currentUser.role === "client_viewer";
 
+  // Receipt attachment state
+  const [expenseReceiptMap, setExpenseReceiptMap] = useState<Record<string, AttachedDocument[]>>({});
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<Set<string>>(new Set());
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
+
   const invoice = invoices.find((item) => item.id === id);
+
+  // Derive expense IDs without relying on post-guard computations so hooks stay unconditional.
+  const invoiceExpenseIds = (invoice?.lineItems ?? [])
+    .filter((lineItem) => lineItem.lineType === "expense" && lineItem.expenseId)
+    .map((lineItem) => lineItem.expenseId as string);
+
+  useEffect(() => {
+    if (!invoice || invoiceExpenseIds.length === 0) {
+      setExpenseReceiptMap({});
+      setSelectedReceiptIds(new Set());
+      return;
+    }
+
+    setReceiptsLoading(true);
+    listTimeflowDocuments("expense")
+      .then((map) => {
+        const relevant: Record<string, AttachedDocument[]> = {};
+        for (const expId of invoiceExpenseIds) {
+          if (map[expId]?.length) {
+            relevant[expId] = map[expId].filter((d) => d.status === "active");
+          }
+        }
+        setExpenseReceiptMap(relevant);
+        const allIds = Object.values(relevant).flat().map((d) => d.id);
+        setSelectedReceiptIds(new Set(allIds));
+      })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => setReceiptsLoading(false));
+  }, [invoice, invoiceExpenseIds]);
 
   if (!invoice) {
     return (
@@ -65,7 +106,76 @@ export default function InvoiceDetail() {
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const lineItems = invoice.lineItems.length > 0
+    ? invoice.lineItems
+    : entries.map((entry, index) => ({
+      id: `legacy-${entry.id}-${index}`,
+      description: entry.notes || (getEntryType(entry) === "fixed" ? "Fixed charge" : "Tracked work"),
+      date: entry.date,
+      hours: getEntryHours(entry),
+      projectId: entry.projectId,
+      rate: getEntryType(entry) === "fixed" ? 0 : (entry.billingRate ?? invoice.hourlyRate),
+      amount: getEntryType(entry) === "fixed"
+        ? getEntryBillableAmount(entry)
+        : getEntryBillableAmount(entry, entry.billingRate ?? invoice.hourlyRate),
+      timeEntryIds: [entry.id],
+      lineType: getEntryType(entry) === "fixed" ? ("fixed" as const) : ("time" as const),
+    }));
+  const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
+  const laborGroups = groupInvoiceLaborByProject(lineItems, entries, projects);
+  const expenseLineItems = lineItems.filter((lineItem) => lineItem.lineType === "expense");
+  const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
+  const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
   const displayStatus = getInvoiceDisplayStatus(invoice);
+  const sourceLabel = getInvoiceSourceTypeLabel(invoice);
+  const laborSectionTitle = invoice.invoiceSourceType === "partial_project" || invoice.invoiceSourceType === "manual_project"
+    ? "Project Billing Line Items"
+    : "Labor / Time Entry Line Items";
+
+  const allReceipts = Object.entries(expenseReceiptMap).flatMap(([expenseId, docs]) =>
+    docs.map((doc) => ({ doc, expenseId }))
+  );
+
+  const toggleReceipt = (docId: string) => {
+    setSelectedReceiptIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId); else next.add(docId);
+      return next;
+    });
+  };
+
+  const handleDownloadInvoice = async () => {
+    let receiptAttachments: InvoiceReceiptAttachment[] | undefined;
+    if (selectedReceiptIds.size > 0) {
+      receiptAttachments = await Promise.all(
+        allReceipts
+          .filter(({ doc }) => selectedReceiptIds.has(doc.id))
+          .map(async ({ doc, expenseId }) => {
+            const linkedExpense = expenses.find((e) => e.id === expenseId);
+            const expenseDescription = linkedExpense
+              ? `${linkedExpense.vendor ? linkedExpense.vendor + " · " : ""}${linkedExpense.description || linkedExpense.category}`
+              : "";
+            let viewUrl = "";
+            try { viewUrl = await getTimeflowDocumentViewUrl(doc.id); } catch { viewUrl = ""; }
+            return {
+              documentId: doc.id,
+              filename: doc.originalFilename || doc.title,
+              mimeType: doc.mimeType,
+              viewUrl,
+              expenseDescription,
+            } satisfies InvoiceReceiptAttachment;
+          })
+      );
+    }
+    const opened = downloadInvoiceExport({ invoice, entries, expenses, client, currentUser, projects, settings, receiptAttachments });
+    toast({
+      title: opened ? "Invoice opened for download" : "Popup blocked",
+      description: opened
+        ? `${invoice.id} opened in a printable invoice view.`
+        : "Allow popups for this site, then try download again.",
+      variant: opened ? undefined : "destructive",
+    });
+  };
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -80,27 +190,13 @@ export default function InvoiceDetail() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              const opened = downloadInvoiceExport({
-                invoice,
-                entries,
-                client,
-                currentUser,
-                projects,
-                settings,
-              });
-              toast({
-                title: opened ? "Invoice opened for download" : "Popup blocked",
-                description: opened ? `${invoice.id} opened in a printable invoice view.` : "Allow popups for this site, then try download again.",
-                variant: opened ? undefined : "destructive",
-              });
-            }}
+            onClick={() => { void handleDownloadInvoice(); }}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
           </Button>
             <Button size="sm" variant="outline" asChild>
-            <Link to="/platform/email">
-                <FileText className="mr-1.5 h-3.5 w-3.5" /> Create Email Draft
+            <Link to="/platform/export-center">
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Open Export Center
             </Link>
           </Button>
             {!isReadonly && invoice.status === "draft" ? (
@@ -108,7 +204,7 @@ export default function InvoiceDetail() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  updateInvoice(invoice.id, { issuedAt: new Date().toISOString(), paidAt: undefined, status: "issued" });
+                  updateInvoice(invoice.id, { issuedAt: toDateOnlyString(new Date()), paidAt: undefined, status: "issued" });
                   toast({ title: "Invoice issued", description: `${invoice.id} is now ready to share.` });
                 }}
               >
@@ -121,7 +217,7 @@ export default function InvoiceDetail() {
               variant="outline"
               className="text-success border-success/30 hover:bg-success/10"
               onClick={() => {
-                  updateInvoice(invoice.id, { paidAt: new Date().toISOString(), status: "paid" });
+                  updateInvoice(invoice.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
                 toast({ title: "Invoice paid", description: `${invoice.id} marked as paid.` });
               }}
             >
@@ -153,7 +249,8 @@ export default function InvoiceDetail() {
                     <AlertDialogDescription>
                       This will permanently delete the invoice and release all {entries.length} linked time{" "}
                       {entries.length === 1 ? "entry" : "entries"} back to billable status so they can be re-invoiced.
-                      This action cannot be undone.
+                      Linked billable expenses will also be returned to an uninvoiced billable state. This action
+                      cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -164,7 +261,7 @@ export default function InvoiceDetail() {
                         deleteInvoice(invoice.id);
                         toast({
                           title: "Invoice voided",
-                          description: `${invoice.id} was deleted and its time entries were released back to billable status.`,
+                          description: `${invoice.id} was deleted and its linked time entries and expenses were released back to billable status.`,
                         });
                         navigate("/platform/invoices");
                       }}
@@ -213,7 +310,7 @@ export default function InvoiceDetail() {
                 <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
               ) : (
                 <div className="mt-1 max-w-[180px]">
-                  <Input type="date" value={invoice.dueDate} onChange={(event) => updateInvoice(invoice.id, { dueDate: event.target.value })} />
+                  <Input type="date" value={formatDateForInput(invoice.dueDate)} onChange={(event) => updateInvoice(invoice.id, { dueDate: parseDateInput(event.target.value) })} />
                 </div>
               )}
             </div>
@@ -226,10 +323,21 @@ export default function InvoiceDetail() {
               <span className={statusStyles[displayStatus]}>{displayStatus}</span>
             </div>
             <div>
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Invoice Source</p>
+              <p className="font-medium text-sm mt-1">{sourceLabel}</p>
+            </div>
+            <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Paid Date</p>
               <p className="font-medium text-sm mt-1">{invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid"}</p>
             </div>
           </div>
+
+          {invoice.sourceDescription ? (
+            <div className="mb-8 rounded-lg border bg-muted/20 px-4 py-3">
+              <p className="text-xs text-muted-foreground uppercase tracking-wide">Source Description</p>
+              <p className="mt-1 text-sm whitespace-pre-wrap">{invoice.sourceDescription}</p>
+            </div>
+          ) : null}
 
           <div className="mb-8">
             <p className="text-xs text-muted-foreground uppercase tracking-wide mb-2">Bill To</p>
@@ -242,37 +350,105 @@ export default function InvoiceDetail() {
             ))}
           </div>
 
-          <table className="w-full text-sm mb-6">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
-                <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
-                <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((entry) => (
-                <tr key={entry.id} className="border-b last:border-0">
-                  <td className="py-2.5">{formatLongDate(entry.date)}</td>
-                  <td className="py-2.5">{entry.notes || "Tracked work"}</td>
-                  <td className="py-2.5 text-right">{formatHours(entry.durationHours)}</td>
-                  <td className="py-2.5 text-right">{formatCurrency(entry.billingRate ?? invoice.hourlyRate)}</td>
-                  <td className="py-2.5 text-right font-medium">{formatCurrency(entry.durationHours * (entry.billingRate ?? invoice.hourlyRate))}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-6 mb-6">
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{laborSectionTitle}</p>
+              {laborLineItems.length ? (
+                <div className="space-y-4">
+                  {laborGroups.map((group) => (
+                    <div key={group.id} className="rounded-lg border">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-3 py-2">
+                        <p className="text-sm font-medium">Project: {group.projectName}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatHours(group.totalHours)} · {formatCurrency(group.subtotal)}
+                        </p>
+                      </div>
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="border-b">
+                            <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                            <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Hours</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Rate</th>
+                            <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.lineItems.map((lineItem) => (
+                            <tr key={lineItem.id} className="border-b last:border-0">
+                              <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                              <td className="py-2.5">{lineItem.description || "Tracked work"}</td>
+                              <td className="py-2.5 text-right">{formatHours(lineItem.hours)}</td>
+                              <td className="py-2.5 text-right">{formatCurrency(lineItem.rate)}</td>
+                              <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border px-3 py-3 text-sm text-muted-foreground">No labor items on this invoice.</div>
+              )}
+            </div>
+
+            <div>
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Expense Reimbursement Line Items</p>
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 font-medium text-muted-foreground">Date</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Description</th>
+                    <th className="text-left py-2 font-medium text-muted-foreground">Category</th>
+                    <th className="text-right py-2 font-medium text-muted-foreground">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {expenseLineItems.length ? (
+                    expenseLineItems.map((lineItem) => {
+                      const linkedExpense = lineItem.expenseId ? expenses.find((expense) => expense.id === lineItem.expenseId) : undefined;
+                      return (
+                        <tr key={lineItem.id} className="border-b last:border-0">
+                          <td className="py-2.5">{formatLongDate(lineItem.date)}</td>
+                          <td className="py-2.5">{linkedExpense?.vendor ? `${linkedExpense.vendor} — ${lineItem.description}` : lineItem.description}</td>
+                          <td className="py-2.5 capitalize text-muted-foreground">{linkedExpense?.category ?? "other"}</td>
+                          <td className="py-2.5 text-right font-medium">{formatCurrency(lineItem.amount)}</td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td colSpan={4} className="py-3 text-sm text-muted-foreground">No expense reimbursements on this invoice.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           <Separator className="my-4" />
 
           <div className="flex justify-end">
             <div className="w-64 space-y-2">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-medium">{formatCurrency(invoice.totalAmount)}</span>
+                <span className="text-muted-foreground">Subtotal labor</span>
+                <span className="font-medium">{formatCurrency(laborSubtotal)}</span>
               </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal expenses</span>
+                <span className="font-medium">{formatCurrency(expenseSubtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-medium">{formatCurrency(invoice.subtotal || invoice.totalAmount)}</span>
+              </div>
+              {invoice.taxAmount > 0 ? (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Tax</span>
+                  <span className="font-medium">{formatCurrency(invoice.taxAmount)}</span>
+                </div>
+              ) : null}
               <Separator />
               <div className="flex justify-between text-lg">
                 <span className="font-heading font-bold">Total Due</span>
@@ -288,6 +464,60 @@ export default function InvoiceDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {invoiceExpenseIds.length > 0 ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Paperclip className="h-4 w-4" /> Expense Receipts
+                {receiptsLoading ? <span className="text-xs text-muted-foreground font-normal">Loading...</span> : null}
+              </CardTitle>
+              {allReceipts.length > 0 ? (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedReceiptIds(new Set(allReceipts.map(({ doc }) => doc.id)))}>
+                    Select All
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedReceiptIds(new Set())}>
+                    Deselect All
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Select which expense receipts to include when downloading this invoice.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {allReceipts.length === 0 && !receiptsLoading ? (
+              <p className="text-sm text-muted-foreground">No receipt files found for the expenses on this invoice. Upload receipts from the Expenses page.</p>
+            ) : (
+              <div className="space-y-2">
+                {allReceipts.map(({ doc, expenseId }) => {
+                  const linkedExpense = expenses.find((e) => e.id === expenseId);
+                  const label = linkedExpense
+                    ? `${linkedExpense.vendor ? linkedExpense.vendor + " · " : ""}${linkedExpense.description || linkedExpense.category}`
+                    : expenseId;
+                  return (
+                    <div key={doc.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
+                      <Checkbox
+                        id={`receipt-${doc.id}`}
+                        checked={selectedReceiptIds.has(doc.id)}
+                        onCheckedChange={() => toggleReceipt(doc.id)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{doc.originalFilename || doc.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{label}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground capitalize">{doc.mimeType.split("/")[1] ?? doc.mimeType}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

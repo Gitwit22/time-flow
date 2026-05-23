@@ -1,4 +1,5 @@
-import type { Client, Project, TimeEntry } from "@/types";
+import type { Client, Expense, Project, TimeEntry } from "@/types";
+import { toDateOnlyString } from "@/lib/date";
 
 export const EXPORT_VERSION = 1 as const;
 export const EXPORT_SOURCE = "timeflow" as const;
@@ -31,6 +32,8 @@ export interface ExportProject {
 
 export interface ExportTimeEntry {
   id: string;
+  entryType?: "time" | "fixed";
+  fixedAmount?: number;
   clientId: string;
   projectId?: string;
   date: string;
@@ -42,6 +45,27 @@ export interface ExportTimeEntry {
   invoiced: boolean;
   notes: string;
   status: string;
+  timeType?: "worked" | "leave" | "manual" | "correction";
+  leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
+}
+
+export interface ExportExpense {
+  id: string;
+  amount: number;
+  billableToClient?: boolean;
+  category: Expense["category"];
+  billTo?: Expense["billTo"];
+  clientId?: string;
+  date: string;
+  description: string;
+  excludedFromPayPeriod?: boolean;
+  includedInPayPeriod?: boolean;
+  invoiceId?: string | null;
+  notes: string;
+  projectId?: string;
+  receiptAttached?: boolean;
+  status?: Expense["status"];
+  vendor?: string;
 }
 
 export interface TimeFlowExport {
@@ -51,6 +75,7 @@ export interface TimeFlowExport {
   customers: ExportClient[];
   projects: ExportProject[];
   timeEntries: ExportTimeEntry[];
+  expenses: ExportExpense[];
 }
 
 // ── Export options ────────────────────────────────────────────────────────────
@@ -95,6 +120,8 @@ function toExportProject(project: Project): ExportProject {
 function toExportTimeEntry(entry: TimeEntry): ExportTimeEntry {
   return {
     id: entry.id,
+    entryType: entry.entryType,
+    fixedAmount: entry.fixedAmount,
     clientId: entry.clientId,
     projectId: entry.projectId,
     date: entry.date,
@@ -106,6 +133,29 @@ function toExportTimeEntry(entry: TimeEntry): ExportTimeEntry {
     invoiced: entry.invoiced,
     notes: entry.notes,
     status: entry.status,
+    timeType: entry.timeType,
+    leaveType: entry.leaveType,
+  };
+}
+
+function toExportExpense(expense: Expense): ExportExpense {
+  return {
+    id: expense.id,
+    amount: expense.amount,
+    billableToClient: expense.billableToClient,
+    category: expense.category,
+    billTo: expense.billTo,
+    clientId: expense.clientId,
+    date: expense.date,
+    description: expense.description,
+    excludedFromPayPeriod: expense.excludedFromPayPeriod,
+    includedInPayPeriod: expense.includedInPayPeriod,
+    invoiceId: expense.invoiceId,
+    notes: expense.notes,
+    projectId: expense.projectId,
+    receiptAttached: expense.receiptAttached,
+    status: expense.status,
+    vendor: expense.vendor,
   };
 }
 
@@ -113,16 +163,19 @@ export function buildExportPayload(
   clients: Client[],
   projects: Project[],
   timeEntries: TimeEntry[],
+  expenses: Expense[],
   options: ExportOptions = {},
 ): TimeFlowExport {
   let filteredClients = clients;
   let filteredProjects = projects;
   let filteredEntries = timeEntries;
+  let filteredExpenses = expenses;
 
   if (options.clientId) {
     filteredClients = clients.filter((c) => c.id === options.clientId);
     filteredProjects = projects.filter((p) => p.clientId === options.clientId);
     filteredEntries = timeEntries.filter((e) => e.clientId === options.clientId);
+    filteredExpenses = expenses.filter((expense) => expense.clientId === options.clientId);
   }
 
   if (options.projectId) {
@@ -130,21 +183,30 @@ export function buildExportPayload(
     filteredClients = project ? clients.filter((c) => c.id === project.clientId) : [];
     filteredProjects = projects.filter((p) => p.id === options.projectId);
     filteredEntries = timeEntries.filter((e) => e.projectId === options.projectId);
+    filteredExpenses = expenses.filter((expense) => expense.projectId === options.projectId);
   }
 
   if (options.dateFrom) {
     filteredEntries = filteredEntries.filter((e) => e.date >= options.dateFrom!);
+    filteredExpenses = filteredExpenses.filter((expense) => expense.date >= options.dateFrom!);
   }
 
   if (options.dateTo) {
     filteredEntries = filteredEntries.filter((e) => e.date <= options.dateTo!);
+    filteredExpenses = filteredExpenses.filter((expense) => expense.date <= options.dateTo!);
   }
 
-  // When filtering entries by date range without a client/project filter,
-  // only include clients/projects that are referenced by the filtered entries.
+  // When filtering by date range without a client/project filter,
+  // only include clients/projects that are referenced by the filtered records.
   if (!options.clientId && !options.projectId && (options.dateFrom || options.dateTo)) {
-    const usedClientIds = new Set(filteredEntries.map((e) => e.clientId));
-    const usedProjectIds = new Set(filteredEntries.map((e) => e.projectId).filter(Boolean));
+    const usedClientIds = new Set([
+      ...filteredEntries.map((e) => e.clientId),
+      ...filteredExpenses.map((expense) => expense.clientId).filter(Boolean),
+    ]);
+    const usedProjectIds = new Set([
+      ...filteredEntries.map((e) => e.projectId).filter(Boolean),
+      ...filteredExpenses.map((expense) => expense.projectId).filter(Boolean),
+    ]);
     filteredClients = filteredClients.filter((c) => usedClientIds.has(c.id));
     filteredProjects = filteredProjects.filter((p) => usedProjectIds.has(p.id));
   }
@@ -156,6 +218,7 @@ export function buildExportPayload(
     customers: filteredClients.map(toExportClient),
     projects: filteredProjects.map(toExportProject),
     timeEntries: filteredEntries.map(toExportTimeEntry),
+    expenses: filteredExpenses.map(toExportExpense),
   };
 }
 
@@ -165,7 +228,7 @@ export function downloadExportFile(payload: TimeFlowExport, filename?: string) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = filename ?? `timeflow-export-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = filename ?? `timeflow-export-${toDateOnlyString(new Date())}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -211,7 +274,17 @@ export function parseImportPayload(raw: unknown): ParseResult | ParseError {
     return { ok: false, error: "Missing or invalid 'timeEntries' array." };
   }
 
-  return { ok: true, payload: obj as unknown as TimeFlowExport };
+  if (obj.expenses !== undefined && !Array.isArray(obj.expenses)) {
+    return { ok: false, error: "Invalid 'expenses' array." };
+  }
+
+  return {
+    ok: true,
+    payload: {
+      ...(obj as unknown as Omit<TimeFlowExport, "expenses">),
+      expenses: Array.isArray(obj.expenses) ? (obj.expenses as ExportExpense[]) : [],
+    },
+  };
 }
 
 export async function readImportFile(file: File): Promise<ParseResult | ParseError> {
@@ -235,7 +308,7 @@ export async function readImportFile(file: File): Promise<ParseResult | ParseErr
 export type ConflictStrategy = "skip" | "merge" | "create_new";
 
 export interface ImportConflict {
-  type: "customer" | "project" | "time_entry";
+  type: "customer" | "project" | "time_entry" | "expense";
   sourceId: string;
   sourceName: string;
   existingId: string;
@@ -251,10 +324,13 @@ export interface ImportPreview {
   projectsToSkip: ExportProject[];
   entriesToCreate: ExportTimeEntry[];
   entriesToSkip: ExportTimeEntry[];
+  expensesToCreate: ExportExpense[];
+  expensesToSkip: ExportExpense[];
   conflicts: ImportConflict[];
   totalCustomers: number;
   totalProjects: number;
   totalEntries: number;
+  totalExpenses: number;
 }
 
 export function previewImport(
@@ -262,11 +338,13 @@ export function previewImport(
   existingClients: Client[],
   existingProjects: Project[],
   existingEntries: TimeEntry[],
+  existingExpenses: Expense[],
   strategy: ConflictStrategy,
 ): ImportPreview {
   const existingClientById = new Map(existingClients.map((c) => [c.id, c]));
   const existingProjectById = new Map(existingProjects.map((p) => [p.id, p]));
   const existingEntryById = new Map(existingEntries.map((e) => [e.id, e]));
+  const existingExpenseById = new Map(existingExpenses.map((expense) => [expense.id, expense]));
 
   // Match clients by ID, fall back to name match for new-ID strategies
   const existingClientByName = new Map(existingClients.map((c) => [c.name.toLowerCase().trim(), c]));
@@ -336,6 +414,27 @@ export function previewImport(
     }
   }
 
+  const expensesToCreate: ExportExpense[] = [];
+  const expensesToSkip: ExportExpense[] = [];
+
+  for (const expense of payload.expenses) {
+    const existing = existingExpenseById.get(expense.id);
+    if (!existing) {
+      expensesToCreate.push(expense);
+    } else if (strategy === "skip") {
+      expensesToSkip.push(expense);
+      conflicts.push({
+        type: "expense",
+        sourceId: expense.id,
+        sourceName: expense.description || expense.id,
+        existingId: existing.id,
+        existingName: existing.description || existing.id,
+      });
+    } else {
+      expensesToCreate.push(expense);
+    }
+  }
+
   return {
     customersToCreate,
     customersToUpdate,
@@ -345,10 +444,13 @@ export function previewImport(
     projectsToSkip,
     entriesToCreate,
     entriesToSkip,
+    expensesToCreate,
+    expensesToSkip,
     conflicts,
     totalCustomers: payload.customers.length,
     totalProjects: payload.projects.length,
     totalEntries: payload.timeEntries.length,
+    totalExpenses: payload.expenses.length,
   };
 }
 
@@ -363,6 +465,8 @@ export interface ImportResult {
   projectsSkipped: number;
   entriesImported: number;
   entriesSkipped: number;
+  expensesImported: number;
+  expensesSkipped: number;
   failed: number;
   errors: string[];
 }
@@ -374,6 +478,7 @@ export interface ImportActions {
   updateProject: (id: string, updates: Partial<Project>) => void;
   addTimeEntry: (entry: Omit<TimeEntry, "id" | "status" | "durationHours"> & { durationHours?: number; status?: TimeEntry["status"] }) => void;
   updateTimeEntry: (id: string, updates: Partial<TimeEntry>) => void;
+  addExpense: (expense: Omit<Expense, "id">) => void;
   getClients: () => Client[];
   getProjects: () => Project[];
 }
@@ -386,6 +491,7 @@ function clientFromExport(src: ExportClient): Omit<Client, "id"> {
     contacts: src.contacts ?? [],
     hourlyRate: src.hourlyRate,
     companyViewerEnabled: false,
+    canViewActiveClockIns: true,
     documents: [],
   };
 }
@@ -422,18 +528,55 @@ function entryFromExport(
     ? (projectIdMap.get(src.projectId) ?? (existingProjectIds.has(src.projectId) ? src.projectId : undefined))
     : undefined;
   return {
+    entryType: src.entryType === "fixed" ? "fixed" : "time",
+    fixedAmount: src.entryType === "fixed" ? src.fixedAmount : undefined,
     clientId: resolvedClientId,
     projectId: resolvedProjectId,
     date: src.date,
-    startTime: src.startTime,
-    endTime: src.endTime,
-    durationHours: src.durationHours,
-    billingRate: src.billingRate,
+    startTime: src.startTime || "00:00",
+    endTime: src.entryType === "fixed" ? undefined : src.endTime,
+    durationHours: src.entryType === "fixed" ? 0 : src.durationHours,
+    billingRate: src.entryType === "fixed" ? undefined : src.billingRate,
     billable: src.billable,
     invoiced: src.invoiced,
+    invoiceStatus: src.invoiced ? "invoiced" : "unbilled",
     invoiceId: null,
     notes: src.notes,
     status: src.status === "running" || src.status === "completed" ? src.status : "completed",
+  };
+}
+
+function expenseFromExport(
+  src: ExportExpense,
+  clientIdMap: Map<string, string>,
+  projectIdMap: Map<string, string>,
+  existingClientIds: Set<string>,
+  existingProjectIds: Set<string>,
+): Omit<Expense, "id"> {
+  const billTo = src.billTo ?? (src.projectId ? "project" : "client");
+  const resolvedClientId = src.clientId
+    ? (clientIdMap.get(src.clientId) ?? (existingClientIds.has(src.clientId) ? src.clientId : undefined))
+    : undefined;
+  const resolvedProjectId = src.projectId
+    ? (projectIdMap.get(src.projectId) ?? (existingProjectIds.has(src.projectId) ? src.projectId : undefined))
+    : undefined;
+
+  return {
+    amount: src.amount,
+    billableToClient: src.billableToClient ?? true,
+    billTo,
+    category: src.category,
+    clientId: resolvedClientId,
+    date: src.date,
+    description: src.description,
+    excludedFromPayPeriod: src.excludedFromPayPeriod,
+    includedInPayPeriod: src.includedInPayPeriod,
+    invoiceId: src.invoiceId ?? null,
+    notes: src.notes,
+    projectId: billTo === "project" ? resolvedProjectId : undefined,
+    receiptAttached: src.receiptAttached ?? false,
+    status: src.status ?? (src.billableToClient === false ? "non_billable" : "billable"),
+    vendor: src.vendor,
   };
 }
 
@@ -451,6 +594,8 @@ export function executeImport(
     projectsSkipped: 0,
     entriesImported: 0,
     entriesSkipped: 0,
+    expensesImported: 0,
+    expensesSkipped: 0,
     failed: 0,
     errors: [],
   };
@@ -577,6 +722,22 @@ export function executeImport(
 
   for (const _entry of preview.entriesToSkip) {
     result.entriesSkipped++;
+  }
+
+  // 4. Expenses
+  const existingClientIds = new Set(actions.getClients().map((client) => client.id));
+  for (const expense of preview.expensesToCreate) {
+    try {
+      actions.addExpense(expenseFromExport(expense, clientIdMap, projectIdMap, existingClientIds, existingProjectIds));
+      result.expensesImported++;
+    } catch (err) {
+      result.failed++;
+      result.errors.push(`Failed to import expense ${expense.id}: ${err instanceof Error ? err.message : "unknown error"}`);
+    }
+  }
+
+  for (const _expense of preview.expensesToSkip) {
+    result.expensesSkipped++;
   }
 
   return result;

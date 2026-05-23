@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { formatDateForInput, parseDateInput, toDateOnlyString } from "@/lib/date";
 import type { Client, Project } from "@/types";
 
 interface ProjectDialogProps {
@@ -26,7 +27,10 @@ function createInitialProject(clientId = ""): Omit<Project, "id"> {
     hourlyRate: 0,
     maxPayoutCap: 0,
     capHandling: "warn_only",
-    startDate: new Date().toISOString().slice(0, 10),
+    projectBillingType: "hourly",
+    fixedProjectAmount: 0,
+    billingNotes: "",
+    startDate: toDateOnlyString(new Date()),
     endDate: "",
     notes: "",
     documents: [],
@@ -128,12 +132,53 @@ export function ProjectDialog({ clients, open, project, onOpenChange, onSubmit }
               <Input type="number" min="0" step="0.01" value={form.maxPayoutCap || ""} onChange={(event) => setForm((current) => ({ ...current, maxPayoutCap: Number(event.target.value || 0) }))} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Start date</Label>
-              <Input type="date" value={form.startDate} onChange={(event) => setForm((current) => ({ ...current, startDate: event.target.value }))} />
+              <Label className="text-xs">Project Start Date</Label>
+              <Input type="date" value={formatDateForInput(form.startDate)} onChange={(event) => setForm((current) => ({ ...current, startDate: parseDateInput(event.target.value) }))} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">End date</Label>
-              <Input type="date" value={form.endDate ?? ""} onChange={(event) => setForm((current) => ({ ...current, endDate: event.target.value }))} />
+              <Label className="text-xs">Project End Date</Label>
+              <Input type="date" value={formatDateForInput(form.endDate)} onChange={(event) => setForm((current) => ({ ...current, endDate: parseDateInput(event.target.value) || undefined }))} />
+            </div>
+          </div>
+
+          <div className="rounded-xl border bg-muted/20 p-4">
+            <p className="text-sm font-medium">Project Invoicing</p>
+            <p className="mt-1 text-xs text-muted-foreground">Configure split/milestone billing that does not require tracked hours.</p>
+            <div className="mt-3 grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Project billing type</Label>
+                <Select
+                  value={form.projectBillingType ?? "hourly"}
+                  onValueChange={(value) => setForm((current) => ({ ...current, projectBillingType: value as NonNullable<Project["projectBillingType"]> }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="fixed">Fixed</SelectItem>
+                    <SelectItem value="mixed">Mixed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Fixed project amount</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.fixedProjectAmount || ""}
+                  onChange={(event) => setForm((current) => ({ ...current, fixedProjectAmount: Number(event.target.value || 0) }))}
+                />
+              </div>
+            </div>
+            <div className="mt-3 space-y-1.5">
+              <Label className="text-xs">Billing notes</Label>
+              <Textarea
+                className="min-h-20 resize-none"
+                value={form.billingNotes || ""}
+                onChange={(event) => setForm((current) => ({ ...current, billingNotes: event.target.value }))}
+              />
             </div>
           </div>
 

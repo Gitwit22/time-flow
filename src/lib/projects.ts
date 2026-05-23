@@ -1,4 +1,5 @@
 import type { AttachedDocument, Client, Invoice, Project, ProjectCapHandling, TimeEntry } from "@/types";
+import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 
 export interface ProjectBillingContext {
   client?: Client;
@@ -18,6 +19,20 @@ export interface ProjectBudgetSnapshot {
   isBlocked: boolean;
 }
 
+export interface ProjectBillingSnapshot {
+  fixedProjectAmount?: number;
+  totalProjectInvoiced: number;
+  totalProjectPaid: number;
+  remainingProjectBillableAmount?: number;
+  outstandingProjectInvoiceBalance: number;
+}
+
+const PROJECT_BILLING_INVOICE_SOURCES: ReadonlySet<NonNullable<Invoice["invoiceSourceType"]>> = new Set([
+  "partial_project",
+  "manual_project",
+  "mixed",
+]);
+
 function roundCurrency(value: number) {
   return Number(value.toFixed(2));
 }
@@ -34,12 +49,28 @@ export function getProjectById(projectId: string | undefined, projects: Project[
   return projects.find((project) => project.id === projectId);
 }
 
+export function getProjectFixedAmount(project: Project) {
+  if (typeof project.fixedProjectAmount === "number" && project.fixedProjectAmount > 0) {
+    return roundCurrency(project.fixedProjectAmount);
+  }
+
+  if (project.projectBillingType === "fixed" && project.maxPayoutCap > 0) {
+    return roundCurrency(project.maxPayoutCap);
+  }
+
+  return undefined;
+}
+
 export function getProjectClient(project: Project | undefined, clients: Client[]) {
   if (!project) {
     return undefined;
   }
 
   return clients.find((client) => client.id === project.clientId);
+}
+
+export function getSelectableProjects(projects: Project[]) {
+  return projects.filter((project) => project.archived !== true && project.status !== "archived");
 }
 
 export function resolveTimeEntryBillingContext(entry: Pick<TimeEntry, "clientId" | "projectId" | "billingRate">, clients: Client[], projects: Project[]): ProjectBillingContext {
@@ -62,27 +93,50 @@ export function resolveTimeEntryBillingContext(entry: Pick<TimeEntry, "clientId"
 }
 
 export function normalizeTimeEntryRecord(entry: TimeEntry, clients: Client[], projects: Project[]): TimeEntry {
+  const entryType = getEntryType(entry);
   const project = getProjectById(entry.projectId, projects);
   const clientId = project?.clientId ?? entry.clientId;
   const client = clients.find((item) => item.id === clientId);
-  const billingRate = typeof entry.billingRate === "number" && entry.billingRate > 0
-    ? entry.billingRate
-    : project?.hourlyRate && project.hourlyRate > 0
-      ? project.hourlyRate
-      : client?.hourlyRate && client.hourlyRate > 0
-        ? client.hourlyRate
-        : undefined;
+  const billingRate = entryType === "fixed"
+    ? undefined
+    : typeof entry.billingRate === "number" && entry.billingRate > 0
+      ? entry.billingRate
+      : project?.hourlyRate && project.hourlyRate > 0
+        ? project.hourlyRate
+        : client?.hourlyRate && client.hourlyRate > 0
+          ? client.hourlyRate
+          : undefined;
 
   const billable = typeof entry.billable === "boolean" ? entry.billable : true;
   const invoiced = typeof entry.invoiced === "boolean" ? entry.invoiced : entry.status === "invoiced" || Boolean(entry.invoiceId);
+  const status = entryType === "fixed" && entry.status === "running"
+    ? "completed"
+    : invoiced
+      ? "invoiced"
+      : entry.status === "invoiced"
+        ? "completed"
+        : entry.status;
+
+  const fixedAmount = entryType === "fixed" && typeof entry.fixedAmount === "number" && Number.isFinite(entry.fixedAmount)
+    ? Number(entry.fixedAmount.toFixed(2))
+    : undefined;
+  const durationHours = entryType === "fixed"
+    ? 0
+    : getEntryHours(entry);
 
   return {
     ...entry,
+    entryType,
+    fixedAmount,
+    startTime: entry.startTime || "00:00",
+    endTime: entryType === "fixed" ? undefined : entry.endTime,
+    durationHours,
     billingRate,
     billable,
     invoiced,
+    invoiceStatus: status === "paid" ? "paid" : invoiced ? "invoiced" : "unbilled",
     invoiceId: invoiced ? entry.invoiceId ?? null : null,
-    status: invoiced ? "invoiced" : entry.status === "invoiced" ? "completed" : entry.status,
+    status,
     clientId,
     projectId: project?.id,
   };
@@ -90,12 +144,7 @@ export function normalizeTimeEntryRecord(entry: TimeEntry, clients: Client[], pr
 
 export function getTimeEntryAmount(entry: TimeEntry, clients: Client[], projects: Project[]) {
   const context = resolveTimeEntryBillingContext(entry, clients, projects);
-
-  if (!context.hourlyRate) {
-    return 0;
-  }
-
-  return roundCurrency(entry.durationHours * context.hourlyRate);
+  return getEntryBillableAmount(entry, context.hourlyRate);
 }
 
 export function getProjectBilledAmount(project: Project, entries: TimeEntry[], clients: Client[], projects: Project[]) {
@@ -170,6 +219,41 @@ export function getProjectWarningMessage(project: Project, snapshot: ProjectBudg
 
 export function getProjectLinkedInvoices(projectId: string, invoices: Invoice[]) {
   return invoices.filter((invoice) => invoice.projectIds.includes(projectId));
+}
+
+export function getProjectBillingInvoices(project: Project, invoices: Invoice[]) {
+  return invoices.filter((invoice) => {
+    const linkedToProject = invoice.projectId === project.id || invoice.projectIds.includes(project.id);
+    if (!linkedToProject) {
+      return false;
+    }
+
+    return Boolean(invoice.invoiceSourceType && PROJECT_BILLING_INVOICE_SOURCES.has(invoice.invoiceSourceType));
+  });
+}
+
+export function getProjectBillingSnapshot(project: Project, invoices: Invoice[]): ProjectBillingSnapshot {
+  const billingInvoices = getProjectBillingInvoices(project, invoices);
+  const fixedProjectAmount = getProjectFixedAmount(project);
+  const totalProjectInvoiced = roundCurrency(
+    billingInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0),
+  );
+  const totalProjectPaid = roundCurrency(
+    billingInvoices
+      .filter((invoice) => invoice.status === "paid" || Boolean(invoice.paidAt))
+      .reduce((sum, invoice) => sum + invoice.totalAmount, 0),
+  );
+  const remainingProjectBillableAmount = typeof fixedProjectAmount === "number"
+    ? roundCurrency(Math.max(0, fixedProjectAmount - totalProjectInvoiced))
+    : undefined;
+
+  return {
+    fixedProjectAmount,
+    totalProjectInvoiced,
+    totalProjectPaid,
+    remainingProjectBillableAmount,
+    outstandingProjectInvoiceBalance: roundCurrency(totalProjectInvoiced - totalProjectPaid),
+  };
 }
 
 export function getProjectDerivedMetrics(project: Project, entries: TimeEntry[], invoices: Invoice[], clients: Client[], projects: Project[]) {

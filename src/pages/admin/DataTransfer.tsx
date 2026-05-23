@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
+import { formatDateForInput, parseDateInput } from "@/lib/date";
 import {
   buildExportPayload,
   downloadExportFile,
@@ -27,6 +28,7 @@ function ExportSection() {
   const clients = useAppStore((s) => s.clients);
   const projects = useAppStore((s) => s.projects);
   const timeEntries = useAppStore((s) => s.timeEntries);
+  const expenses = useAppStore((s) => s.expenses);
 
   const [scope, setScope] = useState<"all" | "client" | "project" | "daterange">("all");
   const [clientId, setClientId] = useState<string>("");
@@ -42,9 +44,9 @@ function ExportSection() {
       dateTo: scope === "daterange" ? dateTo : undefined,
     };
 
-    const payload = buildExportPayload(clients, projects, timeEntries, options);
+    const payload = buildExportPayload(clients, projects, timeEntries, expenses, options);
 
-    if (payload.customers.length === 0 && payload.projects.length === 0 && payload.timeEntries.length === 0) {
+    if (payload.customers.length === 0 && payload.projects.length === 0 && payload.timeEntries.length === 0 && payload.expenses.length === 0) {
       toast({ title: "Nothing to export", description: "No data matched the current filter.", variant: "destructive" });
       return;
     }
@@ -52,7 +54,7 @@ function ExportSection() {
     downloadExportFile(payload);
     toast({
       title: "Export started",
-      description: `Exporting ${payload.customers.length} customer(s), ${payload.projects.length} project(s), ${payload.timeEntries.length} time ${payload.timeEntries.length === 1 ? "entry" : "entries"}.`,
+      description: `Exporting ${payload.customers.length} customer(s), ${payload.projects.length} project(s), ${payload.timeEntries.length} time ${payload.timeEntries.length === 1 ? "entry" : "entries"}, and ${payload.expenses.length} expense${payload.expenses.length === 1 ? "" : "s"}.`,
     });
   }
 
@@ -125,12 +127,12 @@ function ExportSection() {
         {scope === "daterange" && (
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs">From date</Label>
-              <Input type="date" value={dateFrom} onChange={(e: ChangeEvent<HTMLInputElement>) => setDateFrom(e.target.value)} />
+              <Label className="text-xs">Export Start Date</Label>
+              <Input type="date" value={formatDateForInput(dateFrom)} onChange={(e: ChangeEvent<HTMLInputElement>) => setDateFrom(parseDateInput(e.target.value))} />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">To date</Label>
-              <Input type="date" value={dateTo} onChange={(e: ChangeEvent<HTMLInputElement>) => setDateTo(e.target.value)} />
+              <Label className="text-xs">Export End Date</Label>
+              <Input type="date" value={formatDateForInput(dateTo)} onChange={(e: ChangeEvent<HTMLInputElement>) => setDateTo(parseDateInput(e.target.value))} />
             </div>
           </div>
         )}
@@ -159,12 +161,14 @@ function ImportSection() {
   const clients = useAppStore((s) => s.clients);
   const projects = useAppStore((s) => s.projects);
   const timeEntries = useAppStore((s) => s.timeEntries);
+  const expenses = useAppStore((s) => s.expenses);
   const addClient = useAppStore((s) => s.addClient);
   const updateClient = useAppStore((s) => s.updateClient);
   const addProject = useAppStore((s) => s.addProject);
   const updateProject = useAppStore((s) => s.updateProject);
   const addTimeEntry = useAppStore((s) => s.addTimeEntry);
   const updateTimeEntry = useAppStore((s) => s.updateTimeEntry);
+  const addExpense = useAppStore((s) => s.addExpense);
   const getState = useAppStore.getState;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -190,7 +194,7 @@ function ImportSection() {
     }
 
     setPayload(parsed.payload);
-    const pv = previewImport(parsed.payload, clients, projects, timeEntries, strategy);
+    const pv = previewImport(parsed.payload, clients, projects, timeEntries, expenses, strategy);
     setPreview(pv);
     setStep("preview");
 
@@ -200,7 +204,7 @@ function ImportSection() {
   function handleStrategyChange(newStrategy: ConflictStrategy) {
     setStrategy(newStrategy);
     if (payload) {
-      setPreview(previewImport(payload, clients, projects, timeEntries, newStrategy));
+      setPreview(previewImport(payload, clients, projects, timeEntries, expenses, newStrategy));
     }
   }
 
@@ -214,6 +218,7 @@ function ImportSection() {
       updateProject,
       addTimeEntry,
       updateTimeEntry,
+      addExpense,
       getClients: () => getState().clients,
       getProjects: () => getState().projects,
     };
@@ -222,7 +227,7 @@ function ImportSection() {
     setResult(importResult);
     setStep("done");
 
-    const total = importResult.customersImported + importResult.projectsImported + importResult.entriesImported;
+    const total = importResult.customersImported + importResult.projectsImported + importResult.entriesImported + importResult.expensesImported;
     if (importResult.failed > 0) {
       toast({ title: "Import completed with errors", description: `${total} items imported, ${importResult.failed} failed.`, variant: "destructive" });
     } else {
@@ -291,7 +296,7 @@ function ImportSection() {
                 Exported on {new Date(payload.exportedAt).toLocaleString()} · strategy: <span className="font-medium">{strategy}</span>
               </p>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-3 md:grid-cols-4">
                 <PreviewColumn
                   label="Customers"
                   toCreate={preview.customersToCreate.length}
@@ -312,6 +317,13 @@ function ImportSection() {
                   toUpdate={0}
                   toSkip={preview.entriesToSkip.length}
                   total={preview.totalEntries}
+                />
+                <PreviewColumn
+                  label="Expenses"
+                  toCreate={preview.expensesToCreate.length}
+                  toUpdate={0}
+                  toSkip={preview.expensesToSkip.length}
+                  total={preview.totalExpenses}
                 />
               </div>
 
@@ -354,6 +366,8 @@ function ImportSection() {
                 <SummaryRow label="Projects skipped" value={result.projectsSkipped} />
                 <SummaryRow label="Time entries imported" value={result.entriesImported} />
                 <SummaryRow label="Time entries skipped" value={result.entriesSkipped} />
+                <SummaryRow label="Expenses imported" value={result.expensesImported} />
+                <SummaryRow label="Expenses skipped" value={result.expensesSkipped} />
                 {result.failed > 0 && <SummaryRow label="Failed" value={result.failed} error />}
               </div>
 

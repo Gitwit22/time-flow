@@ -3,9 +3,10 @@ import { getPlatformSession, TIMEFLOW_API_BASE } from "@/lib/platformApi";
 import type { AttachedDocument } from "@/types";
 
 export type TimeflowDocumentEntityType = "client" | "project";
+export type TimeflowAttachmentEntityType = TimeflowDocumentEntityType | "expense" | "invoice";
 
 interface TimeflowDocumentRecord extends AttachedDocument {
-  entityType: TimeflowDocumentEntityType;
+  entityType: TimeflowAttachmentEntityType;
   entityId: string;
   createdAt: string;
   updatedAt: string;
@@ -41,7 +42,8 @@ function buildHeaders(contentType = true): Headers {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}) {
-  const headers = buildHeaders(true);
+  const shouldSetJsonContentType = !(typeof FormData !== "undefined" && init.body instanceof FormData);
+  const headers = buildHeaders(shouldSetJsonContentType);
   const customHeaders = init.headers ? new Headers(init.headers) : undefined;
   customHeaders?.forEach((value, key) => headers.set(key, value));
 
@@ -59,7 +61,7 @@ async function apiFetch(path: string, init: RequestInit = {}) {
   return response;
 }
 
-export async function listTimeflowDocuments(entityType: TimeflowDocumentEntityType): Promise<Record<string, AttachedDocument[]>> {
+export async function listTimeflowDocuments(entityType: TimeflowAttachmentEntityType): Promise<Record<string, AttachedDocument[]>> {
   const response = await apiFetch(`/api/timeflow/documents?entityType=${encodeURIComponent(entityType)}`, {
     method: "GET",
   });
@@ -77,7 +79,7 @@ export async function listTimeflowDocuments(entityType: TimeflowDocumentEntityTy
 }
 
 export async function createTimeflowDocument(
-  entityType: TimeflowDocumentEntityType,
+  entityType: TimeflowAttachmentEntityType,
   entityId: string,
   document: Omit<AttachedDocument, "id">,
 ): Promise<AttachedDocument> {
@@ -135,6 +137,62 @@ export async function uploadTimeflowDocumentFile(file: File): Promise<string> {
   }
 
   return data.key;
+}
+
+export async function uploadTimeflowEntityDocumentFile(
+  file: File,
+  entityType: TimeflowAttachmentEntityType,
+  entityId: string,
+): Promise<string> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("entityType", entityType);
+  form.append("entityId", entityId);
+
+  const response = await apiFetch("/api/timeflow/documents/upload", {
+    method: "POST",
+    headers: buildHeaders(false),
+    body: form,
+  });
+
+  const data = (await response.json()) as { key?: string };
+  if (!data.key) {
+    throw new Error("Upload succeeded but no storage key was returned.");
+  }
+
+  return data.key;
+}
+
+export async function archiveTimeflowDocument(documentId: string): Promise<AttachedDocument> {
+  const response = await apiFetch(`/api/timeflow/documents/${encodeURIComponent(documentId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ status: "archived" }),
+  });
+
+  const data = (await response.json()) as { document: AttachedDocument };
+  return data.document;
+}
+
+export async function getTimeflowDocumentViewUrl(documentId: string): Promise<string> {
+  const response = await apiFetch(`/api/timeflow/documents/${encodeURIComponent(documentId)}/view-url`, {
+    method: "GET",
+  });
+  const data = (await response.json()) as { url?: string };
+  if (!data.url) {
+    throw new Error("View URL is unavailable for this document.");
+  }
+  return data.url;
+}
+
+export async function getTimeflowDocumentResolvedDownloadUrl(documentId: string): Promise<string> {
+  const response = await apiFetch(`/api/timeflow/documents/${encodeURIComponent(documentId)}/download-url`, {
+    method: "GET",
+  });
+  const data = (await response.json()) as { url?: string };
+  if (!data.url) {
+    throw new Error("Download URL is unavailable for this document.");
+  }
+  return data.url;
 }
 
 export function getTimeflowDocumentDownloadUrl(documentId: string): string {

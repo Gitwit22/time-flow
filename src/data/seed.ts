@@ -59,6 +59,8 @@ export function createSeedData() {
     invoiceLogoDataUrl: undefined,
     invoiceBannerDataUrl: undefined,
     companyViewerAccess: false,
+    payPeriodFrequency: "monthly",
+    payPeriodStartDate: "2026-01-01",
     periodWeekStartsOn: 1,
     periodTargetHours: 0,
     periodTargetEarnings: 0,

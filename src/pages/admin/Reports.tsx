@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line } from "recharts";
 import { getBillingSummary, getMonthlyEarnings } from "@/lib/billing";
 import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/calculations";
-import { formatCurrency, formatHours, getBillingPeriod } from "@/lib/date";
+import { formatCurrency, formatHours } from "@/lib/date";
+import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
 
 const pieColors = {
@@ -22,17 +23,38 @@ export default function Reports() {
   const settings = useAppStore((state) => state.settings);
   const clients = useAppStore((state) => state.clients);
   const projects = useAppStore((state) => state.projects);
-  const billingFrequency = settings.invoiceFrequency ?? currentUser.invoiceFrequency;
-  const billingPeriod = getBillingPeriod(new Date(), billingFrequency, settings.periodWeekStartsOn);
-  const periodHours = getPeriodHours(timeEntries, billingPeriod.start, billingPeriod.end);
-  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.start, end: billingPeriod.end });
+  const expenses = useAppStore((state) => state.expenses);
+  const projectBills = useAppStore((state) => state.projectBills);
+  const billingPeriod = getCurrentPayPeriod(
+    {
+      payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+      payPeriodStartDate: settings.payPeriodStartDate,
+      periodWeekStartsOn: settings.periodWeekStartsOn,
+    },
+    new Date(),
+  );
+  const periodHours = getPeriodHours(timeEntries, billingPeriod.startDate, billingPeriod.endDate);
+  const periodBilling = getBillingSummary(timeEntries, clients, projects, { start: billingPeriod.startDate, end: billingPeriod.endDate });
+  const payPeriodSummary = summarizePayPeriod({
+    entries: periodBilling.lines.map((line) => ({ amount: line.amount, date: line.entry.date, durationHours: line.entry.durationHours })),
+    expenses,
+    invoices,
+    period: billingPeriod,
+  });
   const weeklyHours = getWeeklyHours(timeEntries);
   const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
-  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects);
+  const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects, projectBills);
   const statusTotals = getInvoiceStatusCounts(invoices);
   const totalInvoiced = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
   const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "paid");
   const unpaidBalance = unpaidInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const nonVoidProjectBills = projectBills.filter((bill) => bill.status !== "void");
+  const paidProjectBillRevenue = nonVoidProjectBills.filter((bill) => bill.status === "paid").reduce((sum, bill) => sum + bill.amount, 0);
+  const unpaidProjectBillRevenue = nonVoidProjectBills.filter((bill) => bill.status !== "paid").reduce((sum, bill) => sum + bill.amount, 0);
+  const fixedProjectBillRevenue = nonVoidProjectBills.reduce((sum, bill) => sum + bill.amount, 0);
+  const totalRevenue = totalInvoiced + fixedProjectBillRevenue;
+  const paidRevenue = invoices.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + invoice.totalAmount, 0) + paidProjectBillRevenue;
+  const outstandingRevenue = unpaidBalance + unpaidProjectBillRevenue;
   const isReadonly = currentUser.role === "client_viewer";
 
   const invoiceStatus = [
@@ -49,16 +71,44 @@ export default function Reports() {
         <p className="page-subtitle">Your earnings, hours, and billing overview.</p>
       </div>
 
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-heading">Current Pay Period Summary</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-5">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Gross Time</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.timeEarnings)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Fixed Bills</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(fixedProjectBillRevenue)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Expenses</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.expenseTotal)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Net</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.netAmount + fixedProjectBillRevenue)}</p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Invoices in Period</p>
+            <p className="mt-1 text-sm font-medium">{formatCurrency(payPeriodSummary.invoiceTotal)}</p>
+          </div>
+        </CardContent>
+      </Card>
+
       {isReadonly ? <div className="readonly-banner">Viewer mode: report data is visible but cannot be modified.</div> : null}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard title="This Week" value={formatHours(thisWeekHours)} icon={Clock} iconClassName="bg-accent/10 text-accent" />
         <SummaryCard title="Current Period" value={formatHours(periodHours)} subtitle={periodBilling.missingRateEntries.length ? `${periodBilling.missingRateEntries.length} entries missing rates` : "All rated work included"} icon={Clock} iconClassName="bg-primary/10 text-primary" />
-        <SummaryCard title="Total Invoiced" value={formatCurrency(totalInvoiced)} icon={FileText} iconClassName="bg-success/10 text-success" />
+        <SummaryCard title="Total Revenue" value={formatCurrency(totalRevenue)} subtitle={`Paid ${formatCurrency(paidRevenue)}`} icon={FileText} iconClassName="bg-success/10 text-success" />
         <SummaryCard
-          title="Unpaid Balance"
-          value={formatCurrency(unpaidBalance)}
-          subtitle={`${unpaidInvoices.length} invoice${unpaidInvoices.length === 1 ? "" : "s"} pending`}
+          title="Outstanding Revenue"
+          value={formatCurrency(outstandingRevenue)}
+          subtitle={`${unpaidInvoices.length} invoice${unpaidInvoices.length === 1 ? "" : "s"} + ${nonVoidProjectBills.filter((bill) => bill.status !== "paid").length} fixed bill${nonVoidProjectBills.filter((bill) => bill.status !== "paid").length === 1 ? "" : "s"}`}
           icon={DollarSign}
           iconClassName="bg-warning/10 text-warning"
         />
