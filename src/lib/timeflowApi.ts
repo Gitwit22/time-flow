@@ -123,6 +123,8 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
     rejectionReason: (r.rejectionReason as string) ?? undefined,
     reviewedBy: (r.reviewedBy as string) ?? undefined,
     reviewedAt: (r.reviewedAt as string) ?? undefined,
+    timeType: (r.timeType as TimeEntry["timeType"]) ?? "worked",
+    leaveType: (r.leaveType as TimeEntry["leaveType"]) ?? null,
   };
 }
 

@@ -188,6 +188,8 @@ export interface TimeEntry {
   rejectionReason?: string;
   reviewedBy?: string;
   reviewedAt?: string;
+  timeType?: "worked" | "leave" | "manual" | "correction";
+  leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
 }
 
 export interface Expense {

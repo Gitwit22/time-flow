@@ -39,6 +39,8 @@ function emptyState(clientId = "") {
     invoiceId: null,
     notes: "",
     status: "completed" as const,
+    timeType: "worked" as const,
+    leaveType: null as const,
   };
 }
 
@@ -232,6 +234,37 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
               Client auto-filled from project: {selectedProject ? clients.find((client) => client.id === selectedProject.clientId)?.name ?? "Unknown client" : "Select a project"}
             </div>
           ) : null}
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <Label className="text-xs">Entry Category *</Label>
+            <Select
+              value={`${form.timeType ?? "worked"}${form.timeType === "leave" ? `:${form.leaveType ?? ""}` : ""}`}
+              onValueChange={(value) => {
+                const [timeType, leaveType] = value.split(":");
+                setForm((current) => ({
+                  ...current,
+                  timeType: timeType as TimeEntry["timeType"],
+                  leaveType: leaveType ? (leaveType as TimeEntry["leaveType"]) : null,
+                }));
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="worked">Regular Work</SelectItem>
+                <SelectItem value="manual">Manual Entry</SelectItem>
+                <SelectItem value="leave:pto">PTO</SelectItem>
+                <SelectItem value="leave:vacation">Vacation</SelectItem>
+                <SelectItem value="leave:sick">Sick Leave</SelectItem>
+                <SelectItem value="leave:holiday">Holiday</SelectItem>
+                <SelectItem value="leave:unpaid">Unpaid Leave</SelectItem>
+                <SelectItem value="leave:bereavement">Bereavement Leave</SelectItem>
+                <SelectItem value="leave:admin_leave">Admin Leave</SelectItem>
+                <SelectItem value="correction">Correction</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           {entryType === "time" ? (
             <>

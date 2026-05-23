@@ -45,6 +45,8 @@ export interface ExportTimeEntry {
   invoiced: boolean;
   notes: string;
   status: string;
+  timeType?: "worked" | "leave" | "manual" | "correction";
+  leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
 }
 
 export interface ExportExpense {
@@ -131,6 +133,8 @@ function toExportTimeEntry(entry: TimeEntry): ExportTimeEntry {
     invoiced: entry.invoiced,
     notes: entry.notes,
     status: entry.status,
+    timeType: entry.timeType,
+    leaveType: entry.leaveType,
   };
 }
 

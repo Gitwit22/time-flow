@@ -115,6 +115,22 @@ function statusClass(status: ChecklistStatus) {
 }
 
 function classifyHourBucket(entry: TimeEntry): HourBucket {
+  // Use explicit timeType and leaveType fields for categorization
+  // Fallback to keyword inference for older entries that haven't been backfilled yet
+  
+  if (entry.timeType === "leave" && entry.leaveType) {
+    // Direct mapping from leaveType
+    if (entry.leaveType === "pto") return "pto";
+    if (entry.leaveType === "vacation") return "vacation";
+    if (entry.leaveType === "sick") return "sick";
+    if (entry.leaveType === "holiday") return "holiday";
+    if (entry.leaveType === "unpaid" || entry.leaveType === "bereavement" || entry.leaveType === "admin_leave") return "unpaid_leave";
+  }
+  
+  if (entry.timeType === "manual") return "manual";
+  if (entry.timeType === "correction") return "regular"; // Corrections should be categorized with regular hours
+  
+  // Fallback to keyword inference for backward compatibility with pre-migration entries
   const note = entry.notes.toLowerCase();
   if (/\bpto\b/.test(note)) return "pto";
   if (/\bvacation\b/.test(note)) return "vacation";
@@ -122,8 +138,10 @@ function classifyHourBucket(entry: TimeEntry): HourBucket {
   if (/\bholiday\b/.test(note)) return "holiday";
   if (/\bunpaid\b|\bleave\b/.test(note) && /\bunpaid\b/.test(note)) return "unpaid_leave";
 
+  // If no explicit timeType, infer from entry structure
   const isManualTime = !entry.clockInAt && !entry.clockOutAt;
   if (isManualTime) return "manual";
+  
   return "regular";
 }
 

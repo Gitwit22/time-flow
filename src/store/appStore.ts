@@ -1017,6 +1017,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       invoiced: false,
       invoiceId: null,
       organizationId: state.activeOrganizationId,
+      timeType: "worked",
+      leaveType: null,
     };
     const normalizedEntry = normalizeTimeEntryRecord(entry, state.clients, state.projects);
 
