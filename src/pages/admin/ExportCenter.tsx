@@ -17,8 +17,9 @@ import type { TimeEntry } from "@/types";
 type ExportType = "mission_hub_timesheet" | "csv_backup" | "pdf_summary";
 type ChecklistStatus = "ready" | "warning" | "blocked";
 type ApprovalStatus = "pending" | "approved" | "rejected";
+type ReportScope = "company" | "individual";
 
-type HourBucket = "regular" | "manual" | "pto" | "vacation" | "sick" | "holiday" | "unpaid_leave";
+type HourBucket = "regular" | "manual" | "pto" | "vacation" | "sick" | "holiday" | "unpaid_leave" | "correction";
 
 interface EmployeeProjectSummary {
   projectId?: string;
@@ -35,6 +36,7 @@ interface EmployeeExportRow {
   employeeName: string;
   employeeEmail?: string;
   regularHours: number;
+  correctionHours: number;
   manualHours: number;
   ptoHours: number;
   vacationHours: number;
@@ -66,6 +68,7 @@ interface MissionHubTimesheetExportPackage {
     totalEmployees: number;
     totalHours: number;
     regularHours: number;
+    correctionHours: number;
     manualHours: number;
     ptoHours: number;
     vacationHours: number;
@@ -128,7 +131,7 @@ function classifyHourBucket(entry: TimeEntry): HourBucket {
   }
   
   if (entry.timeType === "manual") return "manual";
-  if (entry.timeType === "correction") return "regular"; // Corrections should be categorized with regular hours
+  if (entry.timeType === "correction") return "correction";
   
   // Fallback to keyword inference for backward compatibility with pre-migration entries
   const note = entry.notes.toLowerCase();
@@ -145,8 +148,23 @@ function classifyHourBucket(entry: TimeEntry): HourBucket {
   return "regular";
 }
 
-function isInRange(date: string, startDate: string, endDate: string) {
-  return date >= startDate && date <= endDate;
+function getEntryDateKey(entry: TimeEntry) {
+  if (typeof entry.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(entry.date)) {
+    return entry.date;
+  }
+  if (entry.clockInAt) {
+    return entry.clockInAt.slice(0, 10);
+  }
+  return "";
+}
+
+function isInRange(entry: TimeEntry, startDate: string, endDate: string) {
+  const dateKey = getEntryDateKey(entry);
+  return Boolean(dateKey) && dateKey >= startDate && dateKey <= endDate;
+}
+
+function getEntryEmployeeId(entry: TimeEntry) {
+  return entry.employeeMemberId || entry.userId || entry.workerName?.trim() || "unassigned";
 }
 
 function downloadTextFile(content: string, filename: string, mimeType: string) {
@@ -178,6 +196,7 @@ export default function ExportCenter() {
   const projects = useAppStore((state) => state.projects);
   const clients = useAppStore((state) => state.clients);
   const activeSession = useAppStore((state) => state.activeSession);
+  const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
 
   const initialPeriod = getCurrentPayPeriod(
     {
@@ -203,6 +222,8 @@ export default function ExportCenter() {
   const [payPeriodEnd, setPayPeriodEnd] = useState(initialPeriod.endDate);
   const [workspaceId, setWorkspaceId] = useState(activeOrganizationId ?? workspaceOptions[0]?.id ?? "workspace-default");
   const [exportType, setExportType] = useState<ExportType>("mission_hub_timesheet");
+  const [reportScope, setReportScope] = useState<ReportScope>("company");
+  const [reportEmployeeId, setReportEmployeeId] = useState<string>("all");
   const [previewPayload, setPreviewPayload] = useState<MissionHubTimesheetExportPackage | null>(null);
   const [exportMarked, setExportMarked] = useState(false);
   const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
@@ -212,20 +233,73 @@ export default function ExportCenter() {
   const clientById = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
   const projectById = useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
 
+  const validStatuses = useMemo(
+    () => new Set<TimeEntry["status"]>(["running", "active", "open", "completed", "pending_approval", "approved", "rejected", "invoiced", "paid"]),
+    [],
+  );
+
   const periodEntries = useMemo(
-    () => timeEntries.filter((entry) => isInRange(entry.date, payPeriodStart, payPeriodEnd)),
-    [payPeriodEnd, payPeriodStart, timeEntries],
+    () => timeEntries.filter((entry) => validStatuses.has(entry.status) && isInRange(entry, payPeriodStart, payPeriodEnd)),
+    [payPeriodEnd, payPeriodStart, timeEntries, validStatuses],
   );
 
-  const outOfScopeEntries = useMemo(
-    () => periodEntries.filter((entry) => Boolean(entry.organizationId) && entry.organizationId !== workspaceId),
-    [periodEntries, workspaceId],
+  const scopeAnalysis = useMemo(() => {
+    const scoped: TimeEntry[] = [];
+    const repairable: TimeEntry[] = [];
+    const outOfScope: TimeEntry[] = [];
+    const unresolved: TimeEntry[] = [];
+
+    for (const entry of periodEntries) {
+      const entryWorkspaceId = entry.workspaceId || entry.organizationId;
+      const projectWorkspaceId = entry.projectId ? (projectById.get(entry.projectId)?.workspaceId || projectById.get(entry.projectId)?.organizationId) : undefined;
+      const clientWorkspaceId = clientById.get(entry.clientId)?.workspaceId || clientById.get(entry.clientId)?.organizationId;
+      const resolvedWorkspaceId = entryWorkspaceId || projectWorkspaceId || clientWorkspaceId;
+
+      if (resolvedWorkspaceId === workspaceId) {
+        if (entryWorkspaceId) scoped.push(entry);
+        else repairable.push(entry);
+        continue;
+      }
+
+      if (!resolvedWorkspaceId) {
+        unresolved.push(entry);
+      } else {
+        outOfScope.push(entry);
+      }
+    }
+
+    return { scoped, repairable, outOfScope, unresolved };
+  }, [clientById, periodEntries, projectById, workspaceId]);
+
+  const workspaceScopedEntries = useMemo(
+    () => [...scopeAnalysis.scoped, ...scopeAnalysis.repairable],
+    [scopeAnalysis.repairable, scopeAnalysis.scoped],
   );
 
-  const scopedEntries = useMemo(
-    () => periodEntries.filter((entry) => !entry.organizationId || entry.organizationId === workspaceId),
-    [periodEntries, workspaceId],
-  );
+  const reportEmployeeOptions = useMemo(() => {
+    const grouped = new Map<string, { id: string; name: string; email?: string }>();
+
+    for (const entry of workspaceScopedEntries) {
+      const member = entry.employeeMemberId ? memberById.get(entry.employeeMemberId) : undefined;
+      const userMember = entry.userId ? memberByUserId.get(entry.userId) : undefined;
+      const id = getEntryEmployeeId(entry);
+      if (grouped.has(id)) continue;
+      grouped.set(id, {
+        id,
+        name: entry.workerName || member?.name || userMember?.name || "Unassigned",
+        email: member?.email || userMember?.email,
+      });
+    }
+
+    return [...grouped.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [memberById, memberByUserId, workspaceScopedEntries]);
+
+  const scopedEntries = useMemo(() => {
+    if (reportScope === "individual" && reportEmployeeId !== "all") {
+      return workspaceScopedEntries.filter((entry) => getEntryEmployeeId(entry) === reportEmployeeId);
+    }
+    return workspaceScopedEntries;
+  }, [reportEmployeeId, reportScope, workspaceScopedEntries]);
 
   const unassignedEntries = useMemo(
     () => scopedEntries.filter((entry) => !entry.employeeMemberId && !entry.userId && !entry.workerName?.trim()),
@@ -239,6 +313,7 @@ export default function ExportCenter() {
 
   const summaryHours = useMemo(() => {
     let regularHours = 0;
+    let correctionHours = 0;
     let manualHours = 0;
     let ptoHours = 0;
     let vacationHours = 0;
@@ -253,6 +328,7 @@ export default function ExportCenter() {
       const bucket = classifyHourBucket(entry);
 
       if (bucket === "regular") regularHours += hours;
+      if (bucket === "correction") correctionHours += hours;
       if (bucket === "manual") manualHours += hours;
       if (bucket === "pto") ptoHours += hours;
       if (bucket === "vacation") vacationHours += hours;
@@ -266,6 +342,7 @@ export default function ExportCenter() {
 
     return {
       regularHours: roundHours(regularHours),
+      correctionHours: roundHours(correctionHours),
       manualHours: roundHours(manualHours),
       ptoHours: roundHours(ptoHours),
       vacationHours: roundHours(vacationHours),
@@ -274,7 +351,7 @@ export default function ExportCenter() {
       unpaidLeaveHours: roundHours(unpaidLeaveHours),
       billableHours: roundHours(billableHours),
       nonBillableHours: roundHours(nonBillableHours),
-      totalHours: roundHours(regularHours + manualHours + ptoHours + vacationHours + sickHours + holidayHours + unpaidLeaveHours),
+      totalHours: roundHours(regularHours + correctionHours + manualHours + ptoHours + vacationHours + sickHours + holidayHours + unpaidLeaveHours),
     };
   }, [scopedEntries]);
 
@@ -294,6 +371,7 @@ export default function ExportCenter() {
           employeeName,
           employeeEmail,
           regularHours: 0,
+          correctionHours: 0,
           manualHours: 0,
           ptoHours: 0,
           vacationHours: 0,
@@ -317,6 +395,7 @@ export default function ExportCenter() {
       const bucket = classifyHourBucket(entry);
 
       if (bucket === "regular") row.regularHours += hours;
+      if (bucket === "correction") row.correctionHours += hours;
       if (bucket === "manual") row.manualHours += hours;
       if (bucket === "pto") row.ptoHours += hours;
       if (bucket === "vacation") row.vacationHours += hours;
@@ -361,6 +440,7 @@ export default function ExportCenter() {
         row.approvalStatus = hasRejected ? "rejected" : allApproved ? "approved" : "pending";
 
         row.regularHours = roundHours(row.regularHours);
+        row.correctionHours = roundHours(row.correctionHours);
         row.manualHours = roundHours(row.manualHours);
         row.ptoHours = roundHours(row.ptoHours);
         row.vacationHours = roundHours(row.vacationHours);
@@ -414,8 +494,20 @@ export default function ExportCenter() {
       },
       {
         label: "All time entries scoped to this workspace",
-        status: outOfScopeEntries.length === 0 ? "ready" : "blocked",
-        detail: outOfScopeEntries.length === 0 ? "All entries match the selected workspace." : `${outOfScopeEntries.length} entries belong to a different workspace.`,
+        status:
+          scopeAnalysis.outOfScope.length > 0 || scopeAnalysis.unresolved.length > 0
+            ? "blocked"
+            : scopeAnalysis.repairable.length > 0
+              ? "warning"
+              : "ready",
+        detail:
+          scopeAnalysis.outOfScope.length > 0
+            ? `${scopeAnalysis.outOfScope.length} entries belong to another workspace.`
+            : scopeAnalysis.unresolved.length > 0
+              ? `${scopeAnalysis.unresolved.length} entries cannot be resolved to a workspace yet.`
+              : scopeAnalysis.repairable.length > 0
+                ? `${scopeAnalysis.repairable.length} entries are repairable through linked project/client scope.`
+                : "All entries match the selected workspace.",
       },
       {
         label: "All projects/clients mapped where required",
@@ -433,7 +525,15 @@ export default function ExportCenter() {
         detail: approvalsPending.length === 0 ? "All entries are approved/invoiced/paid." : `${approvalsPending.length} entries are pending approval or rejected.`,
       },
     ] as Array<{ label: string; status: ChecklistStatus; detail: string }>;
-  }, [activeSession.isActive, outOfScopeEntries.length, scopedEntries, unassignedEntries.length, unmappedEntries.length]);
+  }, [
+    activeSession.isActive,
+    scopeAnalysis.outOfScope.length,
+    scopeAnalysis.repairable.length,
+    scopeAnalysis.unresolved.length,
+    scopedEntries,
+    unassignedEntries.length,
+    unmappedEntries.length,
+  ]);
 
   const hasBlockedChecklistItems = checklist.some((item) => item.status === "blocked");
 
@@ -444,6 +544,7 @@ export default function ExportCenter() {
     totalEmployees: employeeRows.length,
     totalHours: summaryHours.totalHours,
     regularHours: summaryHours.regularHours,
+    correctionHours: summaryHours.correctionHours,
     manualHours: summaryHours.manualHours,
     ptoHours: summaryHours.ptoHours,
     vacationHours: summaryHours.vacationHours,
@@ -480,6 +581,7 @@ export default function ExportCenter() {
         employeeName: row.employeeName,
         employeeEmail: row.employeeEmail,
         regularHours: row.regularHours,
+        correctionHours: row.correctionHours,
         manualHours: row.manualHours,
         ptoHours: row.ptoHours,
         vacationHours: row.vacationHours,
@@ -515,12 +617,13 @@ export default function ExportCenter() {
   };
 
   const handleDownloadCsv = () => {
-    const header = ["Employee", "Regular", "Manual", "PTO", "Sick", "Vacation", "Holiday", "Total", "Status"];
+    const header = ["Employee", "Regular", "Correction", "Manual", "PTO", "Sick", "Vacation", "Holiday", "Total", "Status"];
     const lines = [
       header.join(","),
       ...employeeRows.map((row) => [
         toCsvCell(row.employeeName),
         toCsvCell(row.regularHours),
+        toCsvCell(row.correctionHours),
         toCsvCell(row.manualHours),
         toCsvCell(row.ptoHours),
         toCsvCell(row.sickHours),
@@ -585,6 +688,25 @@ export default function ExportCenter() {
     toast({ title: "Mission Hub export created", description: `Export ${payload.exportId} generated successfully.` });
   };
 
+  const handleRepairWorkspaceScope = () => {
+    if (scopeAnalysis.repairable.length === 0) {
+      toast({ title: "No repair needed", description: "There are no repairable entries for this workspace." });
+      return;
+    }
+
+    for (const entry of scopeAnalysis.repairable) {
+      updateTimeEntry(entry.id, {
+        workspaceId,
+        organizationId: workspaceId,
+      });
+    }
+
+    toast({
+      title: "Workspace scope repaired",
+      description: `Applied workspace scope to ${scopeAnalysis.repairable.length} time entries.`,
+    });
+  };
+
   return (
     <div className="space-y-6 max-w-7xl">
       <PageHeader
@@ -602,7 +724,7 @@ export default function ExportCenter() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-heading">1. Select pay period</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
           <div className="space-y-1.5">
             <Label className="text-xs">Pay Period Start</Label>
             <Input type="date" value={payPeriodStart} onChange={(event) => setPayPeriodStart(event.target.value)} />
@@ -637,6 +759,36 @@ export default function ExportCenter() {
               </SelectContent>
             </Select>
           </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Report Scope</Label>
+            <Select value={reportScope} onValueChange={(value) => setReportScope(value as ReportScope)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="company">Full Company / All Employees</SelectItem>
+                <SelectItem value="individual">Individual Employee</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Employee</Label>
+            <Select
+              value={reportEmployeeId}
+              onValueChange={setReportEmployeeId}
+              disabled={reportScope !== "individual"}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={reportScope === "individual" ? "Select employee" : "All employees"} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All employees</SelectItem>
+                {reportEmployeeOptions.map((employee) => (
+                  <SelectItem key={employee.id} value={employee.id}>{employee.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </CardContent>
       </Card>
 
@@ -646,6 +798,14 @@ export default function ExportCenter() {
             <CardTitle className="text-base font-heading">2. Export readiness checklist</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
+            {scopeAnalysis.repairable.length > 0 ? (
+              <div className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-warning">{scopeAnalysis.repairable.length} entries are missing workspace scope but can be repaired.</p>
+                  <Button size="sm" variant="outline" onClick={handleRepairWorkspaceScope}>Repair Workspace Scope</Button>
+                </div>
+              </div>
+            ) : null}
             {checklist.map((item) => (
               <div key={item.label} className="rounded-lg border px-3 py-2">
                 <div className="flex items-center justify-between gap-3">
@@ -668,6 +828,7 @@ export default function ExportCenter() {
             <div><p className="text-xs text-muted-foreground uppercase">Total employees</p><p className="text-sm font-semibold">{employeeRows.length}</p></div>
             <div><p className="text-xs text-muted-foreground uppercase">Total hours</p><p className="text-sm font-semibold">{summaryHours.totalHours.toFixed(2)}</p></div>
             <div><p className="text-xs text-muted-foreground uppercase">Regular hours</p><p className="text-sm font-semibold">{summaryHours.regularHours.toFixed(2)}</p></div>
+            <div><p className="text-xs text-muted-foreground uppercase">Correction hours</p><p className="text-sm font-semibold">{summaryHours.correctionHours.toFixed(2)}</p></div>
             <div><p className="text-xs text-muted-foreground uppercase">Manual hours</p><p className="text-sm font-semibold">{summaryHours.manualHours.toFixed(2)}</p></div>
             <div><p className="text-xs text-muted-foreground uppercase">PTO hours</p><p className="text-sm font-semibold">{summaryHours.ptoHours.toFixed(2)}</p></div>
             <div><p className="text-xs text-muted-foreground uppercase">Vacation hours</p><p className="text-sm font-semibold">{summaryHours.vacationHours.toFixed(2)}</p></div>
@@ -694,6 +855,7 @@ export default function ExportCenter() {
                 <tr className="border-b">
                   <th className="px-3 py-2 text-left font-medium">Employee</th>
                   <th className="px-3 py-2 text-right font-medium">Regular</th>
+                  <th className="px-3 py-2 text-right font-medium">Correction</th>
                   <th className="px-3 py-2 text-right font-medium">Manual</th>
                   <th className="px-3 py-2 text-right font-medium">PTO</th>
                   <th className="px-3 py-2 text-right font-medium">Sick</th>
@@ -717,6 +879,7 @@ export default function ExportCenter() {
                           {row.employeeEmail ? <div className="text-xs text-muted-foreground">{row.employeeEmail}</div> : null}
                         </td>
                         <td className="px-3 py-2 text-right">{row.regularHours.toFixed(2)}</td>
+                        <td className="px-3 py-2 text-right">{row.correctionHours.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{row.manualHours.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{row.ptoHours.toFixed(2)}</td>
                         <td className="px-3 py-2 text-right">{row.sickHours.toFixed(2)}</td>
@@ -740,7 +903,7 @@ export default function ExportCenter() {
                       </tr>
                       {isExpanded ? (
                         <tr className="border-b bg-muted/20">
-                          <td colSpan={10} className="px-3 py-3">
+                          <td colSpan={11} className="px-3 py-3">
                             <div className="space-y-3">
                               <div>
                                 <p className="text-xs uppercase tracking-wide text-muted-foreground">Source time entries</p>
@@ -775,7 +938,7 @@ export default function ExportCenter() {
                   );
                 }) : (
                   <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center text-sm text-muted-foreground">
+                    <td colSpan={11} className="px-3 py-8 text-center text-sm text-muted-foreground">
                       No time entries found for the selected pay period and workspace.
                     </td>
                   </tr>

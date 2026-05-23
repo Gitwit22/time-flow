@@ -48,6 +48,7 @@ export function toClient(r: ApiRecord): Client {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     name: r.name as string,
     contactName: (r.contactName as string) ?? undefined,
     contactEmail: (r.contactEmail as string) ?? undefined,
@@ -72,6 +73,7 @@ export function toProject(r: ApiRecord): Project {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     name: r.name as string,
     clientId: r.clientId as string,
     status: r.status as Project["status"],
@@ -101,6 +103,7 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     employeeMemberId: (r.employeeMemberId as string) ?? undefined,
     userId: (r.userId as string) ?? undefined,
     entryType,
@@ -125,6 +128,8 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
     reviewedAt: (r.reviewedAt as string) ?? undefined,
     timeType: (r.timeType as TimeEntry["timeType"]) ?? "worked",
     leaveType: (r.leaveType as TimeEntry["leaveType"]) ?? null,
+    sourceType: (r.sourceType as TimeEntry["sourceType"]) ?? undefined,
+    sourceRequestId: (r.sourceRequestId as string) ?? undefined,
   };
 }
 
@@ -132,6 +137,7 @@ export function toInvoice(r: ApiRecord): Invoice {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     clientId: r.clientId as string,
     projectId: (r.projectId as string) ?? undefined,
     invoiceSourceType: (r.invoiceSourceType as Invoice["invoiceSourceType"]) ?? undefined,
@@ -166,6 +172,7 @@ export function toExpense(r: ApiRecord): Expense {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     amount: (r.amount as number) || 0,
     category: ((r.category as Expense["category"]) ?? "other"),
     billableToClient: r.billableToClient !== false,
@@ -188,6 +195,7 @@ export function toProjectBill(r: ApiRecord): ProjectBill {
   return {
     id: r.id as string,
     organizationId: (r.organizationId as string) ?? undefined,
+    workspaceId: (r.workspaceId as string) ?? ((r.organizationId as string) ?? undefined),
     projectId: (r.projectId as string) ?? undefined,
     clientId: r.clientId as string,
     title: (r.title as string) || "",
@@ -282,6 +290,70 @@ export const apiBulkUpdateTimeEntries = (
   ids: string[],
   data: { invoiced?: boolean; invoiceId?: string | null; status?: string },
 ) => apiRequest<{ updated: number }>("PATCH", "/time-entries/bulk", { ids, ...data });
+
+export interface TimeOffRequestRecord {
+  id: string;
+  workspaceId: string;
+  employeeId: string;
+  leaveType: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave";
+  startDate: string;
+  endDate: string;
+  hoursRequested: number;
+  status: "pending" | "approved" | "denied" | "cancelled";
+  reason?: string;
+  reviewerNote?: string;
+  requestedBy: string;
+  requestedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  generatedTimeEntryIds?: string[];
+}
+
+export const apiCreateTimeOffRequest = (data: Record<string, unknown>) =>
+  apiRequest<{ request: TimeOffRequestRecord; generatedEntries?: TimeEntry[] }>("POST", "/time-off-requests", data);
+
+export const apiListTimeOffRequests = () =>
+  apiRequest<TimeOffRequestRecord[]>("GET", "/time-off-requests");
+
+export const apiGetTimeOffRequest = (id: string) =>
+  apiRequest<TimeOffRequestRecord>("GET", `/time-off-requests/${id}`);
+
+export const apiUpdateTimeOffRequest = (id: string, data: Record<string, unknown>) =>
+  apiRequest<TimeOffRequestRecord>("PATCH", `/time-off-requests/${id}`, data);
+
+export const apiApproveTimeOffRequest = (id: string, data?: Record<string, unknown>) =>
+  apiRequest<{ request: TimeOffRequestRecord; generatedEntries: TimeEntry[] }>("POST", `/time-off-requests/${id}/approve`, data);
+
+export const apiDenyTimeOffRequest = (id: string, data?: Record<string, unknown>) =>
+  apiRequest<TimeOffRequestRecord>("POST", `/time-off-requests/${id}/deny`, data);
+
+export const apiCancelTimeOffRequest = (id: string) =>
+  apiRequest<TimeOffRequestRecord>("POST", `/time-off-requests/${id}/cancel`);
+
+export const apiGetPayPeriodSummary = (params: {
+  startDate: string;
+  endDate: string;
+  workspaceId?: string;
+  employeeId?: string;
+}) =>
+  apiRequest<Record<string, unknown>>("GET", `/exports/pay-period-summary?startDate=${encodeURIComponent(params.startDate)}&endDate=${encodeURIComponent(params.endDate)}${params.workspaceId ? `&workspaceId=${encodeURIComponent(params.workspaceId)}` : ""}${params.employeeId ? `&employeeId=${encodeURIComponent(params.employeeId)}` : ""}`);
+
+export const apiGetPayPeriodPreview = (params: {
+  startDate: string;
+  endDate: string;
+  workspaceId?: string;
+  employeeId?: string;
+}) =>
+  apiRequest<Record<string, unknown>>("GET", `/exports/pay-period-preview?startDate=${encodeURIComponent(params.startDate)}&endDate=${encodeURIComponent(params.endDate)}${params.workspaceId ? `&workspaceId=${encodeURIComponent(params.workspaceId)}` : ""}${params.employeeId ? `&employeeId=${encodeURIComponent(params.employeeId)}` : ""}`);
+
+export const apiRepairWorkspaceScope = (data: {
+  workspaceId: string;
+  startDate: string;
+  endDate: string;
+}) => apiRequest<{ repaired: number }>("POST", "/exports/repair-workspace-scope", data);
+
+export const apiCreateExport = (data: Record<string, unknown>) =>
+  apiRequest<Record<string, unknown>>("POST", "/exports/create", data);
 
 // ─── Expenses ────────────────────────────────────────────────────────────────
 

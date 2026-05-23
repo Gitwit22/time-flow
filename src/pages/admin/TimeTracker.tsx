@@ -6,6 +6,7 @@ import { ActiveSessionCard } from "@/components/dashboard/ActiveSessionCard";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { RecentTimeEntriesTable } from "@/components/time-tracker/RecentTimeEntriesTable";
 import { TimeEntryDialog } from "@/components/time-tracker/TimeEntryDialog";
+import { TimeOffRequestDialog } from "@/components/time-tracker/TimeOffRequestDialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getCurrentPayPeriod } from "@/lib/payPeriods";
 import { getSelectableProjects } from "@/lib/projects";
 import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
+import { apiCreateTimeOffRequest } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
 
@@ -28,6 +30,9 @@ export default function TimeTracker() {
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
   const unmarkTimeEntryInvoiced = useAppStore((state) => state.unmarkTimeEntryInvoiced);
+  const organizationMembers = useAppStore((state) => state.organizationMembers);
+  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
+  const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "invoiced">("all");
@@ -35,6 +40,7 @@ export default function TimeTracker() {
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
   const [isEntryDialogOpen, setIsEntryDialogOpen] = useState(false);
+  const [isTimeOffDialogOpen, setIsTimeOffDialogOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<TimeEntry | null>(null);
   const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
 
@@ -89,6 +95,14 @@ export default function TimeTracker() {
     setIsEntryDialogOpen(true);
   };
 
+  const handleRequestTime = () => {
+    if (isReadonly) {
+      return;
+    }
+
+    setIsTimeOffDialogOpen(true);
+  };
+
   const handleEdit = (entry: TimeEntry) => {
     if (isReadonly) {
       return;
@@ -141,6 +155,42 @@ export default function TimeTracker() {
     });
   };
 
+  const handleSubmitTimeOffRequest = async (payload: {
+    employeeId: string;
+    leaveType: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave";
+    startDate: string;
+    endDate: string;
+    hoursRequested: number;
+    reason?: string;
+    autoApprove?: boolean;
+  }) => {
+    const requestBody = {
+      workspaceId: activeOrganizationId ?? currentUser.id,
+      employeeId: payload.employeeId,
+      leaveType: payload.leaveType,
+      startDate: payload.startDate,
+      endDate: payload.endDate,
+      hoursRequested: payload.hoursRequested,
+      reason: payload.reason,
+      autoApprove: payload.autoApprove === true,
+    };
+
+    const result = await apiCreateTimeOffRequest(requestBody);
+    await hydrateFromApi();
+
+    toast({
+      title: result.request.status === "approved" ? "Time off approved" : "Time off request submitted",
+      description: result.request.status === "approved"
+        ? "Leave entry has been created and included in your records."
+        : "Request is pending manager/admin approval.",
+    });
+  };
+
+  const canAdminApprove = ["owner", "admin", "manager", "contractor"].includes(currentUser.role);
+  const employeeOptions = organizationMembers
+    .filter((member) => member.status === "active")
+    .map((member) => ({ id: member.id, name: member.name, email: member.email }));
+
   return (
     <div className="space-y-6 max-w-6xl">
       <PageHeader
@@ -148,10 +198,13 @@ export default function TimeTracker() {
         subtitle="Clock in, log hours, and manage your time entries."
         actions={
           !isReadonly ? (
-            <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleAddManual}>
-              <Plus className="mr-2 h-4 w-4" />
-              Add Manual Entry
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handleRequestTime}>Request Time</Button>
+              <Button className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleAddManual}>
+                <Plus className="mr-2 h-4 w-4" />
+                Add Manual Entry
+              </Button>
+            </div>
           ) : undefined
         }
       />
@@ -275,6 +328,15 @@ export default function TimeTracker() {
           }
         }}
         onSubmit={handleSaveEntry}
+      />
+
+      <TimeOffRequestDialog
+        open={isTimeOffDialogOpen}
+        onOpenChange={setIsTimeOffDialogOpen}
+        isAdmin={canAdminApprove}
+        currentUserId={currentUser.id}
+        employees={employeeOptions}
+        onSubmit={handleSubmitTimeOffRequest}
       />
     </div>
   );

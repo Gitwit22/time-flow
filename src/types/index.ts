@@ -202,10 +202,30 @@ export interface TimeEntry {
   reviewedAt?: string;
   timeType?: "worked" | "leave" | "manual" | "correction";
   leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
+  sourceType?: "manual" | "clock" | "time_off_request" | "correction";
+  sourceRequestId?: string;
   sourceWorkspaceId?: string;
   sourceEntityId?: string;
   migrationBatchId?: string;
   copiedAt?: string;
+}
+
+export interface TimeOffRequest {
+  id: string;
+  workspaceId: string;
+  employeeId: string;
+  leaveType: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave";
+  startDate: string;
+  endDate: string;
+  hoursRequested: number;
+  status: "pending" | "approved" | "denied" | "cancelled";
+  reason?: string;
+  reviewerNote?: string;
+  requestedBy: string;
+  requestedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  generatedTimeEntryIds?: string[];
 }
 
 export interface Expense {
