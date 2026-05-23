@@ -103,6 +103,7 @@ export interface ClientContact {
 export interface Client {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   name: string;
   contactName?: string;
   contactEmail?: string;
@@ -120,11 +121,16 @@ export interface Client {
   archivedAt?: string;
   archivedReason?: string;
   documents: AttachedDocument[];
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface Project {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   name: string;
   clientId: string;
   status: ProjectStatus;
@@ -143,11 +149,16 @@ export interface Project {
   archivedAt?: string;
   archivedReason?: string;
   documents: AttachedDocument[];
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface ProjectBill {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   projectId?: string;
   clientId: string;
   title: string;
@@ -165,6 +176,7 @@ export interface ProjectBill {
 export interface TimeEntry {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   employeeMemberId?: string;
   userId?: string;
   entryType?: "time" | "fixed";
@@ -190,11 +202,16 @@ export interface TimeEntry {
   reviewedAt?: string;
   timeType?: "worked" | "leave" | "manual" | "correction";
   leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface Expense {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   amount: number;
   category: "travel" | "software" | "meals" | "supplies" | "other";
   billableToClient?: boolean;
@@ -243,6 +260,7 @@ export interface WorkSession {
 export interface Invoice {
   id: string;
   organizationId?: string;
+  workspaceId?: string;
   clientId: string;
   projectId?: string;
   invoiceSourceType?: InvoiceSourceType;
@@ -270,6 +288,10 @@ export interface Invoice {
   status: "draft" | "issued" | "sent" | "paid";
   issuedAt?: string;
   paidAt?: string;
+  sourceWorkspaceId?: string;
+  sourceEntityId?: string;
+  migrationBatchId?: string;
+  copiedAt?: string;
 }
 
 export interface AppSettings {

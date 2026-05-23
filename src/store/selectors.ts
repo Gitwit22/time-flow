@@ -5,7 +5,7 @@ import { isViewerLikeRole } from "@/lib/organization";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import { getEntryHours, getEntrySortKey } from "@/lib/timeEntries";
 import type { AppState } from "@/store/appStore";
-import type { Client, Project, ProjectBill, TimeEntry } from "@/types";
+import type { Client, Expense, Invoice, Project, ProjectBill, TimeEntry } from "@/types";
 
 export interface ActiveClockInRow {
   entryId: string;
@@ -221,21 +221,94 @@ export function selectViewerScope(state: AppState) {
 }
 
 export function selectOrganizationScope(state: AppState) {
-  if (!state.activeOrganizationId) {
+  const activeWorkspaceId = state.activeOrganizationId;
+
+  if (!activeWorkspaceId) {
     return {
       clients: state.clients,
+      expenses: state.expenses,
       invoices: state.invoices,
+      projectBills: state.projectBills,
       projects: state.projects,
       timeEntries: state.timeEntries,
     };
   }
 
-  return {
-    clients: state.clients.filter((client) => !client.organizationId || client.organizationId === state.activeOrganizationId),
-    invoices: state.invoices.filter((invoice) => !invoice.organizationId || invoice.organizationId === state.activeOrganizationId),
-    projects: state.projects.filter((project) => !project.organizationId || project.organizationId === state.activeOrganizationId),
-    timeEntries: state.timeEntries.filter((entry) => !entry.organizationId || entry.organizationId === state.activeOrganizationId),
+  const clientsById = new Map(state.clients.map((client) => [client.id, client]));
+  const projectsById = new Map(state.projects.map((project) => [project.id, project]));
+
+  const resolveWorkspaceId = (record: {
+    workspaceId?: string;
+    organizationId?: string;
+    clientId?: string;
+    projectId?: string;
+  }): string | undefined => {
+    if (record.workspaceId) return record.workspaceId;
+    if (record.organizationId) return record.organizationId;
+
+    if (record.projectId) {
+      const project = projectsById.get(record.projectId);
+      if (project?.workspaceId) return project.workspaceId;
+      if (project?.organizationId) return project.organizationId;
+      if (project?.clientId) {
+        const projectClient = clientsById.get(project.clientId);
+        if (projectClient?.workspaceId) return projectClient.workspaceId;
+        if (projectClient?.organizationId) return projectClient.organizationId;
+      }
+    }
+
+    if (record.clientId) {
+      const client = clientsById.get(record.clientId);
+      if (client?.workspaceId) return client.workspaceId;
+      if (client?.organizationId) return client.organizationId;
+    }
+
+    return undefined;
   };
+
+  const isInActiveWorkspace = (record: {
+    workspaceId?: string;
+    organizationId?: string;
+    clientId?: string;
+    projectId?: string;
+  }) => {
+    const resolvedWorkspaceId = resolveWorkspaceId(record);
+    if (resolvedWorkspaceId) {
+      return resolvedWorkspaceId === activeWorkspaceId;
+    }
+
+    // Legacy records with no scoping metadata stay visible in the active workspace.
+    return true;
+  };
+
+  return {
+    clients: state.clients.filter((client) => isInActiveWorkspace(client)),
+    expenses: state.expenses.filter((expense) => isInActiveWorkspace(expense)),
+    invoices: state.invoices.filter((invoice) => isInActiveWorkspace(invoice)),
+    projectBills: state.projectBills.filter((projectBill) => isInActiveWorkspace(projectBill)),
+    projects: state.projects.filter((project) => isInActiveWorkspace(project)),
+    timeEntries: state.timeEntries.filter((entry) => isInActiveWorkspace(entry)),
+  };
+}
+
+export function selectWorkspaceClients(state: AppState): Client[] {
+  return selectOrganizationScope(state).clients;
+}
+
+export function selectWorkspaceProjects(state: AppState): Project[] {
+  return selectOrganizationScope(state).projects;
+}
+
+export function selectWorkspaceTimeEntries(state: AppState): TimeEntry[] {
+  return selectOrganizationScope(state).timeEntries;
+}
+
+export function selectWorkspaceInvoices(state: AppState): Invoice[] {
+  return selectOrganizationScope(state).invoices;
+}
+
+export function selectWorkspaceExpenses(state: AppState): Expense[] {
+  return selectOrganizationScope(state).expenses;
 }
 
 interface DashboardMetricsInput {

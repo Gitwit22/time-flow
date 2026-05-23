@@ -308,6 +308,10 @@ function createId(prefix: string) {
   return `${prefix}-${crypto.randomUUID()}`;
 }
 
+function resolveWorkspaceId(organizationId?: string, fallbackOrganizationId?: string) {
+  return organizationId ?? fallbackOrganizationId;
+}
+
 function calculateDurationHours(startTime: string, endTime?: string) {
   if (!endTime) return 0;
   const [startHours, startMinutes] = startTime.split(":").map(Number);
@@ -497,15 +501,46 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }];
       const employeeProfiles = persistedWorkspace.employeeProfiles?.length ? persistedWorkspace.employeeProfiles : state.employeeProfiles;
       const projectAssignments = persistedWorkspace.projectAssignments?.length ? persistedWorkspace.projectAssignments : state.projectAssignments;
-      const normalizedClients = clients.map((c) => ({ ...c, documents: [] }));
-      const normalizedProjects = projects.map((p) => ({ ...p, documents: [] }));
-      const normalizedEntries = timeEntries.map((e) => normalizeTimeEntryRecord(e, normalizedClients, normalizedProjects));
-      const normalizedInvoices = invoices.map((inv) => normalizeInvoiceRecord(inv, normalizedEntries));
+      const normalizedClients = clients.map((c) => ({
+        ...c,
+        workspaceId: resolveWorkspaceId(c.workspaceId ?? c.organizationId, activeOrganizationId),
+        documents: [],
+      }));
+      const normalizedProjects = projects.map((p) => ({
+        ...p,
+        workspaceId: resolveWorkspaceId(p.workspaceId ?? p.organizationId, activeOrganizationId),
+        documents: [],
+      }));
+      const normalizedEntries = timeEntries.map((e) =>
+        normalizeTimeEntryRecord(
+          {
+            ...e,
+            workspaceId: resolveWorkspaceId(e.workspaceId ?? e.organizationId, activeOrganizationId),
+          },
+          normalizedClients,
+          normalizedProjects,
+        ),
+      );
+      const normalizedInvoices = invoices.map((inv) =>
+        normalizeInvoiceRecord(
+          {
+            ...inv,
+            workspaceId: resolveWorkspaceId(inv.workspaceId ?? inv.organizationId, activeOrganizationId),
+          },
+          normalizedEntries,
+        ),
+      );
       const restoredSession = readPersistedActiveSession();
       const persistedExpenses = readPersistedExpenses();
-      const normalizedExpenses = expenses.length > 0
-        ? expenses.map(normalizeExpenseRecord)
-        : persistedExpenses;
+      const normalizedExpenses = (expenses.length > 0 ? expenses : persistedExpenses).map((expense) =>
+        normalizeExpenseRecord({
+          ...expense,
+          workspaceId: resolveWorkspaceId(expense.workspaceId ?? expense.organizationId, activeOrganizationId),
+        }));
+      const normalizedProjectBills = projectBills.map((bill) => ({
+        ...bill,
+        workspaceId: resolveWorkspaceId(bill.workspaceId ?? bill.organizationId, activeOrganizationId),
+      }));
       set({
         activeOrganizationId,
         clients: normalizedClients,
@@ -516,7 +551,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         projectAssignments,
         timeEntries: normalizedEntries,
         expenses: normalizedExpenses,
-        projectBills,
+        projectBills: normalizedProjectBills,
         invoices: normalizedInvoices,
         settings: mergedSettings,
         ...(restoredSession ? { activeSession: restoredSession } : {}),
@@ -680,6 +715,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ...client,
       id,
       organizationId: get().activeOrganizationId,
+      workspaceId: resolveWorkspaceId(client.workspaceId ?? client.organizationId, get().activeOrganizationId),
       canViewActiveClockIns: client.canViewActiveClockIns ?? true,
       documents: [],
     };
@@ -785,7 +821,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addProject: (project) => {
     if (!canManageWorkspace(get().currentUser.role)) return;
     const id = crypto.randomUUID();
-    const newProject: Project = { ...project, id, organizationId: get().activeOrganizationId, documents: [] };
+    const newProject: Project = {
+      ...project,
+      id,
+      organizationId: get().activeOrganizationId,
+      workspaceId: resolveWorkspaceId(project.workspaceId ?? project.organizationId, get().activeOrganizationId),
+      documents: [],
+    };
     set((state) => ({ projects: [...state.projects, newProject] }));
     void apiCreateProject(newProject).catch((err) => {
       set((state) => ({ projects: state.projects.filter((p) => p.id !== id) }));
@@ -1017,6 +1059,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       invoiced: false,
       invoiceId: null,
       organizationId: state.activeOrganizationId,
+      workspaceId: resolveWorkspaceId(state.activeOrganizationId, state.activeOrganizationId),
       timeType: "worked",
       leaveType: null,
     };
@@ -1051,6 +1094,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         invoiced: entry.invoiced ?? false,
         invoiceId: entry.invoiceId ?? null,
         organizationId: entry.organizationId ?? state.activeOrganizationId,
+        workspaceId: resolveWorkspaceId(entry.workspaceId ?? entry.organizationId, state.activeOrganizationId),
       },
       state.clients,
       state.projects,
@@ -1097,7 +1141,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!canManageWorkspace(get().currentUser.role)) return null;
 
     const id = crypto.randomUUID();
-    const nextExpense = normalizeExpenseRecord({ id, ...expense });
+    const nextExpense = normalizeExpenseRecord({
+      id,
+      ...expense,
+      organizationId: expense.organizationId ?? get().activeOrganizationId,
+      workspaceId: resolveWorkspaceId(expense.workspaceId ?? expense.organizationId, get().activeOrganizationId),
+    });
 
     set((state) => {
       const expenses = [nextExpense, ...state.expenses];
@@ -1170,6 +1219,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const next: ProjectBill = {
       ...bill,
       organizationId: get().activeOrganizationId,
+      workspaceId: resolveWorkspaceId(bill.workspaceId ?? bill.organizationId, get().activeOrganizationId),
       amount: Number(bill.amount || 0),
       id,
       status: bill.status ?? "issued",
@@ -1268,7 +1318,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (!canManageWorkspace(state.currentUser.role)) return [];
 
-    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices);
+    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices).map((invoice) => ({
+      ...invoice,
+      organizationId: invoice.organizationId ?? state.activeOrganizationId,
+      workspaceId: resolveWorkspaceId(invoice.workspaceId ?? invoice.organizationId, state.activeOrganizationId),
+    }));
 
     const entryToInvoiceId = new Map<string, string>();
     const expenseToInvoiceId = new Map<string, string>();
@@ -1337,7 +1391,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (!canManageWorkspace(state.currentUser.role)) return null;
 
-    const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
+    const [invoiceDraft] = materializeInvoiceDrafts([preview], state.invoices);
+    const invoice = invoiceDraft
+      ? {
+        ...invoiceDraft,
+        organizationId: invoiceDraft.organizationId ?? state.activeOrganizationId,
+        workspaceId: resolveWorkspaceId(invoiceDraft.workspaceId ?? invoiceDraft.organizationId, state.activeOrganizationId),
+      }
+      : undefined;
     if (!invoice) return null;
 
     const invoiceExpenseIds = new Set(getInvoiceExpenseIds(invoice));
@@ -1564,6 +1625,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       fixedBillingAmount: draft.amount,
       invoiceSourceType: preview.invoiceSourceType,
       organizationId: state.activeOrganizationId,
+      workspaceId: resolveWorkspaceId(state.activeOrganizationId, state.activeOrganizationId),
       projectId: project.id,
       projectIds: [project.id],
       sourceDescription,
@@ -1611,6 +1673,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!invoice) return null;
 
     invoice.organizationId = state.activeOrganizationId;
+    invoice.workspaceId = resolveWorkspaceId(state.activeOrganizationId, state.activeOrganizationId);
 
     set((current) => ({ invoices: [invoice, ...current.invoices] }));
 

@@ -450,6 +450,7 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
     </div>
   );
 }
