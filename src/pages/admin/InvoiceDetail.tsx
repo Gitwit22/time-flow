@@ -14,7 +14,7 @@ import { downloadInvoiceExport, type InvoiceReceiptAttachment } from "@/lib/expo
 import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
-import { listTimeflowDocuments, getTimeflowDocumentResolvedDownloadUrl } from "@/lib/timeflowDocumentsApi";
+import { listTimeflowDocuments, getTimeflowDocumentViewUrl } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
 import type { AttachedDocument } from "@/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -150,13 +150,13 @@ export default function InvoiceDetail() {
             const expenseDescription = linkedExpense
               ? `${linkedExpense.vendor ? linkedExpense.vendor + " · " : ""}${linkedExpense.description || linkedExpense.category}`
               : "";
-            let url = "";
-            try { url = await getTimeflowDocumentResolvedDownloadUrl(doc.id); } catch { url = ""; }
+            let viewUrl = "";
+            try { viewUrl = await getTimeflowDocumentViewUrl(doc.id); } catch { viewUrl = ""; }
             return {
               documentId: doc.id,
               filename: doc.originalFilename || doc.title,
               mimeType: doc.mimeType,
-              url,
+              viewUrl,
               expenseDescription,
             } satisfies InvoiceReceiptAttachment;
           })
