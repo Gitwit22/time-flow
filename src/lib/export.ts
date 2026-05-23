@@ -6,6 +6,14 @@ import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "
 import type { AppSettings, Client, Expense, Invoice, TimeEntry, UserProfile } from "@/types";
 import type { Project } from "@/types";
 
+export interface InvoiceReceiptAttachment {
+  documentId: string;
+  filename: string;
+  mimeType: string;
+  url: string;
+  expenseDescription: string;
+}
+
 interface InvoiceExportInput {
   invoice: Invoice;
   entries: TimeEntry[];
@@ -14,6 +22,7 @@ interface InvoiceExportInput {
   currentUser: UserProfile;
   projects: Project[];
   settings: AppSettings;
+  receiptAttachments?: InvoiceReceiptAttachment[];
 }
 
 const PRINT_SCRIPT = `
@@ -38,7 +47,7 @@ function formatMultilineHtml(value: string) {
   return escapeHtml(value).replaceAll("\n", "<br />");
 }
 
-function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUser, projects, settings }: InvoiceExportInput) {
+function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUser, projects, settings, receiptAttachments }: InvoiceExportInput) {
   const businessName = settings.businessName || currentUser.name;
   const issueDate = invoice.issuedAt ?? invoice.createdAt;
   const paidDate = invoice.paidAt ? formatLongDate(invoice.paidAt) : "Not paid";
@@ -161,6 +170,11 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       .totals-row.total { font-weight: 700; font-size: 18px; border-top: 1px solid #111827; margin-top: 8px; padding-top: 12px; }
       .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; }
       .status { display: inline-block; padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 999px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+      .receipts-grid { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 12px; }
+      .receipt-item { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; max-width: 280px; }
+      .receipt-item img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #f8fafc; }
+      .receipt-caption { padding: 6px 8px; font-size: 11px; color: #6b7280; border-top: 1px solid #e5e7eb; word-break: break-word; }
+      .receipt-pdf { padding: 16px; font-size: 12px; color: #374151; }
       @media (max-width: 720px) {
         body { margin: 20px; }
         .header, .meta { display: block; }
@@ -250,6 +264,29 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       <h2>Notes</h2>
       <p>${formatMultilineHtml(settings.invoiceNotes || "No invoice notes set.")}</p>
     </div>
+
+    ${receiptAttachments && receiptAttachments.length > 0 ? `
+    <div class="footer" style="margin-top: 32px; page-break-before: always;">
+      <h2>Expense Receipts</h2>
+      <p style="font-size: 13px; color: #6b7280; margin-bottom: 12px;">${receiptAttachments.length} receipt${receiptAttachments.length === 1 ? "" : "s"} attached to this invoice.</p>
+      <div class="receipts-grid">
+        ${receiptAttachments.map((receipt) => {
+          const isImage = receipt.mimeType.startsWith("image/");
+          const safeName = escapeHtml(receipt.filename || "Receipt");
+          const safeDesc = escapeHtml(receipt.expenseDescription || "");
+          if (isImage) {
+            return `<div class="receipt-item">
+              <img src="${escapeHtml(receipt.url)}" alt="${safeName}" />
+              <div class="receipt-caption">${safeName}${safeDesc ? ` · ${safeDesc}` : ""}</div>
+            </div>`;
+          }
+          return `<div class="receipt-item">
+            <div class="receipt-pdf">📄 ${safeName}${safeDesc ? `<br /><span style="color:#9ca3af">${safeDesc}</span>` : ""}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+    ` : ""}
   </body>
 </html>`;
 }
@@ -270,8 +307,7 @@ export function downloadInvoiceExport(input: InvoiceExportInput) {
       </div>
     `;
 
-    const html = buildInvoiceExportHtml(input);
-    const blob = new Blob([html], { type: "text/html" });
+    const html = buildInvoiceExportHtml(input);    const blob = new Blob([html], { type: "text/html" });
     const objectUrl = URL.createObjectURL(blob);
     printWindow.location.replace(objectUrl);
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);

@@ -1,18 +1,22 @@
-import { ArrowLeft, CheckCircle2, Download, Eye, FileText, RotateCcw, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, CheckCircle2, Download, Eye, FileText, Paperclip, RotateCcw, Trash2 } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
-import { downloadInvoiceExport } from "@/lib/export";
+import { downloadInvoiceExport, type InvoiceReceiptAttachment } from "@/lib/export";
 import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
+import { listTimeflowDocuments, getTimeflowDocumentResolvedDownloadUrl } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
+import type { AttachedDocument } from "@/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
@@ -37,6 +41,11 @@ export default function InvoiceDetail() {
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const deleteInvoice = useAppStore((state) => state.deleteInvoice);
   const isReadonly = currentUser.role === "client_viewer";
+
+  // Receipt attachment state
+  const [expenseReceiptMap, setExpenseReceiptMap] = useState<Record<string, AttachedDocument[]>>({});
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState<Set<string>>(new Set());
+  const [receiptsLoading, setReceiptsLoading] = useState(false);
 
   const invoice = invoices.find((item) => item.id === id);
 
@@ -94,6 +103,75 @@ export default function InvoiceDetail() {
     ? "Project Billing Line Items"
     : "Labor / Time Entry Line Items";
 
+  // Collect expense IDs from line items for receipt loading
+  const invoiceExpenseIds = expenseLineItems.map((li) => li.expenseId).filter(Boolean) as string[];
+
+  useEffect(() => {
+    if (invoiceExpenseIds.length === 0) return;
+    setReceiptsLoading(true);
+    listTimeflowDocuments("expense")
+      .then((map) => {
+        const relevant: Record<string, AttachedDocument[]> = {};
+        for (const expId of invoiceExpenseIds) {
+          if (map[expId]?.length) {
+            relevant[expId] = map[expId].filter((d) => d.status === "active");
+          }
+        }
+        setExpenseReceiptMap(relevant);
+        // Auto-select all receipts by default
+        const allIds = Object.values(relevant).flat().map((d) => d.id);
+        setSelectedReceiptIds(new Set(allIds));
+      })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => setReceiptsLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [invoice.id]);
+
+  const allReceipts = Object.entries(expenseReceiptMap).flatMap(([expenseId, docs]) =>
+    docs.map((doc) => ({ doc, expenseId }))
+  );
+
+  const toggleReceipt = (docId: string) => {
+    setSelectedReceiptIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(docId)) next.delete(docId); else next.add(docId);
+      return next;
+    });
+  };
+
+  const handleDownloadInvoice = async () => {
+    let receiptAttachments: InvoiceReceiptAttachment[] | undefined;
+    if (selectedReceiptIds.size > 0) {
+      receiptAttachments = await Promise.all(
+        allReceipts
+          .filter(({ doc }) => selectedReceiptIds.has(doc.id))
+          .map(async ({ doc, expenseId }) => {
+            const linkedExpense = expenses.find((e) => e.id === expenseId);
+            const expenseDescription = linkedExpense
+              ? `${linkedExpense.vendor ? linkedExpense.vendor + " · " : ""}${linkedExpense.description || linkedExpense.category}`
+              : "";
+            let url = "";
+            try { url = await getTimeflowDocumentResolvedDownloadUrl(doc.id); } catch { url = ""; }
+            return {
+              documentId: doc.id,
+              filename: doc.originalFilename || doc.title,
+              mimeType: doc.mimeType,
+              url,
+              expenseDescription,
+            } satisfies InvoiceReceiptAttachment;
+          })
+      );
+    }
+    const opened = downloadInvoiceExport({ invoice, entries, expenses, client, currentUser, projects, settings, receiptAttachments });
+    toast({
+      title: opened ? "Invoice opened for download" : "Popup blocked",
+      description: opened
+        ? `${invoice.id} opened in a printable invoice view.`
+        : "Allow popups for this site, then try download again.",
+      variant: opened ? undefined : "destructive",
+    });
+  };
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
@@ -107,22 +185,7 @@ export default function InvoiceDetail() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => {
-              const opened = downloadInvoiceExport({
-                invoice,
-                entries,
-                expenses,
-                client,
-                currentUser,
-                projects,
-                settings,
-              });
-              toast({
-                title: opened ? "Invoice opened for download" : "Popup blocked",
-                description: opened ? `${invoice.id} opened in a printable invoice view.` : "Allow popups for this site, then try download again.",
-                variant: opened ? undefined : "destructive",
-              });
-            }}
+            onClick={() => { void handleDownloadInvoice(); }}
           >
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
           </Button>
@@ -396,6 +459,60 @@ export default function InvoiceDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {invoiceExpenseIds.length > 0 ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Paperclip className="h-4 w-4" /> Expense Receipts
+                {receiptsLoading ? <span className="text-xs text-muted-foreground font-normal">Loading...</span> : null}
+              </CardTitle>
+              {allReceipts.length > 0 ? (
+                <div className="flex gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedReceiptIds(new Set(allReceipts.map(({ doc }) => doc.id)))}>
+                    Select All
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedReceiptIds(new Set())}>
+                    Deselect All
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Select which expense receipts to include when downloading this invoice.
+            </p>
+          </CardHeader>
+          <CardContent>
+            {allReceipts.length === 0 && !receiptsLoading ? (
+              <p className="text-sm text-muted-foreground">No receipt files found for the expenses on this invoice. Upload receipts from the Expenses page.</p>
+            ) : (
+              <div className="space-y-2">
+                {allReceipts.map(({ doc, expenseId }) => {
+                  const linkedExpense = expenses.find((e) => e.id === expenseId);
+                  const label = linkedExpense
+                    ? `${linkedExpense.vendor ? linkedExpense.vendor + " · " : ""}${linkedExpense.description || linkedExpense.category}`
+                    : expenseId;
+                  return (
+                    <div key={doc.id} className="flex items-center gap-3 rounded-md border px-3 py-2">
+                      <Checkbox
+                        id={`receipt-${doc.id}`}
+                        checked={selectedReceiptIds.has(doc.id)}
+                        onCheckedChange={() => toggleReceipt(doc.id)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{doc.originalFilename || doc.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{label}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground capitalize">{doc.mimeType.split("/")[1] ?? doc.mimeType}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
