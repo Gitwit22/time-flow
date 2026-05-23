@@ -174,7 +174,10 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       .receipt-item { border: 1px solid #d1d5db; border-radius: 8px; overflow: hidden; max-width: 280px; }
       .receipt-item img { display: block; width: 100%; max-height: 220px; object-fit: contain; background: #f8fafc; }
       .receipt-caption { padding: 6px 8px; font-size: 11px; color: #6b7280; border-top: 1px solid #e5e7eb; word-break: break-word; }
-      .receipt-pdf { padding: 16px; font-size: 12px; color: #374151; }
+      .receipt-file { padding: 10px; font-size: 12px; color: #374151; background: #f8fafc; }
+      .receipt-file-link { color: #0f4bb8; text-decoration: underline; word-break: break-word; }
+      .receipt-file-link:visited { color: #4f46e5; }
+      .receipt-pdf-frame { display: block; width: 100%; height: 320px; border: 0; background: #ffffff; }
       @media (max-width: 720px) {
         body { margin: 20px; }
         .header, .meta { display: block; }
@@ -272,6 +275,7 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
       <div class="receipts-grid">
         ${receiptAttachments.map((receipt) => {
           const isImage = receipt.mimeType.startsWith("image/");
+          const isPdf = receipt.mimeType === "application/pdf";
           const safeName = escapeHtml(receipt.filename || "Receipt");
           const safeDesc = escapeHtml(receipt.expenseDescription || "");
           if (isImage) {
@@ -280,8 +284,20 @@ function buildInvoiceExportHtml({ invoice, entries, expenses, client, currentUse
               <div class="receipt-caption">${safeName}${safeDesc ? ` · ${safeDesc}` : ""}</div>
             </div>`;
           }
+          if (isPdf && receipt.url) {
+            return `<div class="receipt-item" style="max-width: 560px;">
+              <iframe class="receipt-pdf-frame" src="${escapeHtml(receipt.url)}" title="${safeName}"></iframe>
+              <div class="receipt-file">
+                <a class="receipt-file-link" href="${escapeHtml(receipt.url)}" target="_blank" rel="noopener noreferrer">Open ${safeName}</a>
+                ${safeDesc ? `<div style="margin-top:4px;color:#6b7280;">${safeDesc}</div>` : ""}
+              </div>
+            </div>`;
+          }
           return `<div class="receipt-item">
-            <div class="receipt-pdf">📄 ${safeName}${safeDesc ? `<br /><span style="color:#9ca3af">${safeDesc}</span>` : ""}</div>
+            <div class="receipt-file">
+              ${receipt.url ? `<a class="receipt-file-link" href="${escapeHtml(receipt.url)}" target="_blank" rel="noopener noreferrer">Open ${safeName}</a>` : safeName}
+              ${safeDesc ? `<div style="margin-top:4px;color:#6b7280;">${safeDesc}</div>` : ""}
+            </div>
           </div>`;
         }).join("")}
       </div>
