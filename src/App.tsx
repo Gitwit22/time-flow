@@ -29,7 +29,7 @@ import ExpensesPage from "./pages/admin/Expenses";
 import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
-import EmailPrep from "./pages/admin/EmailPrep";
+import ExportCenter from "./pages/admin/ExportCenter";
 import Reports from "./pages/admin/Reports";
 import ApprovalsPage from "./pages/admin/Approvals";
 import SettingsPage from "./pages/admin/Settings";
@@ -232,11 +232,12 @@ const App = () => (
               }
             />
             <Route path="invoice/:id" element={<LegacyInvoiceDetailRedirect />} />
+            <Route path="email" element={<Navigate to="/platform/export-center" replace />} />
             <Route
-              path="email"
+              path="export-center"
               element={
                 <RequireContractor>
-                  <EmailPrep />
+                  <ExportCenter />
                 </RequireContractor>
               }
             />

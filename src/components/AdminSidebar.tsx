@@ -23,7 +23,7 @@ const mainItems = [
   { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
   { title: "Team", url: "/platform/team", icon: Users },
   { title: "Invoices", url: "/platform/invoices", icon: FileText },
-  { title: "Email Prep", url: "/platform/email", icon: Mail },
+  { title: "Export Center", url: "/platform/export-center", icon: Mail },
   { title: "Reports", url: "/platform/reports", icon: BarChart3 },
 ];
 
@@ -56,7 +56,7 @@ export function AdminSidebar() {
               if (item.title === "Team") {
                 return canManageTeam(role);
               }
-              if (["Invoices", "Email Prep"].includes(item.title)) {
+              if (["Invoices", "Export Center"].includes(item.title)) {
                 return canGenerateInvoices(role);
               }
               return true;

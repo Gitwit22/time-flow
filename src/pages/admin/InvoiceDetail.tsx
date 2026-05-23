@@ -49,6 +49,35 @@ export default function InvoiceDetail() {
 
   const invoice = invoices.find((item) => item.id === id);
 
+  // Derive expense IDs without relying on post-guard computations so hooks stay unconditional.
+  const invoiceExpenseIds = (invoice?.lineItems ?? [])
+    .filter((lineItem) => lineItem.lineType === "expense" && lineItem.expenseId)
+    .map((lineItem) => lineItem.expenseId as string);
+
+  useEffect(() => {
+    if (!invoice || invoiceExpenseIds.length === 0) {
+      setExpenseReceiptMap({});
+      setSelectedReceiptIds(new Set());
+      return;
+    }
+
+    setReceiptsLoading(true);
+    listTimeflowDocuments("expense")
+      .then((map) => {
+        const relevant: Record<string, AttachedDocument[]> = {};
+        for (const expId of invoiceExpenseIds) {
+          if (map[expId]?.length) {
+            relevant[expId] = map[expId].filter((d) => d.status === "active");
+          }
+        }
+        setExpenseReceiptMap(relevant);
+        const allIds = Object.values(relevant).flat().map((d) => d.id);
+        setSelectedReceiptIds(new Set(allIds));
+      })
+      .catch(() => { /* non-fatal */ })
+      .finally(() => setReceiptsLoading(false));
+  }, [invoice, invoiceExpenseIds]);
+
   if (!invoice) {
     return (
       <div className="space-y-6 max-w-4xl mx-auto">
@@ -102,30 +131,6 @@ export default function InvoiceDetail() {
   const laborSectionTitle = invoice.invoiceSourceType === "partial_project" || invoice.invoiceSourceType === "manual_project"
     ? "Project Billing Line Items"
     : "Labor / Time Entry Line Items";
-
-  // Collect expense IDs from line items for receipt loading
-  const invoiceExpenseIds = expenseLineItems.map((li) => li.expenseId).filter(Boolean) as string[];
-
-  useEffect(() => {
-    if (invoiceExpenseIds.length === 0) return;
-    setReceiptsLoading(true);
-    listTimeflowDocuments("expense")
-      .then((map) => {
-        const relevant: Record<string, AttachedDocument[]> = {};
-        for (const expId of invoiceExpenseIds) {
-          if (map[expId]?.length) {
-            relevant[expId] = map[expId].filter((d) => d.status === "active");
-          }
-        }
-        setExpenseReceiptMap(relevant);
-        // Auto-select all receipts by default
-        const allIds = Object.values(relevant).flat().map((d) => d.id);
-        setSelectedReceiptIds(new Set(allIds));
-      })
-      .catch(() => { /* non-fatal */ })
-      .finally(() => setReceiptsLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invoice.id]);
 
   const allReceipts = Object.entries(expenseReceiptMap).flatMap(([expenseId, docs]) =>
     docs.map((doc) => ({ doc, expenseId }))
@@ -190,8 +195,8 @@ export default function InvoiceDetail() {
             <Download className="mr-1.5 h-3.5 w-3.5" /> Download Invoice
           </Button>
             <Button size="sm" variant="outline" asChild>
-            <Link to="/platform/email">
-                <FileText className="mr-1.5 h-3.5 w-3.5" /> Create Email Draft
+            <Link to="/platform/export-center">
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Open Export Center
             </Link>
           </Button>
             {!isReadonly && invoice.status === "draft" ? (
