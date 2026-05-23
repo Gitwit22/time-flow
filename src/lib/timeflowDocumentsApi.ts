@@ -42,7 +42,8 @@ function buildHeaders(contentType = true): Headers {
 }
 
 async function apiFetch(path: string, init: RequestInit = {}) {
-  const headers = buildHeaders(true);
+  const shouldSetJsonContentType = !(typeof FormData !== "undefined" && init.body instanceof FormData);
+  const headers = buildHeaders(shouldSetJsonContentType);
   const customHeaders = init.headers ? new Headers(init.headers) : undefined;
   customHeaders?.forEach((value, key) => headers.set(key, value));
 
