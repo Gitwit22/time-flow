@@ -255,6 +255,87 @@ export async function acceptViewerInvite(
 	return user;
 }
 
+export interface SetupMembership {
+	organizationId: string;
+	organizationName: string;
+	role: string;
+}
+
+export async function getSetupOrganizationStatus(): Promise<{
+	onboardingRequired: boolean;
+	memberships: SetupMembership[];
+}> {
+	const response = await authFetch("/api/timeflow/setup-organization/status", {
+		method: "GET",
+	});
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	return {
+		onboardingRequired: payload.onboardingRequired === true,
+		memberships: Array.isArray(payload.memberships) ? (payload.memberships as SetupMembership[]) : [],
+	};
+}
+
+export async function setupCreateOrganization(input: {
+	organizationName: string;
+	organizationType?: string;
+	workspaceName?: string;
+	roleTitle?: string;
+}) {
+	const response = await authFetch("/api/timeflow/setup-organization/create", {
+		method: "POST",
+		body: JSON.stringify(input),
+	});
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	const userPayload = payload.user as BackendAuthUser | undefined;
+	const token = parseToken(payload);
+	if (!userPayload || !token) {
+		throw new Error("Organization setup response was incomplete.");
+	}
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return {
+		user,
+		organization: payload.organization as { id: string; name: string; slug?: string } | undefined,
+	};
+}
+
+export async function setupJoinOrganization(inviteToken: string) {
+	const response = await authFetch("/api/timeflow/setup-organization/join", {
+		method: "POST",
+		body: JSON.stringify({ inviteToken }),
+	});
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	const userPayload = payload.user as BackendAuthUser | undefined;
+	const token = parseToken(payload);
+	if (!userPayload || !token) {
+		throw new Error("Organization join response was incomplete.");
+	}
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return {
+		user,
+		organization: payload.organization as { id: string; name: string; slug?: string } | undefined,
+	};
+}
+
+export async function setupContinueSoloWorkspace() {
+	const response = await authFetch("/api/timeflow/setup-organization/solo", {
+		method: "POST",
+	});
+	const payload = await parseJsonResponse<Record<string, unknown>>(response);
+	const userPayload = payload.user as BackendAuthUser | undefined;
+	const token = parseToken(payload);
+	if (!userPayload || !token) {
+		throw new Error("Organization setup response was incomplete.");
+	}
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return {
+		user,
+		organization: payload.organization as { id: string; name: string; slug?: string } | undefined,
+	};
+}
+
 export function toAppIdentity(user: AuthUser) {
 	return {
 		name: user.name,

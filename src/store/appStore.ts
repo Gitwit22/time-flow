@@ -329,16 +329,6 @@ function canTrackTime(role: UserRole) {
   return canManageWorkspace(role) || role === "employee";
 }
 
-function createDefaultOrganization(user: UserProfile, businessName: string): Organization {
-  return {
-    id: `org-${user.id || "default"}`,
-    name: businessName || "Default Organization",
-    ownerUserId: user.id || "owner",
-    createdAt: new Date().toISOString(),
-    status: "active",
-  };
-}
-
 export interface AppState {
   authStatus: "unknown" | "authenticated" | "unauthenticated";
   hydrated: boolean;
@@ -365,6 +355,10 @@ export interface AppState {
   setHydrated: (hydrated: boolean) => void;
   setRole: (role: UserRole) => void;
   setActiveOrganization: (organizationId: string) => void;
+  seedOrganizationContext: (payload: {
+    organization: Organization;
+    memberRole?: OrganizationMember["role"];
+  }) => void;
   createOrganizationWorkspace: (name?: string) => string | undefined;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
@@ -478,27 +472,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const state = get();
       const persistedWorkspace = readPersistedWorkspaceState();
-      const defaultOrganization = createDefaultOrganization(state.currentUser, mergedSettings.businessName);
       const organizations = persistedWorkspace.organizations?.length
         ? persistedWorkspace.organizations
-        : state.organizations.length > 0
-          ? state.organizations
-          : [defaultOrganization];
-      const activeOrganizationId = persistedWorkspace.activeOrganizationId ?? state.activeOrganizationId ?? organizations[0]?.id ?? defaultOrganization.id;
+        : state.organizations;
+      const activeOrganizationId =
+        persistedWorkspace.activeOrganizationId
+        ?? state.activeOrganizationId
+        ?? organizations[0]?.id
+        ?? undefined;
       const organizationMembers = persistedWorkspace.organizationMembers?.length
         ? persistedWorkspace.organizationMembers
-        : state.organizationMembers.length > 0
-          ? state.organizationMembers
-          : [{
-            id: `member-${state.currentUser.id || "owner"}`,
-            organizationId: activeOrganizationId,
-            userId: state.currentUser.id || undefined,
-            email: state.currentUser.email,
-            name: state.currentUser.name || "Owner",
-            role: normalizeOrganizationRole(state.currentUser.role),
-            status: "active" as const,
-            joinedAt: new Date().toISOString(),
-          }];
+        : state.organizationMembers;
       const employeeProfiles = persistedWorkspace.employeeProfiles?.length ? persistedWorkspace.employeeProfiles : state.employeeProfiles;
       const projectAssignments = persistedWorkspace.projectAssignments?.length ? persistedWorkspace.projectAssignments : state.projectAssignments;
       const normalizedClients = clients.map((c) => ({
@@ -596,6 +580,51 @@ export const useAppStore = create<AppState>()((set, get) => ({
       organizationMembers: current.organizationMembers,
       employeeProfiles: current.employeeProfiles,
       projectAssignments: current.projectAssignments,
+    });
+  },
+
+  seedOrganizationContext: ({ organization, memberRole }) => {
+    const state = get();
+    const organizations = state.organizations.some((item) => item.id === organization.id)
+      ? state.organizations.map((item) => (item.id === organization.id ? organization : item))
+      : [...state.organizations, organization];
+
+    const existingMember = state.organizationMembers.find(
+      (member) => member.organizationId === organization.id && member.userId === state.currentUser.id,
+    );
+
+    const organizationMembers = existingMember
+      ? state.organizationMembers.map((member) => (
+          member.id === existingMember.id
+            ? { ...member, role: memberRole ?? member.role, status: "active" as const }
+            : member
+        ))
+      : [
+          ...state.organizationMembers,
+          {
+            id: `member-${crypto.randomUUID()}`,
+            organizationId: organization.id,
+            userId: state.currentUser.id || undefined,
+            email: state.currentUser.email,
+            name: state.currentUser.name || state.currentUser.email,
+            role: memberRole ?? normalizeOrganizationRole(state.currentUser.role),
+            status: "active" as const,
+            joinedAt: new Date().toISOString(),
+          },
+        ];
+
+    set({
+      organizations,
+      organizationMembers,
+      activeOrganizationId: organization.id,
+    });
+
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: organization.id,
+      organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
     });
   },
 

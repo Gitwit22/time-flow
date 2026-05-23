@@ -8,6 +8,7 @@ import { RequireContractor } from "@/components/layout/RequireContractor";
 import { RequireClientViewer } from "@/components/layout/RequireClientViewer";
 import { RequireEmployee } from "@/components/layout/RequireEmployee";
 import { RequireAuth } from "@/components/layout/RequireAuth";
+import { RequireWorkspaceMembership } from "@/components/layout/RequireWorkspaceMembership";
 import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
 import { getPlatformSession } from "@/lib/platformApi";
 import { useAppStore } from "@/store/appStore";
@@ -17,6 +18,7 @@ import { AppModeProvider } from "@/context/AppModeContext";
 import PlatformLaunch from "./pages/PlatformLaunch";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import SetupOrganizationPage from "./pages/SetupOrganization";
 
 // Contractor workspace layout + pages
 import { AdminLayout } from "./components/AdminLayout";
@@ -152,15 +154,25 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
           <Route path="/invite" element={<InviteRedirect />} />
+          <Route
+            path="/setup-organization"
+            element={
+              <RequireAuth>
+                <SetupOrganizationPage />
+              </RequireAuth>
+            }
+          />
 
           {/* Contractor workspace */}
           <Route
             path="/platform"
             element={
               <RequireAuth>
+                <RequireWorkspaceMembership>
                 <RequireContractor>
                   <AdminLayout />
                 </RequireContractor>
+                </RequireWorkspaceMembership>
               </RequireAuth>
             }
           >
@@ -267,9 +279,11 @@ const App = () => (
             path="/employee"
             element={
               <RequireAuth>
+                <RequireWorkspaceMembership>
                 <RequireEmployee>
                   <AdminLayout />
                 </RequireEmployee>
+                </RequireWorkspaceMembership>
               </RequireAuth>
             }
           >

@@ -101,7 +101,7 @@ export default function Login() {
       markAuthenticated();
       setViewerClientContext(undefined, false);
       await hydrateFromApi();
-      navigate("/platform", { replace: true });
+      navigate("/setup-organization", { replace: true });
     } catch (error) {
       toast({
         title: "Unable to create account",
