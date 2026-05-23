@@ -1151,9 +1151,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
 
     void apiDeleteExpenseRequest(id).catch((err) => {
+      // If the expense doesn't exist in the backend (404), keep the local deletion
+      const message = err instanceof Error ? err.message : "";
+      if (message.includes("404") || message.toLowerCase().includes("not found")) return;
       set({ expenses: prev });
       writePersistedExpenses(prev);
-      toast.error(err instanceof Error ? err.message : "Failed to delete expense");
+      toast.error(message || "Failed to delete expense");
     });
   },
 

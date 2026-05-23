@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateDisplay } from "@/lib/date";
-import { apiListExpenses } from "@/lib/timeflowApi";
+import { apiCreateExpense, apiListExpenses } from "@/lib/timeflowApi";
 import {
   archiveTimeflowDocument,
   createTimeflowDocument,
@@ -130,9 +130,29 @@ export default function ExpensesPage() {
     throw new Error("Expense is still syncing. Please try upload again from Edit Expense.");
   };
 
+  const ensureExpenseExistsInBackend = async (expenseId: string, fallbackExpense: Omit<Expense, "id">) => {
+    const backendExpenses = await apiListExpenses();
+    const exists = backendExpenses.some((item) => item.id === expenseId);
+
+    if (exists) {
+      return;
+    }
+
+    await apiCreateExpense({
+      id: expenseId,
+      ...fallbackExpense,
+    });
+  };
+
   const handleSaveExpense = async (expense: Omit<Expense, "id">, files: File[]) => {
     let targetExpenseId = editingExpense?.id;
     const isNewExpense = !editingExpense;
+    const fallbackExpenseForEnsure: Omit<Expense, "id"> = editingExpense
+      ? {
+          ...editingExpense,
+          ...expense,
+        }
+      : expense;
 
     if (editingExpense) {
       updateExpense(editingExpense.id, expense);
@@ -148,6 +168,7 @@ export default function ExpensesPage() {
         if (isNewExpense) {
           await waitForExpensePersistence(targetExpenseId);
         }
+        await ensureExpenseExistsInBackend(targetExpenseId, fallbackExpenseForEnsure);
         await uploadExpenseAttachments(targetExpenseId, files);
         updateExpense(targetExpenseId, { receiptAttached: true });
         toast({ title: "Receipts uploaded", description: `${files.length} attachment${files.length === 1 ? "" : "s"} saved.` });
