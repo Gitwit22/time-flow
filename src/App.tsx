@@ -16,6 +16,7 @@ import { AppModeProvider } from "@/context/AppModeContext";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
+import AcceptInvitePage from "./pages/AcceptInvite";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import SetupOrganizationPage from "./pages/SetupOrganization";
@@ -155,6 +156,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
           <Route path="/invite" element={<InviteRedirect />} />
+          <Route path="/accept-invite" element={<AcceptInvitePage />} />
           <Route
             path="/setup-organization"
             element={

@@ -13,8 +13,10 @@ import { selectViewerScope } from "@/store/selectors";
 const pieColors = {
   paid: "hsl(152, 60%, 40%)",
   issued: "hsl(38, 92%, 50%)",
+  partiallyPaid: "hsl(208, 84%, 44%)",
   draft: "hsl(220, 9%, 46%)",
   overdue: "hsl(0, 74%, 42%)",
+  void: "hsl(220, 8%, 60%)",
 };
  
 export default function ClientReports() {
@@ -31,9 +33,11 @@ export default function ClientReports() {
 
   const statusData = [
     { name: "Paid", value: statusTotals.paid, color: pieColors.paid },
-    { name: "Issued", value: statusTotals.issued, color: pieColors.issued },
+    { name: "Sent", value: statusTotals.issued, color: pieColors.issued },
+    { name: "Partially Paid", value: statusTotals.partiallyPaid, color: pieColors.partiallyPaid },
     { name: "Draft", value: statusTotals.draft, color: pieColors.draft },
     { name: "Overdue", value: statusTotals.overdue, color: pieColors.overdue },
+    { name: "Void", value: statusTotals.void, color: pieColors.void },
   ].filter((item) => item.value > 0);
 
   return (

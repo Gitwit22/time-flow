@@ -1,7 +1,15 @@
 import type { OrganizationMemberRole, UserRole } from "@/types";
 
 export function normalizeOrganizationRole(role: UserRole): OrganizationMemberRole {
-  if (role === "owner" || role === "admin" || role === "manager" || role === "employee" || role === "viewer") {
+  if (
+    role === "owner"
+    || role === "admin"
+    || role === "manager"
+    || role === "payroll_reviewer"
+    || role === "employee"
+    || role === "auditor"
+    || role === "viewer"
+  ) {
     return role;
   }
 
@@ -25,7 +33,7 @@ export function canManageProjects(role: UserRole) {
 }
 
 export function canApproveTime(role: UserRole) {
-  return role === "owner" || role === "admin" || role === "manager";
+  return role === "owner" || role === "admin" || role === "manager" || role === "payroll_reviewer";
 }
 
 export function canEditTime(role: UserRole) {
@@ -33,11 +41,19 @@ export function canEditTime(role: UserRole) {
 }
 
 export function canGenerateInvoices(role: UserRole) {
-  return role === "contractor" || role === "owner" || role === "admin" || role === "manager";
+  return role === "contractor" || role === "owner" || role === "admin" || role === "manager" || role === "payroll_reviewer";
 }
 
 export function canViewAdminWorkspace(role: UserRole) {
-  return role === "owner" || role === "admin" || role === "manager" || role === "viewer" || role === "contractor" || role === "client_viewer";
+  return (
+    role === "owner"
+    || role === "admin"
+    || role === "manager"
+    || role === "payroll_reviewer"
+    || role === "auditor"
+    || role === "viewer"
+    || role === "contractor"
+  );
 }
 
 export function isEmployeeRole(role: UserRole) {

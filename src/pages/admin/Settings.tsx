@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { updateActiveUserProfile } from "@/lib/auth";
 import { formatDateForInput, parseDateInput } from "@/lib/date";
+import { canManageWorkspace } from "@/lib/organization";
 import { useAppStore } from "@/store/appStore";
 
 const MAX_BRANDING_FILE_BYTES = 750 * 1024;
@@ -30,6 +31,13 @@ export default function SettingsPage() {
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
   const updateSettings = useAppStore((state) => state.updateSettings);
   const resetApp = useAppStore((state) => state.resetApp);
+  const organizations = useAppStore((state) => state.organizations);
+  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
+  const renameOrganization = useAppStore((state) => state.renameOrganization);
+  const archiveOrganization = useAppStore((state) => state.archiveOrganization);
+  const deleteOrganization = useAppStore((state) => state.deleteOrganization);
+  const setDefaultOrganization = useAppStore((state) => state.setDefaultOrganization);
+  const transferOrganizationOwnership = useAppStore((state) => state.transferOrganizationOwnership);
 
   const [profileName, setProfileName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -43,6 +51,8 @@ export default function SettingsPage() {
   const [payPeriodStartDate, setPayPeriodStartDate] = useState("");
   const [periodTargetHours, setPeriodTargetHours] = useState(0);
   const [periodTargetEarnings, setPeriodTargetEarnings] = useState(0);
+  const [workspaceRename, setWorkspaceRename] = useState("");
+  const [newOwnerEmail, setNewOwnerEmail] = useState("");
 
   useEffect(() => {
     setProfileName(currentUser.name);
@@ -71,6 +81,27 @@ export default function SettingsPage() {
     settings.periodTargetHours,
     settings.periodTargetEarnings,
   ]);
+
+  useEffect(() => {
+    const active = organizations.find((org) => org.id === activeOrganizationId);
+    setWorkspaceRename(active?.name ?? "");
+  }, [activeOrganizationId, organizations]);
+
+  const canManageWorkspaces = canManageWorkspace(currentUser.role);
+  const activeWorkspace = organizations.find((org) => org.id === activeOrganizationId);
+
+  async function handleSetDefaultWorkspace(workspaceId: string) {
+    try {
+      await setDefaultOrganization(workspaceId);
+      toast({ title: "Default workspace updated" });
+    } catch (error) {
+      toast({
+        title: "Update failed",
+        description: error instanceof Error ? error.message : "Unable to set default workspace.",
+        variant: "destructive",
+      });
+    }
+  }
 
   async function handleBrandingAssetChange(event: ChangeEvent<HTMLInputElement>, asset: "logo" | "banner") {
     const file = event.target.files?.[0];
@@ -382,6 +413,110 @@ export default function SettingsPage() {
           </Button>
         </CardContent>
       </Card>
+
+      {/* Workspaces */}
+      {canManageWorkspaces ? (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base font-heading">Workspaces</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-muted-foreground">Settings → Workspaces → Manage actions for the active workspace.</p>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Active Workspace</Label>
+              <Select value={activeOrganizationId ?? ""} onValueChange={(value) => void handleSetDefaultWorkspace(value)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select workspace" />
+                </SelectTrigger>
+                <SelectContent>
+                  {organizations.map((org) => (
+                    <SelectItem key={org.id} value={org.id}>
+                      {org.name} ({org.workspaceType === "team" ? "Team" : "Solo"})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {activeWorkspace ? (
+              <div className="rounded-lg border p-3 space-y-3">
+                <p className="text-sm font-medium">Manage Workspace</p>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Rename workspace</Label>
+                  <div className="flex gap-2">
+                    <Input value={workspaceRename} onChange={(event) => setWorkspaceRename(event.target.value)} />
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        void renameOrganization(activeWorkspace.id, workspaceRename.trim())
+                          .then(() => toast({ title: "Workspace renamed" }))
+                          .catch((error) => toast({ title: "Rename failed", description: error instanceof Error ? error.message : "Unable to rename workspace.", variant: "destructive" }));
+                      }}
+                    >
+                      Rename
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Transfer ownership</Label>
+                  <div className="flex gap-2">
+                    <Input value={newOwnerEmail} onChange={(event) => setNewOwnerEmail(event.target.value)} placeholder="new-owner@company.com" />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        if (!newOwnerEmail.trim()) {
+                          toast({ title: "Email required", description: "Enter the new owner email.", variant: "destructive" });
+                          return;
+                        }
+                        void transferOrganizationOwnership(activeWorkspace.id, newOwnerEmail.trim())
+                          .then(() => {
+                            toast({ title: "Ownership transferred" });
+                            setNewOwnerEmail("");
+                          })
+                          .catch((error) => toast({ title: "Transfer failed", description: error instanceof Error ? error.message : "Unable to transfer ownership.", variant: "destructive" }));
+                      }}
+                    >
+                      Transfer
+                    </Button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      void archiveOrganization(activeWorkspace.id)
+                        .then(() => toast({ title: "Workspace archived" }))
+                        .catch((error) => toast({ title: "Archive failed", description: error instanceof Error ? error.message : "Unable to archive workspace.", variant: "destructive" }));
+                    }}
+                  >
+                    Archive Workspace
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="destructive"
+                    onClick={() => {
+                      const confirmed = window.confirm("Delete Empty Workspace? This only works if the workspace has no data, no extra members, and is not your only workspace.");
+                      if (!confirmed) return;
+                      void deleteOrganization(activeWorkspace.id)
+                        .then(() => toast({ title: "Workspace deleted", description: "Delete Empty Workspace completed." }))
+                        .catch((error) => toast({ title: "Delete failed", description: error instanceof Error ? error.message : "Workspace cannot be deleted. Archive instead if it has data.", variant: "destructive" }));
+                    }}
+                  >
+                    Delete Empty Workspace
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader className="pb-3">

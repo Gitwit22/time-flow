@@ -11,9 +11,11 @@ import type {
   Invoice,
   InvoiceDraftPreview,
   InvoiceLineItem,
+  Organization,
   ProjectBill,
   Project,
   TimeEntry,
+  WorkspaceInvite,
 } from "@/types";
 
 type ApiRecord = Record<string, unknown>;
@@ -163,7 +165,17 @@ export function toInvoice(r: ApiRecord): Invoice {
     hasMixedRates: r.hasMixedRates === true,
     status: (r.status as Invoice["status"]) || "draft",
     issuedAt: (r.issuedAt as string) ?? undefined,
+    viewedAt: (r.viewedAt as string) ?? undefined,
+    paidAmount: (r.paidAmount as number) ?? undefined,
+    balanceDue: (r.balanceDue as number) ?? undefined,
     paidAt: (r.paidAt as string) ?? undefined,
+    originalInvoiceId: (r.originalInvoiceId as string) ?? undefined,
+    revisionNumber: (r.revisionNumber as number) ?? undefined,
+    voidedAt: (r.voidedAt as string) ?? undefined,
+    voidReason: (r.voidReason as string) ?? undefined,
+    movedBackToDraftAt: (r.movedBackToDraftAt as string) ?? undefined,
+    lockedAt: (r.lockedAt as string) ?? undefined,
+    auditLog: (r.auditLog as Invoice["auditLog"]) ?? [],
     createdAt: (r.createdAt as string) || new Date().toISOString(),
   };
 }
@@ -404,6 +416,114 @@ export const apiGetSettings = () =>
 
 export const apiSaveSettings = (data: Partial<AppSettings>) =>
   apiRequest<ApiRecord>("PUT", "/settings", data).then(toSettings);
+
+// ─── Workspace management ─────────────────────────────────────────────────────
+
+function toOrganization(r: ApiRecord): Organization {
+  return {
+    id: r.id as string,
+    name: r.name as string,
+    ownerUserId: (r.ownerUserId as string) ?? (r.ownerEmail as string) ?? "",
+    createdAt: (r.createdAt as string) ?? new Date().toISOString(),
+    status: (r.status as Organization["status"]) ?? "active",
+    workspaceType: (r.workspaceType as Organization["workspaceType"]) ?? "solo",
+    solo: (r.solo as boolean) ?? r.workspaceType !== "team",
+    teamEnabled: (r.teamEnabled as boolean) ?? false,
+    isDefault: (r.isDefault as boolean) ?? false,
+  };
+}
+
+export const apiListOrganizations = () =>
+  apiRequest<{ organizations: ApiRecord[] }>("GET", "/organizations")
+    .then((r) => r.organizations.map(toOrganization));
+
+export const apiCreateWorkspace = (payload: { name: string; workspaceType?: "solo" | "team" }) =>
+  apiRequest<{ organization: ApiRecord }>("POST", "/organizations", payload)
+    .then((r) => toOrganization(r.organization));
+
+export const apiRenameWorkspace = (id: string, name: string) =>
+  apiRequest<ApiRecord>("PATCH", `/organizations/${id}`, { name });
+
+export const apiArchiveWorkspace = (id: string) =>
+  apiRequest<void>("POST", `/organizations/${id}/archive`);
+
+export interface DeleteWorkspaceResult {
+  deleted?: boolean;
+  error?: string;
+  code?: string;
+  details?: { clients: number; projects: number; timeEntries: number; expenses: number; invoices: number };
+}
+export const apiDeleteWorkspace = (id: string) =>
+  apiRequest<DeleteWorkspaceResult>("DELETE", `/organizations/${id}`);
+
+export const apiConvertWorkspaceToTeam = (id: string) =>
+  apiRequest<{ organizationId: string; workspaceType: string }>("POST", `/organizations/${id}/convert-to-team`);
+
+export const apiSetDefaultWorkspace = (id: string) =>
+  apiRequest<{ defaultWorkspaceId: string }>("POST", `/organizations/${id}/set-default`);
+
+export const apiTransferWorkspaceOwnership = (id: string, newOwnerEmail: string) =>
+  apiRequest<{ transferred: boolean; newOwnerEmail: string }>("POST", `/organizations/${id}/transfer-ownership`, { newOwnerEmail });
+
+// ─── Team Invites ─────────────────────────────────────────────────────────────
+
+function toWorkspaceInvite(r: ApiRecord): WorkspaceInvite {
+  return {
+    id: r.id as string,
+    organizationId: r.organizationId as string,
+    email: r.email as string,
+    name: (r.name as string) ?? undefined,
+    role: (r.role as WorkspaceInvite["role"]) ?? "employee",
+    employeeType: (r.employeeType as WorkspaceInvite["employeeType"]) ?? "employee",
+    hourlyRate: (r.hourlyRate as number) ?? undefined,
+    canClockInOut: r.canClockInOut !== false,
+    status: (r.status as WorkspaceInvite["status"]) ?? "pending",
+    expiresAt: r.expiresAt as string,
+    invitedAt: r.invitedAt as string,
+    acceptedAt: (r.acceptedAt as string) ?? undefined,
+  };
+}
+
+export interface CreateWorkspaceInviteData {
+  organizationId: string;
+  email: string;
+  name?: string;
+  role: string;
+  employeeType: string;
+  hourlyRate?: number;
+  canClockInOut: boolean;
+}
+
+export const apiCreateWorkspaceInvite = (data: CreateWorkspaceInviteData) =>
+  apiRequest<{ invite: ApiRecord; emailSent: boolean }>("POST", "/team-invites", data)
+    .then((r) => ({ invite: toWorkspaceInvite(r.invite), emailSent: r.emailSent }));
+
+export const apiListWorkspaceInvites = (organizationId: string) =>
+  apiRequest<{ invites: ApiRecord[] }>("GET", `/team-invites?organizationId=${encodeURIComponent(organizationId)}`)
+    .then((r) => r.invites.map(toWorkspaceInvite));
+
+export const apiResendWorkspaceInvite = (id: string) =>
+  apiRequest<{ resent: boolean; emailSent: boolean }>("POST", `/team-invites/${id}/resend`);
+
+export const apiRevokeWorkspaceInvite = (id: string) =>
+  apiRequest<{ revoked: boolean }>("DELETE", `/team-invites/${id}`);
+
+export interface InviteInfo {
+  id: string;
+  email: string;
+  name?: string;
+  role: string;
+  employeeType: string;
+  organizationName: string;
+  expiresAt: string;
+}
+
+export const apiGetInviteInfo = (token: string) =>
+  apiRequest<{ invite: InviteInfo }>("GET", `/accept-invite?token=${encodeURIComponent(token)}`)
+    .then((r) => r.invite);
+
+export const apiAcceptInvite = (data: { token: string; email: string; password: string; displayName?: string }) =>
+  apiRequest<{ token: string; user: ApiRecord; organization?: { id: string; name: string } }>("POST", "/accept-invite", data);
 
 // ─── Bulk hydration ───────────────────────────────────────────────────────────
 

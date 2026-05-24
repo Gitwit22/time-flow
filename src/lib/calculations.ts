@@ -105,16 +105,22 @@ export function getInvoiceStatusCounts(invoices: Invoice[], referenceDate = new 
     (totals, invoice) => {
       if (invoice.status === "paid") {
         totals.paid += 1;
-      } else if (invoice.status === "issued" && parseISO(invoice.dueDate) < referenceDate) {
+      } else if (invoice.status === "void") {
+        totals.void += 1;
+      } else if ((invoice.status === "issued" || invoice.status === "sent" || invoice.status === "viewed" || invoice.status === "partially_paid") && parseISO(invoice.dueDate) < referenceDate) {
         totals.overdue += 1;
-      } else if (invoice.status === "issued") {
+      } else if (invoice.status === "issued" || invoice.status === "sent" || invoice.status === "viewed") {
         totals.issued += 1;
+      } else if (invoice.status === "partially_paid") {
+        totals.partiallyPaid += 1;
+      } else if (invoice.status === "revised") {
+        totals.revised += 1;
       } else {
         totals.draft += 1;
       }
 
       return totals;
     },
-    { paid: 0, issued: 0, overdue: 0, draft: 0 },
+    { paid: 0, issued: 0, overdue: 0, draft: 0, partiallyPaid: 0, revised: 0, void: 0 },
   );
 }

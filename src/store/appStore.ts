@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { toast } from "sonner";
 
-import { createFixedBillInvoicePreview, createProjectPartialInvoicePreview, materializeInvoiceDrafts, normalizeInvoiceRecord } from "@/lib/invoice";
+import {
+  canEditInvoiceDirectly,
+  canMoveInvoiceBackToDraft,
+  createFixedBillInvoicePreview,
+  createProjectPartialInvoicePreview,
+  getInvoiceBalanceDue,
+  materializeInvoiceDrafts,
+  normalizeInvoiceRecord,
+} from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
 import { normalizeOrganizationRole } from "@/lib/organization";
 import { getProjectBillingSnapshot, normalizeTimeEntryRecord } from "@/lib/projects";
@@ -9,15 +17,24 @@ import { clearPersistedActiveSession, persistActiveSession, readPersistedActiveS
 import {
   apiArchiveClient,
   apiArchiveProject,
+  apiArchiveWorkspace,
+  apiConvertWorkspaceToTeam,
+  apiCreateWorkspace,
   apiCreateClient,
   apiUpdateClient,
   apiDeleteClient,
+  apiDeleteWorkspace,
+  apiSetDefaultWorkspace,
   apiCreateProject,
   apiCreateProjectBill,
   apiUpdateProject,
   apiUpdateProjectBill as apiUpdateProjectBillRequest,
   apiDeleteProject,
   apiDeleteProjectBill,
+  apiHydrateAll,
+  apiListOrganizations,
+  apiTransferWorkspaceOwnership,
+  apiRenameWorkspace,
   apiRestoreClient,
   apiRestoreProject,
   apiCreateTimeEntry,
@@ -29,9 +46,7 @@ import {
   apiDeleteExpense as apiDeleteExpenseRequest,
   apiCreateInvoice,
   apiUpdateInvoice,
-  apiDeleteInvoice,
   apiSaveSettings,
-  apiHydrateAll,
 } from "@/lib/timeflowApi";
 import type {
   AppSettings,
@@ -273,7 +288,92 @@ function getExpenseStatusForInvoiceStatus(status: Invoice["status"]): Expense["s
     return "reimbursed";
   }
 
+  if (status === "void") {
+    return "billable";
+  }
+
   return "invoiced";
+}
+
+function recalculateInvoiceFinancials(invoice: Invoice): Invoice {
+  const subtotal = Number(invoice.lineItems.reduce((sum, lineItem) => sum + lineItem.amount, 0).toFixed(2));
+  const taxAmount = Number((subtotal * (invoice.taxRate ?? 0)).toFixed(2));
+  const totalAmount = Number((subtotal + taxAmount).toFixed(2));
+  const paidAmount = invoice.status === "paid"
+    ? totalAmount
+    : Math.max(0, Number((invoice.paidAmount ?? 0).toFixed(2)));
+  const balanceDue = getInvoiceBalanceDue({ totalAmount, paidAmount, status: invoice.status });
+
+  return {
+    ...invoice,
+    subtotal,
+    taxAmount,
+    totalAmount,
+    paidAmount,
+    balanceDue,
+  };
+}
+
+function appendInvoiceAuditEvent(
+  invoice: Invoice,
+  payload: {
+    actionType: "status_changed" | "moved_back_to_draft" | "voided" | "updated";
+    previousStatus: Invoice["status"];
+    newStatus: Invoice["status"];
+    userId?: string;
+    affectedItemIds?: string[];
+    note?: string;
+  },
+): Invoice {
+  const event = {
+    id: `invoice-audit-${crypto.randomUUID()}`,
+    actionType: payload.actionType,
+    previousStatus: payload.previousStatus,
+    newStatus: payload.newStatus,
+    userId: payload.userId,
+    timestamp: new Date().toISOString(),
+    affectedItemIds: payload.affectedItemIds ?? [],
+    note: payload.note,
+  };
+
+  return {
+    ...invoice,
+    auditLog: [...(invoice.auditLog ?? []), event],
+  };
+}
+
+function releaseLinkedInvoiceItems(
+  invoiceId: string,
+  entries: TimeEntry[],
+  expenses: Expense[],
+  linkedEntryIds: Set<string>,
+  linkedExpenseIds: Set<string>,
+) {
+  const nextTimeEntries = entries.map((entry) => {
+    if (!linkedEntryIds.has(entry.id) || entry.invoiceId !== invoiceId) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      status: "completed" as const,
+      invoiced: false,
+      invoiceId: null,
+    };
+  });
+
+  const nextExpenses = expenses.map((expense) => {
+    if (!linkedExpenseIds.has(expense.id) || expense.invoiceId !== invoiceId) {
+      return expense;
+    }
+
+    return releaseExpenseFromInvoice(expense);
+  });
+
+  return {
+    nextTimeEntries,
+    nextExpenses,
+  };
 }
 
 function releaseExpenseFromInvoice(expense: Expense): Expense {
@@ -359,7 +459,14 @@ export interface AppState {
     organization: Organization;
     memberRole?: OrganizationMember["role"];
   }) => void;
-  createOrganizationWorkspace: (name?: string) => string | undefined;
+  createOrganizationWorkspace: (name?: string) => Promise<string | undefined>;
+    renameOrganization: (id: string, name: string) => Promise<void>;
+    archiveOrganization: (id: string) => Promise<void>;
+    deleteOrganization: (id: string) => Promise<void>;
+    convertOrganizationToTeam: (id: string) => Promise<void>;
+    setDefaultOrganization: (id: string) => Promise<void>;
+    transferOrganizationOwnership: (id: string, newOwnerEmail: string) => Promise<void>;
+    refreshOrganizations: () => Promise<void>;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "id" | "name" | "email" | "role">) => void;
@@ -404,6 +511,8 @@ export interface AppState {
   commitInvoiceDrafts: (previews: InvoiceDraftPreview[]) => Invoice[];
   commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
+  moveInvoiceBackToDraft: (id: string, note?: string) => { ok: boolean; message?: string };
+  voidInvoice: (id: string, options?: { releaseLinkedItems?: boolean; note?: string }) => { ok: boolean; message?: string };
   deleteInvoice: (id: string) => void;
   createPartialProjectInvoice: (draft: PartialProjectInvoiceDraft) => Invoice | null;
   createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string | undefined, dueDate: string) => Invoice | null;
@@ -467,12 +576,18 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   hydrateFromApi: async () => {
     try {
-      const { clients, projects, timeEntries, expenses, invoices, projectBills, settings } = await apiHydrateAll();
+      const [hydratedData, organizationsFromApi] = await Promise.all([
+        apiHydrateAll(),
+        apiListOrganizations().catch(() => [] as Organization[]),
+      ]);
+      const { clients, projects, timeEntries, expenses, invoices, projectBills, settings } = hydratedData;
       const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
       const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const state = get();
       const persistedWorkspace = readPersistedWorkspaceState();
-      const organizations = persistedWorkspace.organizations?.length
+      const organizations = organizationsFromApi.length
+        ? organizationsFromApi
+        : persistedWorkspace.organizations?.length
         ? persistedWorkspace.organizations
         : state.organizations;
       const activeOrganizationId =
@@ -628,22 +743,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  createOrganizationWorkspace: (name) => {
+  createOrganizationWorkspace: async (name) => {
     if (!canManageWorkspace(get().currentUser.role)) return undefined;
 
     const state = get();
     const workspaceName = name?.trim() || `${state.settings.businessName || state.currentUser.name || "Workspace"} Team`;
-    const organizationId = `org-${crypto.randomUUID()}`;
-    const nextOrganization: Organization = {
-      id: organizationId,
-      name: workspaceName,
-      ownerUserId: state.currentUser.id || "owner",
-      createdAt: new Date().toISOString(),
-      status: "active",
-    };
-    const nextMember: OrganizationMember = {
+    const created = await apiCreateWorkspace({ name: workspaceName, workspaceType: "team" });
+    const organizations = [...state.organizations, created];
+
+    const ownerMember: OrganizationMember = {
       id: `member-${crypto.randomUUID()}`,
-      organizationId,
+      organizationId: created.id,
       userId: state.currentUser.id || undefined,
       email: state.currentUser.email,
       name: state.currentUser.name || "Owner",
@@ -651,17 +761,149 @@ export const useAppStore = create<AppState>()((set, get) => ({
       status: "active",
       joinedAt: new Date().toISOString(),
     };
-    const organizations = [...state.organizations, nextOrganization];
-    const organizationMembers = [...state.organizationMembers, nextMember];
-    set({ organizations, organizationMembers, activeOrganizationId: organizationId });
+
+    const organizationMembers = [...state.organizationMembers, ownerMember];
+
+    set({ organizations, organizationMembers, activeOrganizationId: created.id });
     persistWorkspaceSnapshot({
       organizations,
-      activeOrganizationId: organizationId,
+      activeOrganizationId: created.id,
       organizationMembers,
       employeeProfiles: state.employeeProfiles,
       projectAssignments: state.projectAssignments,
     });
-    return organizationId;
+    return created.id;
+  },
+
+  refreshOrganizations: async () => {
+    try {
+      const organizations = await apiListOrganizations();
+      const state = get();
+      const activeOrganizationId =
+        organizations.some((org) => org.id === state.activeOrganizationId)
+          ? state.activeOrganizationId
+          : organizations[0]?.id;
+
+      set({ organizations, activeOrganizationId });
+      persistWorkspaceSnapshot({
+        organizations,
+        activeOrganizationId,
+        organizationMembers: state.organizationMembers,
+        employeeProfiles: state.employeeProfiles,
+        projectAssignments: state.projectAssignments,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to load workspaces");
+    }
+  },
+
+  renameOrganization: async (id, name) => {
+    if (!name.trim()) return;
+    await apiRenameWorkspace(id, name.trim());
+    const state = get();
+    const organizations = state.organizations.map((org) => (org.id === id ? { ...org, name: name.trim() } : org));
+    set({ organizations });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: state.activeOrganizationId,
+      organizationMembers: state.organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
+  },
+
+  archiveOrganization: async (id) => {
+    await apiArchiveWorkspace(id);
+    const state = get();
+    const organizations = state.organizations
+      .map((org) => (org.id === id ? { ...org, status: "archived" as const } : org))
+      .filter((org) => org.status !== "archived");
+    const nextActive = state.activeOrganizationId === id ? organizations[0]?.id : state.activeOrganizationId;
+    set({ organizations, activeOrganizationId: nextActive });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: nextActive,
+      organizationMembers: state.organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
+  },
+
+  deleteOrganization: async (id) => {
+    await apiDeleteWorkspace(id);
+    const state = get();
+    const organizations = state.organizations.filter((org) => org.id !== id);
+    const organizationMembers = state.organizationMembers.filter((member) => member.organizationId !== id);
+    const employeeProfiles = state.employeeProfiles.filter((profile) => profile.organizationId !== id);
+    const projectAssignments = state.projectAssignments.filter((assignment) => assignment.organizationId !== id);
+    const clients = state.clients.filter((client) => (client.organizationId ?? client.workspaceId) !== id);
+    const projects = state.projects.filter((project) => (project.organizationId ?? project.workspaceId) !== id);
+    const timeEntries = state.timeEntries.filter((entry) => (entry.organizationId ?? entry.workspaceId) !== id);
+    const expenses = state.expenses.filter((expense) => (expense.organizationId ?? expense.workspaceId) !== id);
+    const invoices = state.invoices.filter((invoice) => (invoice.organizationId ?? invoice.workspaceId) !== id);
+    const projectBills = state.projectBills.filter((bill) => (bill.organizationId ?? bill.workspaceId) !== id);
+
+    const nextActive = state.activeOrganizationId === id ? organizations[0]?.id : state.activeOrganizationId;
+
+    set({
+      organizations,
+      organizationMembers,
+      employeeProfiles,
+      projectAssignments,
+      clients,
+      projects,
+      timeEntries,
+      expenses,
+      invoices,
+      projectBills,
+      activeOrganizationId: nextActive,
+    });
+
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: nextActive,
+      organizationMembers,
+      employeeProfiles,
+      projectAssignments,
+    });
+  },
+
+  convertOrganizationToTeam: async (id) => {
+    await apiConvertWorkspaceToTeam(id);
+    const state = get();
+    const organizations = state.organizations.map((org) =>
+      org.id === id ? { ...org, workspaceType: "team", solo: false, teamEnabled: true } : org,
+    );
+    set({ organizations });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: state.activeOrganizationId,
+      organizationMembers: state.organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
+  },
+
+  setDefaultOrganization: async (id) => {
+    await apiSetDefaultWorkspace(id);
+    const state = get();
+    const organizations = state.organizations.map((org) => ({
+      ...org,
+      isDefault: org.id === id,
+    }));
+    set({ organizations, activeOrganizationId: id });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: id,
+      organizationMembers: state.organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
+  },
+
+  transferOrganizationOwnership: async (id, newOwnerEmail) => {
+    await apiTransferWorkspaceOwnership(id, newOwnerEmail.trim());
+    await get().refreshOrganizations();
   },
 
   setRole: (role) =>
@@ -1347,11 +1589,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (!canManageWorkspace(state.currentUser.role)) return [];
 
-    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices).map((invoice) => ({
-      ...invoice,
-      organizationId: invoice.organizationId ?? state.activeOrganizationId,
-      workspaceId: resolveWorkspaceId(invoice.workspaceId ?? invoice.organizationId, state.activeOrganizationId),
-    }));
+    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices).map((invoice) =>
+      appendInvoiceAuditEvent(
+        recalculateInvoiceFinancials({
+          ...invoice,
+          organizationId: invoice.organizationId ?? state.activeOrganizationId,
+          workspaceId: resolveWorkspaceId(invoice.workspaceId ?? invoice.organizationId, state.activeOrganizationId),
+          paidAmount: 0,
+          balanceDue: invoice.totalAmount,
+        }),
+        {
+          actionType: "updated",
+          previousStatus: "draft",
+          newStatus: "draft",
+          userId: state.currentUser.id,
+        },
+      ),
+    );
 
     const entryToInvoiceId = new Map<string, string>();
     const expenseToInvoiceId = new Map<string, string>();
@@ -1422,11 +1676,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     const [invoiceDraft] = materializeInvoiceDrafts([preview], state.invoices);
     const invoice = invoiceDraft
-      ? {
-        ...invoiceDraft,
-        organizationId: invoiceDraft.organizationId ?? state.activeOrganizationId,
-        workspaceId: resolveWorkspaceId(invoiceDraft.workspaceId ?? invoiceDraft.organizationId, state.activeOrganizationId),
-      }
+      ? appendInvoiceAuditEvent(
+        recalculateInvoiceFinancials({
+          ...invoiceDraft,
+          organizationId: invoiceDraft.organizationId ?? state.activeOrganizationId,
+          workspaceId: resolveWorkspaceId(invoiceDraft.workspaceId ?? invoiceDraft.organizationId, state.activeOrganizationId),
+          paidAmount: 0,
+          balanceDue: invoiceDraft.totalAmount,
+        }),
+        {
+          actionType: "updated",
+          previousStatus: "draft",
+          newStatus: "draft",
+          userId: state.currentUser.id,
+        },
+      )
       : undefined;
     if (!invoice) return null;
 
@@ -1480,9 +1744,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   updateInvoice: (id, updates) => {
     if (!canManageWorkspace(get().currentUser.role)) return;
-    const prev = get().invoices.find((inv) => inv.id === id);
+    const state = get();
+    const prev = state.invoices.find((inv) => inv.id === id);
     if (!prev) return;
-    const nextInvoice = { ...prev, ...updates };
+
+    const updateKeys = Object.keys(updates);
+    const isStatusOnlyUpdate = updateKeys.every((key) =>
+      ["status", "paidAt", "paidAmount", "issuedAt", "dueDate", "viewedAt", "balanceDue"].includes(key),
+    );
+    if (!canEditInvoiceDirectly(prev) && !isStatusOnlyUpdate) {
+      toast.error("Only draft invoices can be edited directly. Move the invoice back to draft first.");
+      return;
+    }
+
+    const nextInvoice = appendInvoiceAuditEvent(
+      recalculateInvoiceFinancials({ ...prev, ...updates }),
+      {
+        actionType: "updated",
+        previousStatus: prev.status,
+        newStatus: updates.status ?? prev.status,
+        userId: state.currentUser.id,
+        note: "Invoice updated while draft",
+      },
+    );
     const previousExpenseIds = new Set(getInvoiceExpenseIds(prev));
     const nextExpenseIds = new Set(getInvoiceExpenseIds(nextInvoice));
     const nextExpenseStatus = getExpenseStatusForInvoiceStatus(nextInvoice.status);
@@ -1555,46 +1839,176 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
   },
 
-  deleteInvoice: (id) => {
-    if (!canManageWorkspace(get().currentUser.role)) return;
-    const s = get();
-    const invoice = s.invoices.find((inv) => inv.id === id);
-    const linkedEntryIds = new Set(invoice?.entryIds ?? []);
-    const linkedExpenseIds = new Set(invoice ? getInvoiceExpenseIds(invoice) : []);
-    const prevInvoices = s.invoices;
-    const prevEntries = s.timeEntries;
-    const prevExpenses = s.expenses;
-    set((state) => {
-      const expenses = state.expenses.map((expense) => {
-        if (!linkedExpenseIds.has(expense.id) || expense.invoiceId !== id) {
-          return expense;
-        }
+  moveInvoiceBackToDraft: (id, note) => {
+    if (!canManageWorkspace(get().currentUser.role)) {
+      return { ok: false, message: "Permission denied" };
+    }
 
-        return releaseExpenseFromInvoice(expense);
-      });
-      writePersistedExpenses(expenses);
+    const state = get();
+    const invoice = state.invoices.find((inv) => inv.id === id);
+    if (!invoice) {
+      return { ok: false, message: "Invoice not found" };
+    }
 
+    if (!canMoveInvoiceBackToDraft(invoice)) {
       return {
-        invoices: state.invoices.filter((inv) => inv.id !== id),
-        timeEntries: state.timeEntries.map((entry) =>
-          linkedEntryIds.has(entry.id) ? { ...entry, status: "completed" as const, invoiced: false, invoiceId: null } : entry,
-        ),
-        expenses,
+        ok: false,
+        message: "Only sent/finalized unpaid invoices can be moved back to draft.",
       };
-    });
+    }
 
+    if (invoice.status === "paid" || invoice.status === "partially_paid" || Boolean(invoice.paidAt) || (invoice.paidAmount ?? 0) > 0) {
+      return {
+        ok: false,
+        message: "Paid or partially paid invoices require an adjustment or reversal flow.",
+      };
+    }
+
+    const linkedEntryIds = new Set(invoice.entryIds);
+    const linkedExpenseIds = new Set(getInvoiceExpenseIds(invoice));
+    const { nextTimeEntries, nextExpenses } = releaseLinkedInvoiceItems(
+      invoice.id,
+      state.timeEntries,
+      state.expenses,
+      linkedEntryIds,
+      linkedExpenseIds,
+    );
+
+    const updatedInvoice = appendInvoiceAuditEvent(
+      recalculateInvoiceFinancials({
+        ...invoice,
+        status: "draft",
+        issuedAt: undefined,
+        paidAt: undefined,
+        paidAmount: 0,
+        movedBackToDraftAt: new Date().toISOString(),
+        revisionNumber: (invoice.revisionNumber ?? 0) + 1,
+      }),
+      {
+        actionType: "moved_back_to_draft",
+        previousStatus: invoice.status,
+        newStatus: "draft",
+        userId: state.currentUser.id,
+        affectedItemIds: [...linkedEntryIds, ...linkedExpenseIds],
+        note,
+      },
+    );
+
+    set((current) => ({
+      invoices: current.invoices.map((inv) => (inv.id === id ? updatedInvoice : inv)),
+      timeEntries: nextTimeEntries,
+      expenses: nextExpenses,
+    }));
+    writePersistedExpenses(nextExpenses);
+
+    if (linkedEntryIds.size > 0) {
+      void apiBulkUpdateTimeEntries(Array.from(linkedEntryIds), {
+        invoiced: false,
+        invoiceId: null,
+        status: "completed",
+      }).catch(() => undefined);
+    }
     linkedExpenseIds.forEach((expenseId) => {
       void apiUpdateExpenseRequest(expenseId, {
         invoiceId: null,
         status: "billable",
       }).catch(() => undefined);
     });
+    void apiUpdateInvoice(id, {
+      status: "draft",
+      issuedAt: undefined,
+      paidAt: undefined,
+      paidAmount: 0,
+      movedBackToDraftAt: updatedInvoice.movedBackToDraftAt,
+      revisionNumber: updatedInvoice.revisionNumber,
+      auditLog: updatedInvoice.auditLog,
+    }).catch(() => undefined);
 
-    void apiDeleteInvoice(id).catch((err) => {
-      set({ invoices: prevInvoices, timeEntries: prevEntries, expenses: prevExpenses });
-      writePersistedExpenses(prevExpenses);
-      toast.error(err instanceof Error ? err.message : "Failed to delete invoice");
-    });
+    return { ok: true };
+  },
+
+  voidInvoice: (id, options) => {
+    if (!canManageWorkspace(get().currentUser.role)) {
+      return { ok: false, message: "Permission denied" };
+    }
+
+    const state = get();
+    const invoice = state.invoices.find((inv) => inv.id === id);
+    if (!invoice) {
+      return { ok: false, message: "Invoice not found" };
+    }
+
+    if (invoice.status === "paid" || invoice.status === "partially_paid" || Boolean(invoice.paidAt) || (invoice.paidAmount ?? 0) > 0) {
+      return {
+        ok: false,
+        message: "Paid or partially paid invoices cannot be voided directly. Use a credit or reversal flow.",
+      };
+    }
+
+    const releaseLinkedItems = options?.releaseLinkedItems !== false;
+    const linkedEntryIds = new Set(invoice.entryIds);
+    const linkedExpenseIds = new Set(getInvoiceExpenseIds(invoice));
+
+    const itemUpdate = releaseLinkedItems
+      ? releaseLinkedInvoiceItems(invoice.id, state.timeEntries, state.expenses, linkedEntryIds, linkedExpenseIds)
+      : { nextTimeEntries: state.timeEntries, nextExpenses: state.expenses };
+
+    const voidedInvoice = appendInvoiceAuditEvent(
+      recalculateInvoiceFinancials({
+        ...invoice,
+        status: "void",
+        voidedAt: new Date().toISOString(),
+        voidReason: options?.note,
+      }),
+      {
+        actionType: "voided",
+        previousStatus: invoice.status,
+        newStatus: "void",
+        userId: state.currentUser.id,
+        affectedItemIds: releaseLinkedItems ? [...linkedEntryIds, ...linkedExpenseIds] : [],
+        note: options?.note,
+      },
+    );
+
+    set((current) => ({
+      invoices: current.invoices.map((inv) => (inv.id === id ? voidedInvoice : inv)),
+      timeEntries: itemUpdate.nextTimeEntries,
+      expenses: itemUpdate.nextExpenses,
+    }));
+    writePersistedExpenses(itemUpdate.nextExpenses);
+
+    if (releaseLinkedItems) {
+      if (linkedEntryIds.size > 0) {
+        void apiBulkUpdateTimeEntries(Array.from(linkedEntryIds), {
+          invoiced: false,
+          invoiceId: null,
+          status: "completed",
+        }).catch(() => undefined);
+      }
+
+      linkedExpenseIds.forEach((expenseId) => {
+        void apiUpdateExpenseRequest(expenseId, {
+          invoiceId: null,
+          status: "billable",
+        }).catch(() => undefined);
+      });
+    }
+
+    void apiUpdateInvoice(id, {
+      status: "void",
+      voidedAt: voidedInvoice.voidedAt,
+      voidReason: voidedInvoice.voidReason,
+      auditLog: voidedInvoice.auditLog,
+    }).catch(() => undefined);
+
+    return { ok: true };
+  },
+
+  deleteInvoice: (id) => {
+    const result = get().voidInvoice(id, { releaseLinkedItems: true, note: "Voided via delete action" });
+    if (!result.ok && result.message) {
+      toast.error(result.message);
+    }
   },
 
   createPartialProjectInvoice: (draft) => {
@@ -1649,19 +2063,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     const shouldMarkSent = draft.status === "sent" || draft.markAsPaid === true;
     const nowDate = new Date().toISOString().split("T")[0];
-    const invoice: Invoice = {
-      ...baseInvoice,
-      fixedBillingAmount: draft.amount,
-      invoiceSourceType: preview.invoiceSourceType,
-      organizationId: state.activeOrganizationId,
-      workspaceId: resolveWorkspaceId(state.activeOrganizationId, state.activeOrganizationId),
-      projectId: project.id,
-      projectIds: [project.id],
-      sourceDescription,
-      status: draft.markAsPaid ? "paid" : shouldMarkSent ? "issued" : "draft",
-      issuedAt: shouldMarkSent ? nowDate : undefined,
-      paidAt: draft.markAsPaid ? nowDate : undefined,
-    };
+    const createdStatus: Invoice["status"] = draft.markAsPaid ? "paid" : shouldMarkSent ? "sent" : "draft";
+    const invoice: Invoice = appendInvoiceAuditEvent(
+      recalculateInvoiceFinancials({
+        ...baseInvoice,
+        fixedBillingAmount: draft.amount,
+        invoiceSourceType: preview.invoiceSourceType,
+        organizationId: state.activeOrganizationId,
+        workspaceId: resolveWorkspaceId(state.activeOrganizationId, state.activeOrganizationId),
+        projectId: project.id,
+        projectIds: [project.id],
+        sourceDescription,
+        status: createdStatus,
+        issuedAt: shouldMarkSent ? nowDate : undefined,
+        paidAt: draft.markAsPaid ? nowDate : undefined,
+        paidAmount: draft.markAsPaid ? baseInvoice.totalAmount : 0,
+      }),
+      {
+        actionType: "updated",
+        previousStatus: "draft",
+        newStatus: createdStatus,
+        userId: state.currentUser.id,
+      },
+    );
 
     set((current) => ({ invoices: [invoice, ...current.invoices] }));
 

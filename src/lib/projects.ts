@@ -233,7 +233,7 @@ export function getProjectBillingInvoices(project: Project, invoices: Invoice[])
 }
 
 export function getProjectBillingSnapshot(project: Project, invoices: Invoice[]): ProjectBillingSnapshot {
-  const billingInvoices = getProjectBillingInvoices(project, invoices);
+  const billingInvoices = getProjectBillingInvoices(project, invoices).filter((invoice) => invoice.status !== "void" && invoice.status !== "revised");
   const fixedProjectAmount = getProjectFixedAmount(project);
   const totalProjectInvoiced = roundCurrency(
     billingInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0),

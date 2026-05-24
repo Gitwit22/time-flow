@@ -17,7 +17,12 @@ import { Link, useParams } from "react-router-dom";
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
   issued: "status-badge-warning",
+  sent: "status-badge-warning",
+  viewed: "status-badge-warning",
+  partially_paid: "status-badge-accent",
+  revised: "status-badge-accent",
   paid: "status-badge-success",
+  void: "status-badge-muted",
   overdue: "status-badge-warning",
 };
 

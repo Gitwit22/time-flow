@@ -42,6 +42,8 @@ export function AdminSidebar() {
     { title: "My Timesheets", url: "/employee/timesheets", icon: FileText },
   ];
   const viewerItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
+  const payrollReviewerItems = mainItems.filter((item) => ["Dashboard", "Approvals", "Invoices", "Reports"].includes(item.title));
+  const auditorItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
   const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Invoices", "Reports"].includes(item.title));
   const adminItems = mainItems;
 
@@ -49,6 +51,10 @@ export function AdminSidebar() {
     ? employeeItems
     : isViewerLikeRole(role)
       ? viewerItems
+      : role === "payroll_reviewer"
+        ? payrollReviewerItems
+        : role === "auditor"
+          ? auditorItems
       : role === "manager"
         ? managerItems
         : canViewAdminWorkspace(role)
@@ -63,7 +69,7 @@ export function AdminSidebar() {
             })
           : viewerItems;
 
-  const visibleBottomItems = isEmployeeRole(role) || isViewerLikeRole(role) ? [] : bottomItems;
+  const visibleBottomItems = isEmployeeRole(role) || isViewerLikeRole(role) || role === "payroll_reviewer" || role === "auditor" ? [] : bottomItems;
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">

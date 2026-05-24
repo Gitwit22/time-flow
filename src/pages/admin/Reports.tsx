@@ -12,8 +12,10 @@ import { useAppStore } from "@/store/appStore";
 const pieColors = {
   paid: "hsl(152, 60%, 40%)",
   issued: "hsl(38, 92%, 50%)",
+  partiallyPaid: "hsl(208, 84%, 44%)",
   draft: "hsl(220, 9%, 46%)",
   overdue: "hsl(0, 74%, 42%)",
+  void: "hsl(220, 8%, 60%)",
 };
 
 export default function Reports() {
@@ -45,23 +47,26 @@ export default function Reports() {
   const thisWeekHours = weeklyHours[weeklyHours.length - 1]?.hours ?? 0;
   const monthlyEarnings = getMonthlyEarnings(timeEntries, clients, projects, projectBills);
   const statusTotals = getInvoiceStatusCounts(invoices);
-  const totalInvoiced = invoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
-  const unpaidInvoices = invoices.filter((invoice) => invoice.status !== "paid");
-  const unpaidBalance = unpaidInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const activeInvoices = invoices.filter((invoice) => invoice.status !== "void" && invoice.status !== "revised");
+  const totalInvoiced = activeInvoices.reduce((sum, invoice) => sum + invoice.totalAmount, 0);
+  const unpaidInvoices = activeInvoices.filter((invoice) => invoice.status !== "paid");
+  const unpaidBalance = unpaidInvoices.reduce((sum, invoice) => sum + (invoice.balanceDue ?? invoice.totalAmount), 0);
   const nonVoidProjectBills = projectBills.filter((bill) => bill.status !== "void");
   const paidProjectBillRevenue = nonVoidProjectBills.filter((bill) => bill.status === "paid").reduce((sum, bill) => sum + bill.amount, 0);
   const unpaidProjectBillRevenue = nonVoidProjectBills.filter((bill) => bill.status !== "paid").reduce((sum, bill) => sum + bill.amount, 0);
   const fixedProjectBillRevenue = nonVoidProjectBills.reduce((sum, bill) => sum + bill.amount, 0);
   const totalRevenue = totalInvoiced + fixedProjectBillRevenue;
-  const paidRevenue = invoices.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + invoice.totalAmount, 0) + paidProjectBillRevenue;
+  const paidRevenue = activeInvoices.filter((invoice) => invoice.status === "paid").reduce((sum, invoice) => sum + invoice.totalAmount, 0) + paidProjectBillRevenue;
   const outstandingRevenue = unpaidBalance + unpaidProjectBillRevenue;
   const isReadonly = currentUser.role === "client_viewer";
 
   const invoiceStatus = [
     { name: "Paid", value: statusTotals.paid, color: pieColors.paid },
-    { name: "Issued", value: statusTotals.issued, color: pieColors.issued },
+    { name: "Sent", value: statusTotals.issued, color: pieColors.issued },
+    { name: "Partially Paid", value: statusTotals.partiallyPaid, color: pieColors.partiallyPaid },
     { name: "Draft", value: statusTotals.draft, color: pieColors.draft },
     { name: "Overdue", value: statusTotals.overdue, color: pieColors.overdue },
+    { name: "Void", value: statusTotals.void, color: pieColors.void },
   ].filter((item) => item.value > 0);
 
   return (

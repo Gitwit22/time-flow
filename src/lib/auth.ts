@@ -64,8 +64,12 @@ function toAuthUser(user: BackendAuthUser): AuthUser {
 				? "admin"
 				: user.role === "manager"
 					? "manager"
+					: user.role === "payroll_reviewer"
+						? "payroll_reviewer"
 					: user.role === "employee"
 						? "employee"
+						: user.role === "auditor"
+							? "auditor"
 						: user.role === "viewer"
 							? "viewer"
 							: user.role === "client_viewer"
@@ -133,6 +137,20 @@ export function getActiveUser() {
 
 export function getActiveAuthToken() {
 	return readSession()?.token ?? null;
+}
+
+export function establishAuthSession(token: string, userPayload: {
+	id: string;
+	email: string;
+	displayName?: string;
+	role: string;
+	clientId?: string;
+	organizationId?: string;
+	programDomain?: string;
+}) {
+	const user = toAuthUser(userPayload);
+	writeSession({ token, user, loggedInAt: new Date().toISOString() });
+	return user;
 }
 
 // Viewer invite linkage is now server-managed; keep compatibility API.

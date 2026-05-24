@@ -1,4 +1,4 @@
-export type UserRole = "owner" | "admin" | "manager" | "employee" | "viewer" | "contractor" | "client_viewer";
+export type UserRole = "owner" | "admin" | "manager" | "payroll_reviewer" | "employee" | "auditor" | "viewer" | "contractor" | "client_viewer";
 export type ProjectStatus = "planning" | "active" | "on_hold" | "completed" | "archived";
 export type ProjectBillingType = "hourly_uncapped" | "hourly_capped" | "fixed_fee";
 export type ProjectInvoiceBillingType = "hourly" | "fixed" | "mixed";
@@ -9,10 +9,13 @@ export type ExpenseBillingTarget = "client" | "project";
 export type ExpenseStatus = "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 export type ProjectBillStatus = "draft" | "issued" | "paid" | "void";
 export type InvoiceSourceType = "time_entries" | "manual_project" | "manual_client" | "partial_project" | "expense_billback" | "mixed";
+export type InvoiceStatus = "draft" | "issued" | "sent" | "viewed" | "partially_paid" | "paid" | "void" | "revised";
 export type OrganizationStatus = "active" | "archived";
-export type OrganizationMemberRole = "owner" | "admin" | "manager" | "employee" | "viewer";
+export type WorkspaceType = "solo" | "team";
+export type WorkspaceInviteStatus = "pending" | "accepted" | "expired" | "revoked";
+export type OrganizationMemberRole = "owner" | "admin" | "manager" | "payroll_reviewer" | "employee" | "auditor" | "viewer";
 export type OrganizationMemberStatus = "invited" | "active" | "disabled";
-export type EmployeeType = "employee" | "contractor" | "volunteer";
+export type EmployeeType = "employee" | "contractor" | "volunteer" | "intern";
 export type ProjectAssignmentRole = "worker" | "lead" | "manager";
 export type TimeEntryStatus =
   | "running"
@@ -32,6 +35,25 @@ export interface Organization {
   ownerUserId: string;
   createdAt: string;
   status: OrganizationStatus;
+  workspaceType?: WorkspaceType;
+  solo?: boolean;
+  teamEnabled?: boolean;
+  isDefault?: boolean;
+}
+
+export interface WorkspaceInvite {
+  id: string;
+  organizationId: string;
+  email: string;
+  name?: string;
+  role: OrganizationMemberRole;
+  employeeType: EmployeeType;
+  hourlyRate?: number;
+  canClockInOut: boolean;
+  status: WorkspaceInviteStatus;
+  expiresAt: string;
+  invitedAt: string;
+  acceptedAt?: string;
 }
 
 export interface OrganizationMember {
@@ -265,6 +287,17 @@ export interface InvoiceLineItem {
   timeEntryIds: string[];
 }
 
+export interface InvoiceAuditEvent {
+  id: string;
+  actionType: "status_changed" | "moved_back_to_draft" | "voided" | "updated";
+  previousStatus: InvoiceStatus;
+  newStatus: InvoiceStatus;
+  userId?: string;
+  timestamp: string;
+  affectedItemIds: string[];
+  note?: string;
+}
+
 export interface WorkSession {
   isActive: boolean;
   isPaused?: boolean;
@@ -305,9 +338,19 @@ export interface Invoice {
   taxAmount: number;
   totalAmount: number;
   hasMixedRates: boolean;
-  status: "draft" | "issued" | "sent" | "paid";
+  status: InvoiceStatus;
   issuedAt?: string;
+  viewedAt?: string;
+  paidAmount?: number;
+  balanceDue?: number;
   paidAt?: string;
+  originalInvoiceId?: string;
+  revisionNumber?: number;
+  voidedAt?: string;
+  voidReason?: string;
+  movedBackToDraftAt?: string;
+  lockedAt?: string;
+  auditLog?: InvoiceAuditEvent[];
   sourceWorkspaceId?: string;
   sourceEntityId?: string;
   migrationBatchId?: string;

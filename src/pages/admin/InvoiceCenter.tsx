@@ -12,12 +12,17 @@ import { useAppStore } from "@/store/appStore";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport } from "@/lib/export";
-import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel } from "@/lib/invoice";
+import { canMoveInvoiceBackToDraft, getInvoiceDisplayStatus, getInvoiceSourceTypeLabel } from "@/lib/invoice";
 
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
   issued: "status-badge-warning",
+  sent: "status-badge-warning",
+  viewed: "status-badge-warning",
+  partially_paid: "status-badge-accent",
+  revised: "status-badge-accent",
   paid: "status-badge-success",
+  void: "status-badge-muted",
   overdue: "status-badge-warning",
 };
 
@@ -32,7 +37,8 @@ export default function InvoiceCenter() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
-  const deleteInvoice = useAppStore((state) => state.deleteInvoice);
+  const moveInvoiceBackToDraft = useAppStore((state) => state.moveInvoiceBackToDraft);
+  const voidInvoice = useAppStore((state) => state.voidInvoice);
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
@@ -93,8 +99,12 @@ export default function InvoiceCenter() {
           <SelectContent>
             <SelectItem value="all">All Status</SelectItem>
             <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
             <SelectItem value="issued">Issued</SelectItem>
+            <SelectItem value="partially_paid">Partially Paid</SelectItem>
             <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="void">Void</SelectItem>
+            <SelectItem value="revised">Revised</SelectItem>
             <SelectItem value="overdue">Overdue</SelectItem>
           </SelectContent>
         </Select>
@@ -130,7 +140,7 @@ export default function InvoiceCenter() {
                     <td className="py-3 px-4">{formatCurrency(inv.hourlyRate)}/hr</td>
                     <td className="py-3 px-4 font-semibold">{formatCurrency(inv.totalAmount)}</td>
                     <td className="py-3 px-4">
-                      {isReadonly ? (
+                      {isReadonly || inv.status !== "draft" ? (
                         formatLongDate(inv.dueDate)
                       ) : (
                         <input
@@ -183,34 +193,41 @@ export default function InvoiceCenter() {
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: toDateOnlyString(new Date()), status: "issued" });
-                              toast({ title: "Invoice issued", description: `${inv.id} is now ready to share with the client.` });
+                              updateInvoice(inv.id, { paidAt: undefined, issuedAt: toDateOnlyString(new Date()), status: "sent" });
+                              toast({ title: "Invoice sent", description: `${inv.id} is now ready to share with the client.` });
                             }}
                           >
                             <FileText className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {!isReadonly && inv.status === "issued" && (
+                        {!isReadonly && (inv.status === "issued" || inv.status === "sent" || inv.status === "viewed") && (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-success"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
+                              updateInvoice(inv.id, { paidAt: toDateOnlyString(new Date()), paidAmount: inv.totalAmount, status: "paid" });
                               toast({ title: "Invoice paid", description: `${inv.id} marked as paid.` });
                             }}
                           >
                             <CheckCircle2 className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {!isReadonly && inv.status === "paid" ? (
+                        {!isReadonly && canMoveInvoiceBackToDraft(inv) ? (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-7 w-7 text-muted-foreground"
                             onClick={() => {
-                              updateInvoice(inv.id, { paidAt: undefined, status: "issued" });
-                              toast({ title: "Invoice marked unpaid", description: `${inv.id} was moved back to issued status.` });
+                              const result = moveInvoiceBackToDraft(inv.id, "Moved back to draft from invoice center");
+                              if (result.ok) {
+                                toast({
+                                  title: "Moved back to draft",
+                                  description: `${inv.id} is now draft and linked billable items were released.`,
+                                });
+                              } else {
+                                toast({ title: "Cannot move invoice", description: result.message ?? "Operation failed.", variant: "destructive" });
+                              }
                             }}
                           >
                             <RotateCcw className="h-3.5 w-3.5" />
@@ -227,9 +244,8 @@ export default function InvoiceCenter() {
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Void invoice {inv.id}?</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  This will permanently delete the invoice and release all linked time entries back to
-                                  billable status so they can be re-invoiced. Linked billable expenses will also be
-                                  released back to uninvoiced status. This action cannot be undone.
+                                  This preserves the invoice in history with status void and removes it from active receivables.
+                                  Unpaid linked items will return to billable status by default.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
@@ -237,11 +253,18 @@ export default function InvoiceCenter() {
                                 <AlertDialogAction
                                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                                   onClick={() => {
-                                    deleteInvoice(inv.id);
-                                    toast({
-                                      title: "Invoice voided",
-                                      description: `${inv.id} was deleted and its linked time entries and expenses were released back to billable status.`,
+                                    const result = voidInvoice(inv.id, {
+                                      releaseLinkedItems: true,
+                                      note: "Voided from invoice center",
                                     });
+                                    if (result.ok) {
+                                      toast({
+                                        title: "Invoice voided",
+                                        description: `${inv.id} was voided and removed from active receivables.`,
+                                      });
+                                    } else {
+                                      toast({ title: "Cannot void invoice", description: result.message ?? "Operation failed.", variant: "destructive" });
+                                    }
                                   }}
                                 >
                                   Void Invoice

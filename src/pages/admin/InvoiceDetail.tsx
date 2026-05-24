@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport, type InvoiceReceiptAttachment } from "@/lib/export";
-import { getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
+import { canMoveInvoiceBackToDraft, getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { listTimeflowDocuments, getTimeflowDocumentViewUrl } from "@/lib/timeflowDocumentsApi";
@@ -22,7 +22,12 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 const statusStyles: Record<string, string> = {
   draft: "status-badge-muted",
   issued: "status-badge-warning",
+  sent: "status-badge-warning",
+  viewed: "status-badge-warning",
+  partially_paid: "status-badge-accent",
+  revised: "status-badge-accent",
   paid: "status-badge-success",
+  void: "status-badge-muted",
   overdue: "status-badge-warning",
 };
 
@@ -39,7 +44,8 @@ export default function InvoiceDetail() {
   const timeEntries = useAppStore((state) => state.timeEntries);
   const expenses = useAppStore((state) => state.expenses);
   const updateInvoice = useAppStore((state) => state.updateInvoice);
-  const deleteInvoice = useAppStore((state) => state.deleteInvoice);
+  const moveInvoiceBackToDraft = useAppStore((state) => state.moveInvoiceBackToDraft);
+  const voidInvoice = useAppStore((state) => state.voidInvoice);
   const isReadonly = currentUser.role === "client_viewer";
 
   // Receipt attachment state
@@ -204,36 +210,40 @@ export default function InvoiceDetail() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  updateInvoice(invoice.id, { issuedAt: toDateOnlyString(new Date()), paidAt: undefined, status: "issued" });
-                  toast({ title: "Invoice issued", description: `${invoice.id} is now ready to share.` });
+                  updateInvoice(invoice.id, { issuedAt: toDateOnlyString(new Date()), paidAt: undefined, status: "sent" });
+                  toast({ title: "Invoice sent", description: `${invoice.id} is now ready to share.` });
                 }}
               >
-                <FileText className="mr-1.5 h-3.5 w-3.5" /> Mark Issued
+                <FileText className="mr-1.5 h-3.5 w-3.5" /> Mark Sent
               </Button>
             ) : null}
-            {!isReadonly && invoice.status === "issued" ? (
+            {!isReadonly && (invoice.status === "issued" || invoice.status === "sent" || invoice.status === "viewed") ? (
             <Button
               size="sm"
               variant="outline"
               className="text-success border-success/30 hover:bg-success/10"
               onClick={() => {
-                  updateInvoice(invoice.id, { paidAt: toDateOnlyString(new Date()), status: "paid" });
+                  updateInvoice(invoice.id, { paidAt: toDateOnlyString(new Date()), paidAmount: invoice.totalAmount, status: "paid" });
                 toast({ title: "Invoice paid", description: `${invoice.id} marked as paid.` });
               }}
             >
               <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Mark Paid
             </Button>
           ) : null}
-            {invoice.status === "paid" ? (
+            {!isReadonly && canMoveInvoiceBackToDraft(invoice) ? (
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  updateInvoice(invoice.id, { paidAt: undefined, status: "issued" });
-                  toast({ title: "Invoice marked unpaid", description: `${invoice.id} was moved back to issued status.` });
+                  const result = moveInvoiceBackToDraft(invoice.id, "Moved back to draft from invoice detail");
+                  if (result.ok) {
+                    toast({ title: "Moved back to draft", description: `${invoice.id} is now draft and linked items are billable again.` });
+                  } else {
+                    toast({ title: "Cannot move invoice", description: result.message ?? "Operation failed.", variant: "destructive" });
+                  }
                 }}
               >
-                <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Mark Unpaid
+                <RotateCcw className="mr-1.5 h-3.5 w-3.5" /> Move Back to Draft
               </Button>
             ) : null}
             {!isReadonly ? (
@@ -247,10 +257,8 @@ export default function InvoiceDetail() {
                   <AlertDialogHeader>
                     <AlertDialogTitle>Void invoice {invoice.id}?</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete the invoice and release all {entries.length} linked time{" "}
-                      {entries.length === 1 ? "entry" : "entries"} back to billable status so they can be re-invoiced.
-                      Linked billable expenses will also be returned to an uninvoiced billable state. This action
-                      cannot be undone.
+                      This preserves the invoice in history as void and removes it from active receivables.
+                      Unpaid linked billable items can be returned to billable status.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -258,12 +266,19 @@ export default function InvoiceDetail() {
                     <AlertDialogAction
                       className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                       onClick={() => {
-                        deleteInvoice(invoice.id);
-                        toast({
-                          title: "Invoice voided",
-                          description: `${invoice.id} was deleted and its linked time entries and expenses were released back to billable status.`,
+                        const result = voidInvoice(invoice.id, {
+                          releaseLinkedItems: true,
+                          note: "Voided from invoice detail",
                         });
-                        navigate("/platform/invoices");
+                        if (result.ok) {
+                          toast({
+                            title: "Invoice voided",
+                            description: `${invoice.id} was voided and removed from active receivables.`,
+                          });
+                          navigate("/platform/invoices");
+                        } else {
+                          toast({ title: "Cannot void invoice", description: result.message ?? "Operation failed.", variant: "destructive" });
+                        }
                       }}
                     >
                       Void Invoice
@@ -306,7 +321,7 @@ export default function InvoiceDetail() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground uppercase tracking-wide">Due Date</p>
-              {isReadonly ? (
+              {isReadonly || invoice.status !== "draft" ? (
                 <p className="font-medium text-sm mt-1">{formatLongDate(invoice.dueDate)}</p>
               ) : (
                 <div className="mt-1 max-w-[180px]">

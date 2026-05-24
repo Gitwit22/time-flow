@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { UserPlus, Users } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Mail, RefreshCcw, UserPlus, Users, X } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/EmptyState";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -10,10 +10,16 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import {
+  apiCreateWorkspaceInvite,
+  apiListWorkspaceInvites,
+  apiResendWorkspaceInvite,
+  apiRevokeWorkspaceInvite,
+} from "@/lib/timeflowApi";
 import { canManageTeam } from "@/lib/organization";
 import { getSelectableProjects } from "@/lib/projects";
 import { useAppStore } from "@/store/appStore";
-import type { EmployeeType, OrganizationMemberRole } from "@/types";
+import type { EmployeeType, OrganizationMemberRole, WorkspaceInvite } from "@/types";
 
 export default function TeamPage() {
   const { toast } = useToast();
@@ -21,9 +27,11 @@ export default function TeamPage() {
   const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
   const members = useAppStore((state) => state.organizationMembers);
   const projects = useAppStore((state) => state.projects);
+  const organizations = useAppStore((state) => state.organizations);
   const projectAssignments = useAppStore((state) => state.projectAssignments);
-  const inviteOrganizationMember = useAppStore((state) => state.inviteOrganizationMember);
   const addProjectAssignment = useAppStore((state) => state.addProjectAssignment);
+  const convertOrganizationToTeam = useAppStore((state) => state.convertOrganizationToTeam);
+  const refreshOrganizations = useAppStore((state) => state.refreshOrganizations);
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,16 +41,45 @@ export default function TeamPage() {
   const [canClockIn, setCanClockIn] = useState(true);
   const [assignMemberId, setAssignMemberId] = useState("");
   const [assignProjectId, setAssignProjectId] = useState("");
+  const [invites, setInvites] = useState<WorkspaceInvite[]>([]);
+  const [loadingInvites, setLoadingInvites] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const organizationMembers = useMemo(
     () => members.filter((member) => member.organizationId === activeOrganizationId),
     [activeOrganizationId, members],
   );
   const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
+  const activeOrganization = useMemo(
+    () => organizations.find((org) => org.id === activeOrganizationId),
+    [organizations, activeOrganizationId],
+  );
+  const activeMemberCount = useMemo(
+    () => organizationMembers.filter((member) => member.status !== "disabled").length,
+    [organizationMembers],
+  );
 
   const canInvite = canManageTeam(role);
 
-  function handleInviteMember() {
+  const loadInvites = async () => {
+    if (!activeOrganizationId) return;
+    setLoadingInvites(true);
+    try {
+      const records = await apiListWorkspaceInvites(activeOrganizationId);
+      setInvites(records);
+    } catch {
+      setInvites([]);
+    } finally {
+      setLoadingInvites(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadInvites();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrganizationId]);
+
+  async function handleInviteMember() {
     if (!activeOrganizationId) {
       toast({ title: "No organization selected", description: "Select an active organization before inviting members.", variant: "destructive" });
       return;
@@ -53,34 +90,79 @@ export default function TeamPage() {
       return;
     }
 
-    inviteOrganizationMember(
-      {
+    const isSoloWorkspace = (activeOrganization?.workspaceType ?? "solo") === "solo" && activeMemberCount <= 1;
+    if (isSoloWorkspace) {
+      const confirmed = window.confirm(
+        "This is currently a solo workspace. Inviting members will convert it to a team workspace. Continue?",
+      );
+      if (!confirmed) return;
+      try {
+        await convertOrganizationToTeam(activeOrganizationId);
+        await refreshOrganizations();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Failed to convert workspace to team";
+        toast({ title: "Conversion failed", description: message, variant: "destructive" });
+        return;
+      }
+    }
+
+    setSubmitting(true);
+    try {
+      const result = await apiCreateWorkspaceInvite({
         organizationId: activeOrganizationId,
         email: email.trim(),
         name: name.trim(),
         role: memberRole,
-      },
-      {
-        active: true,
-        canClockIn,
-        displayName: name.trim(),
-        email: email.trim(),
         employeeType,
-        memberId: "",
-        organizationId: activeOrganizationId,
-        defaultHourlyRate: Number(hourlyRate || 0) || undefined,
-      },
-    );
+        hourlyRate: Number(hourlyRate || 0) || undefined,
+        canClockInOut: canClockIn,
+      });
 
-    setName("");
-    setEmail("");
-    setMemberRole("employee");
-    setEmployeeType("employee");
-    setHourlyRate("");
-    setCanClockIn(true);
+      setInvites((prev) => [result.invite, ...prev.filter((invite) => invite.id !== result.invite.id)]);
 
-    toast({ title: "Invite created", description: "Team member has been added with invited status." });
+      setName("");
+      setEmail("");
+      setMemberRole("employee");
+      setEmployeeType("employee");
+      setHourlyRate("");
+      setCanClockIn(true);
+
+      toast({
+        title: "Invite sent",
+        description: result.emailSent ? "Invite email sent via Resend." : "Invite was created, but email sending failed.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create invite";
+      toast({ title: "Invite failed", description: message, variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
   }
+
+  const handleResend = async (inviteId: string) => {
+    try {
+      const result = await apiResendWorkspaceInvite(inviteId);
+      toast({
+        title: "Invite resent",
+        description: result.emailSent ? "Invite email resent successfully." : "Invite was resent but email could not be delivered.",
+      });
+      await loadInvites();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to resend invite";
+      toast({ title: "Resend failed", description: message, variant: "destructive" });
+    }
+  };
+
+  const handleRevoke = async (inviteId: string) => {
+    try {
+      await apiRevokeWorkspaceInvite(inviteId);
+      setInvites((prev) => prev.filter((invite) => invite.id !== inviteId));
+      toast({ title: "Invite revoked" });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to revoke invite";
+      toast({ title: "Revoke failed", description: message, variant: "destructive" });
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-6xl">
@@ -115,7 +197,9 @@ export default function TeamPage() {
                     <SelectItem value="owner">Owner</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="payroll_reviewer">Payroll Reviewer</SelectItem>
                     <SelectItem value="employee">Employee</SelectItem>
+                    <SelectItem value="auditor">Auditor</SelectItem>
                     <SelectItem value="viewer">Viewer</SelectItem>
                   </SelectContent>
                 </Select>
@@ -128,6 +212,7 @@ export default function TeamPage() {
                     <SelectItem value="employee">Employee</SelectItem>
                     <SelectItem value="contractor">Contractor</SelectItem>
                     <SelectItem value="volunteer">Volunteer</SelectItem>
+                    <SelectItem value="intern">Intern</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -144,7 +229,9 @@ export default function TeamPage() {
               </div>
             </div>
 
-            <Button onClick={handleInviteMember}>Create Invite</Button>
+            <Button onClick={() => void handleInviteMember()} disabled={submitting}>
+              {submitting ? "Sending..." : "Create Invite"}
+            </Button>
 
             <div className="rounded-lg border p-3 space-y-3">
               <p className="text-sm font-medium">Optional: Assign Member to Project</p>
@@ -220,6 +307,47 @@ export default function TeamPage() {
             </div>
           ) : (
             <EmptyState icon={Users} title="No team members yet" description={`Invite your first team member. ${projects.length ? "Project assignments can be added next." : "Create projects, then assign members."}`} />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base font-heading flex items-center gap-2">
+            <Mail className="h-4 w-4" /> Pending Invites
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {loadingInvites ? (
+            <p className="text-sm text-muted-foreground">Loading invites...</p>
+          ) : invites.length ? (
+            <div className="space-y-3">
+              {invites.map((invite) => (
+                <div key={invite.id} className="rounded-lg border p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{invite.name || invite.email}</p>
+                      <p className="text-sm text-muted-foreground">{invite.email}</p>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {invite.role} · {invite.employeeType} · {invite.status}
+                      </p>
+                    </div>
+                    {invite.status === "pending" ? (
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => void handleResend(invite.id)}>
+                          <RefreshCcw className="mr-1 h-3.5 w-3.5" /> Resend
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => void handleRevoke(invite.id)}>
+                          <X className="mr-1 h-3.5 w-3.5" /> Revoke
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={Mail} title="No pending invites" description="New invites will appear here so you can resend or revoke them." />
           )}
         </CardContent>
       </Card>

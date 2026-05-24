@@ -196,7 +196,7 @@ export function summarizePayPeriod({
 }) {
   const periodEntries = getEntriesForPayPeriod(entries, period);
   const periodExpenses = getExpensesForPayPeriod(expenses, period);
-  const periodInvoices = (invoices ?? []).filter((invoice) => invoiceMatchesPeriod(invoice, period));
+  const periodInvoices = (invoices ?? []).filter((invoice) => invoice.status !== "void" && invoiceMatchesPeriod(invoice, period));
   const timeEarnings = Number(
     periodEntries.reduce((sum, entry) => sum + (typeof entry.amount === "number" ? entry.amount : 0), 0).toFixed(2),
   );

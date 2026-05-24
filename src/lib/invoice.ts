@@ -4,6 +4,41 @@ import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { uniqueProjectIds } from "@/lib/projects";
 import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDisplayStatus, InvoiceDraftPreview, Project, TimeEntry, UserProfile } from "@/types";
 
+const OVERDUE_STATUSES: ReadonlySet<Invoice["status"]> = new Set(["issued", "sent", "viewed", "partially_paid"]);
+
+export function isInvoiceVoided(invoice: Pick<Invoice, "status">) {
+  return invoice.status === "void";
+}
+
+export function isInvoicePaid(invoice: Pick<Invoice, "status">) {
+  return invoice.status === "paid";
+}
+
+export function isInvoicePartiallyPaid(invoice: Pick<Invoice, "status">) {
+  return invoice.status === "partially_paid";
+}
+
+export function isInvoiceFinalized(invoice: Pick<Invoice, "status">) {
+  return invoice.status !== "draft";
+}
+
+export function canMoveInvoiceBackToDraft(invoice: Pick<Invoice, "status">) {
+  return invoice.status === "issued" || invoice.status === "sent" || invoice.status === "viewed" || invoice.status === "revised";
+}
+
+export function canEditInvoiceDirectly(invoice: Pick<Invoice, "status">) {
+  return invoice.status === "draft";
+}
+
+export function getInvoiceBalanceDue(invoice: Pick<Invoice, "totalAmount" | "paidAmount" | "status">) {
+  if (invoice.status === "paid") {
+    return 0;
+  }
+
+  const paidAmount = Math.max(0, Number((invoice.paidAmount ?? 0).toFixed(2)));
+  return Number(Math.max(0, invoice.totalAmount - paidAmount).toFixed(2));
+}
+
 export interface InvoiceProjectGroup {
   id: string;
   projectId?: string;
@@ -190,7 +225,7 @@ export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoic
 }
 
 export function getInvoiceDisplayStatus(invoice: Invoice, referenceDate = new Date()): InvoiceDisplayStatus {
-  if (invoice.status === "issued" && isBefore(parseISO(invoice.dueDate), referenceDate)) {
+  if (OVERDUE_STATUSES.has(invoice.status) && isBefore(parseISO(invoice.dueDate), referenceDate)) {
     return "overdue";
   }
 
@@ -217,7 +252,7 @@ export function normalizeInvoiceRecord(
   }),
   entries: TimeEntry[] = [],
 ) {
-  const normalizedStatus = invoice.status === "sent" ? "issued" : invoice.status ?? "draft";
+  const normalizedStatus = invoice.status ?? "draft";
   const linkedEntries = entries.filter((entry) => invoice.entryIds.includes(entry.id));
   const rates = Array.from(new Set(linkedEntries.map((entry) => entry.billingRate).filter((rate): rate is number => typeof rate === "number" && rate > 0)));
   const normalizedProjectIds = invoice.projectIds ?? uniqueProjectIds(linkedEntries);
@@ -231,6 +266,9 @@ export function normalizeInvoiceRecord(
         : hasManualLines
           ? (normalizedProjectIds.length > 0 ? "manual_project" : "manual_client")
           : "time_entries");
+
+  const paidAmount = Math.max(0, Number(((invoice.paidAmount as number | undefined) ?? (normalizedStatus === "paid" ? invoice.totalAmount : 0)).toFixed(2)));
+  const balanceDue = normalizedStatus === "paid" ? 0 : Number(Math.max(0, invoice.totalAmount - paidAmount).toFixed(2));
 
   return {
     ...invoice,
@@ -249,6 +287,16 @@ export function normalizeInvoiceRecord(
     taxAmount: invoice.taxAmount ?? 0,
     taxRate: invoice.taxRate ?? 0,
     timeEntryIds: invoice.timeEntryIds ?? invoice.entryIds ?? [],
+    paidAmount,
+    balanceDue,
+    originalInvoiceId: (invoice.originalInvoiceId as string | undefined) ?? undefined,
+    revisionNumber: (invoice.revisionNumber as number | undefined) ?? undefined,
+    voidedAt: (invoice.voidedAt as string | undefined) ?? undefined,
+    voidReason: (invoice.voidReason as string | undefined) ?? undefined,
+    movedBackToDraftAt: (invoice.movedBackToDraftAt as string | undefined) ?? undefined,
+    lockedAt: (invoice.lockedAt as string | undefined) ?? undefined,
+    viewedAt: (invoice.viewedAt as string | undefined) ?? undefined,
+    auditLog: (invoice.auditLog as Invoice["auditLog"]) ?? [],
   } as Invoice;
 }
 

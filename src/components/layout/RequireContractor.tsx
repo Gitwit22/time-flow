@@ -1,7 +1,7 @@
 import type { ReactElement } from "react";
 import { Navigate } from "react-router-dom";
 
-import { canManageWorkspace } from "@/lib/organization";
+import { canViewAdminWorkspace } from "@/lib/organization";
 import { useAppStore } from "@/store/appStore";
 
 interface RequireContractorProps {
@@ -11,7 +11,11 @@ interface RequireContractorProps {
 export function RequireContractor({ children }: RequireContractorProps) {
   const role = useAppStore((state) => state.currentUser.role);
 
-  if (!canManageWorkspace(role)) {
+  if (role === "client_viewer") {
+    return <Navigate to="/client" replace />;
+  }
+
+  if (!canViewAdminWorkspace(role)) {
     if (role === "employee") {
       return <Navigate to="/employee" replace />;
     }
