@@ -362,7 +362,7 @@ export interface AppState {
   createOrganizationWorkspace: (name?: string) => string | undefined;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
-  syncCurrentUser: (updates: Pick<UserProfile, "name" | "email" | "role">) => void;
+  syncCurrentUser: (updates: Pick<UserProfile, "id" | "name" | "email" | "role">) => void;
   updateCurrentUser: (updates: Partial<UserProfile>) => void;
   updateSettings: (updates: Partial<AppSettings>) => void;
   addClient: (client: ClientDraft) => void;

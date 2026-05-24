@@ -42,10 +42,20 @@ export default function SetupOrganizationPage() {
   const [roleTitle, setRoleTitle] = useState("");
   const [inviteToken, setInviteToken] = useState("");
 
-  const hasActiveMembership = useMemo(
-    () => organizationMembers.some((member) => member.userId === currentUser.id && member.status === "active"),
-    [currentUser.id, organizationMembers],
-  );
+  const hasActiveMembership = useMemo(() => {
+    const currentUserId = currentUser.id?.trim();
+    const currentUserEmail = currentUser.email?.trim().toLowerCase();
+
+    return organizationMembers.some((member) => {
+      if (member.status !== "active") {
+        return false;
+      }
+
+      const memberEmail = member.email?.trim().toLowerCase();
+      return (Boolean(currentUserId) && member.userId === currentUserId)
+        || (Boolean(currentUserEmail) && memberEmail === currentUserEmail);
+    });
+  }, [currentUser.email, currentUser.id, organizationMembers]);
 
   useEffect(() => {
     if (authStatus !== "authenticated") {

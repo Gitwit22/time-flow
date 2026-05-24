@@ -338,6 +338,7 @@ export async function setupContinueSoloWorkspace() {
 
 export function toAppIdentity(user: AuthUser) {
 	return {
+		id: user.id,
 		name: user.name,
 		email: user.loginId,
 		role: user.role,

@@ -78,6 +78,7 @@ function AuthBootstrapper() {
     const platformSession = getPlatformSession();
     if (platformSession) {
       syncCurrentUser({
+        id: platformSession.user.id,
         name: platformSession.user.email.split("@")[0] ?? platformSession.user.email,
         email: platformSession.user.email,
         role: platformSession.user.role,

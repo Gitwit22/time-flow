@@ -16,10 +16,22 @@ export function RequireWorkspaceMembership({ children }: RequireWorkspaceMembers
     if (currentUser.role === "client_viewer") {
       return true;
     }
+
+    const currentUserId = currentUser.id?.trim();
+    const currentUserEmail = currentUser.email?.trim().toLowerCase();
+
     return organizationMembers.some(
-      (member) => member.userId === currentUser.id && member.status === "active",
+      (member) => {
+        if (member.status !== "active") {
+          return false;
+        }
+
+        const memberEmail = member.email?.trim().toLowerCase();
+        return (Boolean(currentUserId) && member.userId === currentUserId)
+          || (Boolean(currentUserEmail) && memberEmail === currentUserEmail);
+      },
     );
-  }, [currentUser.id, currentUser.role, organizationMembers]);
+  }, [currentUser.email, currentUser.id, currentUser.role, organizationMembers]);
 
   if (!hasActiveMembership) {
     return <Navigate to="/setup-organization" replace />;
