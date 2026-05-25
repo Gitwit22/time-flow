@@ -25,6 +25,7 @@ export function ClientSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const settings = useAppStore((state) => state.settings);
+  const logoSrc = "/mrjc-logo.png";
 
   return (
     <Sidebar collapsible="icon" className="border-r border-border bg-background">
@@ -35,14 +36,14 @@ export function ClientSidebar() {
               <img src={settings.invoiceLogoDataUrl} alt="Brand logo" className="h-full w-full object-contain" />
             </div>
           ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary">
-              <FileText className="h-5 w-5 text-primary-foreground" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40">
+              <img src={logoSrc} alt="MRJC" className="h-full w-full object-contain" />
             </div>
           )}
           {!collapsed && (
             <div>
-              <h2 className="font-heading text-sm font-bold">{settings.businessName || "TimeFlow"}</h2>
-              <p className="text-xs text-muted-foreground">Client Portal</p>
+              <h2 className="font-heading text-sm font-bold">{settings.businessName || "MRJC TimeFlow"}</h2>
+              <p className="text-xs text-muted-foreground">Michigan Roundtable Client Portal</p>
             </div>
           )}
         </div>

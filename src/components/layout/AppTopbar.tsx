@@ -128,7 +128,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
           <Bell className="h-4 w-4" />
         </Button>
         {isDemo ? (
-          <Button variant="ghost" size="icon" className="text-amber-400 hover:text-amber-300" onClick={handleLogin} title="Log in to TimeFlow">
+          <Button variant="ghost" size="icon" className="text-amber-400 hover:text-amber-300" onClick={handleLogin} title="Log in to MRJC TimeFlow">
             <LogIn className="h-4 w-4" />
           </Button>
         ) : (

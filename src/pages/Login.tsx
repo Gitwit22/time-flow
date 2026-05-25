@@ -140,9 +140,9 @@ export default function Login() {
     <div className="min-h-screen bg-background flex items-center justify-center px-4 py-10">
       <Card className="w-full max-w-xl">
         <CardHeader className="space-y-2">
-          <CardTitle className="text-2xl font-heading">TimeFlow Login</CardTitle>
+          <CardTitle className="text-2xl font-heading">MRJC TimeFlow Login</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Sign in directly to TimeFlow with database-backed sessions. Suite launch tokens are optional.
+            Sign in directly to MRJC TimeFlow with database-backed sessions. Suite launch tokens are optional.
           </p>
         </CardHeader>
         <CardContent>

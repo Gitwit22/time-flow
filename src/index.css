@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Libre+Baskerville:ital,wght@0,400;0,700;1,400&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -6,8 +6,8 @@
 
 @layer base {
   :root {
-    --font-heading: 'Space Grotesk', system-ui, sans-serif;
-    --font-body: 'DM Sans', system-ui, sans-serif;
+    --font-heading: 'Libre Baskerville', Georgia, serif;
+    --font-body: 'IBM Plex Sans', system-ui, sans-serif;
 
     --background: 220 20% 97%;
     --foreground: 222 47% 11%;
@@ -18,7 +18,7 @@
     --popover: 0 0% 100%;
     --popover-foreground: 222 47% 11%;
 
-    --primary: 222 47% 11%;
+    --primary: 220 65% 31%;
     --primary-foreground: 210 40% 98%;
 
     --secondary: 215 20% 95%;
@@ -27,7 +27,7 @@
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
 
-    --accent: 35 92% 52%;
+    --accent: 42 90% 52%;
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
@@ -45,11 +45,11 @@
 
     --radius: 0.75rem;
 
-    --sidebar-background: 222 47% 11%;
+    --sidebar-background: 224 50% 14%;
     --sidebar-foreground: 213 31% 91%;
     --sidebar-primary: 35 92% 52%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 222 40% 16%;
+    --sidebar-accent: 224 42% 20%;
     --sidebar-accent-foreground: 213 31% 91%;
     --sidebar-border: 222 30% 18%;
     --sidebar-ring: 35 92% 52%;

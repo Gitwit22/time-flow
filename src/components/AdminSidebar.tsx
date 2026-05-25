@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, Zap, ArrowLeftRight, Receipt } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, ArrowLeftRight, Receipt } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -37,6 +37,7 @@ export function AdminSidebar() {
   const collapsed = state === "collapsed";
   const role = useAppStore((store) => store.currentUser.role);
   const settings = useAppStore((store) => store.settings);
+  const logoSrc = "/mrjc-logo.png";
   const employeeItems = [
     { title: "Clock In / Out", url: "/employee", icon: Clock },
     { title: "My Timesheets", url: "/employee/timesheets", icon: FileText },
@@ -80,14 +81,14 @@ export function AdminSidebar() {
               <img src={settings.invoiceLogoDataUrl} alt="Brand logo" className="h-full w-full object-contain" />
             </div>
           ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary">
-              <Zap className="h-5 w-5 text-sidebar-primary-foreground" />
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
+              <img src={logoSrc} alt="MRJC" className="h-full w-full object-contain" />
             </div>
           )}
           {!collapsed && (
             <div>
-              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "TimeFlow"}</h2>
-              <p className="text-xs text-sidebar-muted">Workspace</p>
+              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "MRJC TimeFlow"}</h2>
+              <p className="text-xs text-sidebar-muted">Michigan Roundtable Workspace</p>
             </div>
           )}
         </div>
