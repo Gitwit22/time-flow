@@ -1,6 +1,7 @@
 import { Paperclip, Pencil, Plus, Receipt, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { useShallow } from "zustand/react/shallow";
 
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -20,6 +21,7 @@ import {
 } from "@/lib/timeflowDocumentsApi";
 import { getCurrentPayPeriod, getExpensesForPayPeriod, getPayPeriodForDate, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
+import { selectOrganizationScope } from "@/store/selectors";
 import type { AttachedDocument, Expense } from "@/types";
 
 type PayPeriodFilter = "all" | "current" | "previous";
@@ -28,9 +30,7 @@ export default function ExpensesPage() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const expenses = useAppStore((state) => state.expenses);
+  const { clients, projects, expenses } = useAppStore(useShallow(selectOrganizationScope));
   const addExpense = useAppStore((state) => state.addExpense);
   const updateExpense = useAppStore((state) => state.updateExpense);
   const deleteExpense = useAppStore((state) => state.deleteExpense);

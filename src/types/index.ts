@@ -24,10 +24,15 @@ export type TimeEntryStatus =
   | "completed"
   | "pending_approval"
   | "approved"
+  | "locked"
+  | "exported"
   | "rejected"
   | "invoiced"
   | "paid"
   | "voided";
+
+/** TimeFlow payroll export pipeline status (Open → Approved → Locked → Exported) */
+export type TimeFlowPayrollPipelineStatus = "open" | "approved" | "locked" | "exported";
 
 export interface Organization {
   id: string;
@@ -66,6 +71,12 @@ export interface OrganizationMember {
   status: OrganizationMemberStatus;
   invitedAt?: string;
   joinedAt?: string;
+  /** Cross-program identity — canonical person ID shared across all apps */
+  sharedPersonId?: string;
+  /** Finance Hub PayeeProfile.id for this person */
+  financeHubPayeeId?: string;
+  /** Mission Hub Personnel.id for this person */
+  missionHubStaffId?: string;
 }
 
 export interface EmployeeProfile {
@@ -79,6 +90,11 @@ export interface EmployeeProfile {
   payPeriodType?: PayPeriodFrequency;
   canClockIn: boolean;
   active: boolean;
+  /** Payroll export pipeline status for the current period */
+  payrollPipelineStatus?: TimeFlowPayrollPipelineStatus;
+  payrollLockedAt?: string;
+  payrollExportedAt?: string;
+  payrollExportBatchId?: string;
 }
 
 export interface ProjectAssignment {

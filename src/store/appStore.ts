@@ -631,7 +631,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       );
       const restoredSession = readPersistedActiveSession();
       const persistedExpenses = readPersistedExpenses();
-      const normalizedExpenses = (expenses.length > 0 ? expenses : persistedExpenses).map((expense) =>
+      const usePersistedExpenseFallback = expenses.length === 0 && state.authStatus !== "authenticated";
+      const expenseSource = usePersistedExpenseFallback ? persistedExpenses : expenses;
+      const normalizedExpenses = expenseSource.map((expense) =>
         normalizeExpenseRecord({
           ...expense,
           workspaceId: resolveWorkspaceId(expense.workspaceId ?? expense.organizationId, activeOrganizationId),
