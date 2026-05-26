@@ -28,6 +28,7 @@ function getInitials(name: string) {
 }
 
 export function AppTopbar({ readonlyHint }: AppTopbarProps) {
+  console.log("[AppTopbar] Rendering");
   const navigate = useNavigate();
   const { isDemo } = useAppMode();
   const activeAuthUser = getActiveUser();
@@ -42,6 +43,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
   const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
   const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
+  console.log("[AppTopbar] viewerSelectValue =", viewerSelectValue, "hasValidViewerSelection =", hasValidViewerSelection);
 
   const handleRoleChange = (role: UserRole) => {
     updateActiveUserRole(role);

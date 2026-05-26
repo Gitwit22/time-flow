@@ -6,6 +6,7 @@ import { DemoBanner } from "@/components/DemoBanner";
 import { useAppMode } from "@/context/AppModeContext";
 
 export function AdminLayout() {
+  console.log("[AdminLayout] Rendering");
   const { isDemo } = useAppMode();
   return (
     <SidebarProvider>

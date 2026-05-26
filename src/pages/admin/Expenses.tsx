@@ -26,6 +26,7 @@ import type { AttachedDocument, Expense } from "@/types";
 type PayPeriodFilter = "all" | "current" | "previous";
 
 export default function ExpensesPage() {
+  console.log("[ExpensesPage] Rendering");
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
