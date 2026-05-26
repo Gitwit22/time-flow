@@ -242,6 +242,9 @@ export interface TimeEntry {
   leaveType?: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave" | null;
   sourceType?: "manual" | "clock" | "time_off_request" | "correction";
   sourceRequestId?: string;
+  archived?: boolean;
+  archivedAt?: string;
+  archivedReason?: string;
   sourceWorkspaceId?: string;
   sourceEntityId?: string;
   migrationBatchId?: string;

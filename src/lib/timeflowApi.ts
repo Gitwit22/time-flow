@@ -97,6 +97,7 @@ export function toProject(r: ApiRecord): Project {
 }
 
 export function toTimeEntry(r: ApiRecord): TimeEntry {
+  const isArchived = r.isActive === false || r.archived === true;
   const entryType = r.entryType === "fixed" ? "fixed" : "time";
   const fixedAmount = entryType === "fixed" && typeof r.fixedAmount === "number"
     ? (r.fixedAmount as number)
@@ -132,6 +133,9 @@ export function toTimeEntry(r: ApiRecord): TimeEntry {
     leaveType: (r.leaveType as TimeEntry["leaveType"]) ?? null,
     sourceType: (r.sourceType as TimeEntry["sourceType"]) ?? undefined,
     sourceRequestId: (r.sourceRequestId as string) ?? undefined,
+    archived: isArchived,
+    archivedAt: isArchived ? ((r.updatedAt as string) ?? new Date().toISOString()) : undefined,
+    archivedReason: (r.archivedReason as string) ?? undefined,
   };
 }
 

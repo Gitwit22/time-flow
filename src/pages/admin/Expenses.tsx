@@ -9,7 +9,6 @@ import { PageHeader } from "@/components/shared/PageHeader";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateDisplay } from "@/lib/date";
 import { apiCreateExpense, apiListExpenses } from "@/lib/timeflowApi";
@@ -295,29 +294,29 @@ export default function ExpensesPage() {
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
               <Input className="pl-8" placeholder="Search descriptions, client, project, or notes" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
             </div>
-            <Select value={clientFilter} onValueChange={setClientFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Client" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All clients</SelectItem>
-                {selectableClients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={payPeriodFilter} onValueChange={(value) => setPayPeriodFilter(value as PayPeriodFilter)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Pay period" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All pay periods</SelectItem>
-                <SelectItem value="current">Current pay period</SelectItem>
-                <SelectItem value="previous">Previous pay period</SelectItem>
-              </SelectContent>
-            </Select>
+            <select
+              aria-label="Client filter"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={clientFilter}
+              onChange={(event) => setClientFilter(event.target.value)}
+            >
+              <option value="all">All clients</option>
+              {selectableClients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="Pay period filter"
+              className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={payPeriodFilter}
+              onChange={(event) => setPayPeriodFilter(event.target.value as PayPeriodFilter)}
+            >
+              <option value="all">All pay periods</option>
+              <option value="current">Current pay period</option>
+              <option value="previous">Previous pay period</option>
+            </select>
           </div>
         </CardContent>
       </Card>

@@ -43,6 +43,7 @@ import MyTimesheetsPage from "./pages/employee/MyTimesheets";
 // Client layout + pages
 import { ClientLayout } from "./components/ClientLayout";
 import { ClientErrorBoundary } from "./components/layout/ClientErrorBoundary";
+import { PlatformErrorBoundary } from "./components/layout/PlatformErrorBoundary";
 import ClientDashboard from "./pages/client/Dashboard";
 import ClientTimeLogs from "./pages/client/TimeLogs";
 import ClientInvoiceHistory from "./pages/client/InvoiceHistory";
@@ -173,7 +174,9 @@ const App = () => (
               <RequireAuth>
                 <RequireWorkspaceMembership>
                 <RequireContractor>
-                  <AdminLayout />
+                  <PlatformErrorBoundary>
+                    <AdminLayout />
+                  </PlatformErrorBoundary>
                 </RequireContractor>
                 </RequireWorkspaceMembership>
               </RequireAuth>

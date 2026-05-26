@@ -12,12 +12,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { getCurrentPayPeriod } from "@/lib/payPeriods";
+import { getCurrentPayPeriod, getPayPeriodForDate, getPayPeriodKey } from "@/lib/payPeriods";
 import { getSelectableProjects } from "@/lib/projects";
 import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { apiCreateTimeOffRequest } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
 import type { TimeEntry } from "@/types";
+
+interface TimeEntryPayPeriodGroup {
+  key: string;
+  label: string;
+  startDate: string;
+  endDate: string;
+  entries: TimeEntry[];
+}
 
 export default function TimeTracker() {
   const { toast } = useToast();
@@ -36,6 +44,7 @@ export default function TimeTracker() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "invoiced">("all");
+  const [archiveFilter, setArchiveFilter] = useState<"active" | "archived" | "all">("active");
   const [dateFilter, setDateFilter] = useState<"all" | "today" | "week" | "period">("all");
   const [clientFilter, setClientFilter] = useState<string>("all");
   const [projectFilter, setProjectFilter] = useState<string>("all");
@@ -68,6 +77,11 @@ export default function TimeTracker() {
           : true;
 
         const matchesStatus = statusFilter === "all" ? true : entry.status === statusFilter;
+        const matchesArchive = archiveFilter === "all"
+          ? true
+          : archiveFilter === "archived"
+            ? entry.archived === true
+            : entry.archived !== true;
         const matchesClient = clientFilter === "all" ? true : entry.clientId === clientFilter;
         const matchesProject = projectFilter === "all" ? true : (projectFilter === "client-only" ? !entry.projectId : entry.projectId === projectFilter);
 
@@ -81,10 +95,40 @@ export default function TimeTracker() {
                 ? isWithinInterval(entryDate, { start: weekStart, end: weekEnd })
                 : isWithinInterval(entryDate, { start: parseISO(period.startDate), end: parseISO(period.endDate) });
 
-          return matchesSearch && matchesStatus && matchesClient && matchesProject && matchesDate;
+          return matchesSearch && matchesStatus && matchesArchive && matchesClient && matchesProject && matchesDate;
       })
       .sort((a, b) => getEntrySortKey(b).localeCompare(getEntrySortKey(a)));
-        }, [clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, statusFilter, timeEntries]);
+        }, [archiveFilter, clientFilter, clients, currentUser.invoiceFrequency, dateFilter, projectFilter, projects, searchQuery, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn, statusFilter, timeEntries]);
+
+  const groupedEntries = useMemo<TimeEntryPayPeriodGroup[]>(() => {
+    const settingsLike = {
+      payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
+      payPeriodStartDate: settings.payPeriodStartDate,
+      periodWeekStartsOn: settings.periodWeekStartsOn,
+    };
+    const groupsByKey = new Map<string, TimeEntryPayPeriodGroup>();
+
+    filteredEntries.forEach((entry) => {
+      const period = getPayPeriodForDate(entry.date, settingsLike);
+      const key = getPayPeriodKey(period.startDate, period.endDate);
+      const existing = groupsByKey.get(key);
+
+      if (existing) {
+        existing.entries.push(entry);
+        return;
+      }
+
+      groupsByKey.set(key, {
+        key,
+        label: period.label,
+        startDate: period.startDate,
+        endDate: period.endDate,
+        entries: [entry],
+      });
+    });
+
+    return [...groupsByKey.values()].sort((a, b) => b.startDate.localeCompare(a.startDate));
+  }, [currentUser.invoiceFrequency, filteredEntries, settings.invoiceFrequency, settings.payPeriodFrequency, settings.payPeriodStartDate, settings.periodWeekStartsOn]);
 
   const handleAddManual = () => {
     if (isReadonly) {
@@ -155,6 +199,29 @@ export default function TimeTracker() {
     });
   };
 
+  const handleArchive = (entry: TimeEntry) => {
+    if (isReadonly || entry.archived === true) {
+      return;
+    }
+
+    updateTimeEntry(entry.id, {
+      archived: true,
+      archivedAt: new Date().toISOString(),
+    });
+    toast({ title: "Entry archived", description: "The entry is hidden from your active list." });
+  };
+
+  const handleRestore = (entry: TimeEntry) => {
+    if (isReadonly || entry.archived !== true) {
+      return;
+    }
+
+    updateTimeEntry(entry.id, {
+      archived: false,
+    });
+    toast({ title: "Entry restored", description: "The entry is visible in your active list again." });
+  };
+
   const handleSubmitTimeOffRequest = async (payload: {
     employeeId: string;
     leaveType: "pto" | "vacation" | "sick" | "holiday" | "unpaid" | "bereavement" | "admin_leave";
@@ -219,7 +286,7 @@ export default function TimeTracker() {
             <CardTitle className="text-base font-heading">Filters</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <div className="relative lg:col-span-2">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
                 <Input placeholder="Search client or notes..." className="pl-8 h-9" value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} />
@@ -266,6 +333,17 @@ export default function TimeTracker() {
                 </SelectContent>
               </Select>
 
+              <Select value={archiveFilter} onValueChange={(value) => setArchiveFilter(value as typeof archiveFilter)}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Visibility" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active only</SelectItem>
+                  <SelectItem value="archived">Archived only</SelectItem>
+                  <SelectItem value="all">Active + archived</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Select value={dateFilter} onValueChange={(value) => setDateFilter(value as typeof dateFilter)}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Date range" />
@@ -284,6 +362,7 @@ export default function TimeTracker() {
                   onClick={() => {
                     setSearchQuery("");
                     setStatusFilter("all");
+                    setArchiveFilter("active");
                     setDateFilter("all");
                     setClientFilter("all");
                     setProjectFilter("all");
@@ -304,13 +383,15 @@ export default function TimeTracker() {
         </CardHeader>
         <CardContent>
           <RecentTimeEntriesTable
-            entries={filteredEntries}
+            groups={groupedEntries}
             clients={clients}
             projects={projects}
             readOnly={isReadonly}
             onEdit={handleEdit}
             onDelete={handleDelete}
             onUnmarkInvoiced={handleUnmarkInvoiced}
+            onArchive={handleArchive}
+            onRestore={handleRestore}
           />
         </CardContent>
       </Card>
