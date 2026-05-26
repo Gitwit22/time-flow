@@ -580,13 +580,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
         apiHydrateAll(),
         apiListOrganizations().catch(() => [] as Organization[]),
       ]);
-      const { clients, projects, timeEntries, expenses, invoices, projectBills, settings } = hydratedData;
+      const clients = hydratedData.clients ?? [];
+      const projects = hydratedData.projects ?? [];
+      const timeEntries = hydratedData.timeEntries ?? [];
+      const expenses = hydratedData.expenses ?? [];
+      const invoices = hydratedData.invoices ?? [];
+      const projectBills = hydratedData.projectBills ?? [];
+      const settings = hydratedData.settings;
       const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
       const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const state = get();
       const persistedWorkspace = readPersistedWorkspaceState();
-      const organizations = organizationsFromApi.length
-        ? organizationsFromApi
+      const safeOrganizationsFromApi = organizationsFromApi ?? [];
+      const organizations = safeOrganizationsFromApi.length
+        ? safeOrganizationsFromApi
         : persistedWorkspace.organizations?.length
         ? persistedWorkspace.organizations
         : state.organizations;
