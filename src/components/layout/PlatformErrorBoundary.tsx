@@ -24,8 +24,6 @@ export class PlatformErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[Platform] Render error:", error, info);
-    console.error("[Platform] Error message:", error.message);
-    console.error("[Platform] Stack:", error.stack);
   }
 
   handleReset = () => {
@@ -35,7 +33,6 @@ export class PlatformErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.error) {
-      console.log("[PlatformErrorBoundary] Displaying error fallback UI");
       return (
         <div className="min-h-screen flex items-center justify-center p-8 bg-background">
           <Card className="max-w-md w-full">

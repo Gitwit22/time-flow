@@ -3,7 +3,6 @@ import { useNavigate } from "react-router-dom";
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { WorkspaceSwitcher } from "@/components/layout/WorkspaceSwitcher";
 import { getActiveUser, logoutActiveUser, updateActiveUserRole } from "@/lib/auth";
@@ -28,7 +27,6 @@ function getInitials(name: string) {
 }
 
 export function AppTopbar({ readonlyHint }: AppTopbarProps) {
-  console.log("[AppTopbar] Rendering");
   const navigate = useNavigate();
   const { isDemo } = useAppMode();
   const activeAuthUser = getActiveUser();
@@ -46,7 +44,6 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
     viewerClientId && availableViewerClients?.length > 0 && availableViewerClients.some((client) => client?.id === viewerClientId),
   );
   const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
-  console.log("[AppTopbar] viewerSelectValue =", viewerSelectValue, "hasValidViewerSelection =", hasValidViewerSelection);
 
   const handleRoleChange = (role: UserRole) => {
     updateActiveUserRole(role);
@@ -91,26 +88,24 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
       <div className="flex items-center gap-3">
         {currentUser.role === "client_viewer" ? (
           hasValidViewerSelection && viewerSelectValue ? (
-            <Select
+            <select
+              aria-label="Viewer client"
+              className="h-8 w-[220px] rounded-md border border-input bg-background px-2 text-xs"
               value={viewerSelectValue}
-              onValueChange={(value) => {
+              onChange={(event) => {
+                const value = event.target.value;
                 if (value !== viewerClientId) {
                   setViewerClientContext(value, viewerClientLocked);
                 }
               }}
               disabled={viewerClientLocked || !availableViewerClients?.length}
             >
-              <SelectTrigger className="h-8 w-[220px] text-xs">
-                <SelectValue placeholder="Select company" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableViewerClients.map((client) => (
-                  <SelectItem key={client.id} value={client.id}>
-                    {client.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              {availableViewerClients.map((client) => (
+                <option key={client.id} value={client.id}>
+                  {client.name}
+                </option>
+              ))}
+            </select>
           ) : (
             <Button variant="outline" size="sm" className="h-8 w-[220px] justify-start text-xs" disabled>
               Select company
@@ -119,15 +114,15 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
         ) : null}
         <WorkspaceSwitcher />
         {canSwitchRoles ? (
-          <Select value={currentUser.role} onValueChange={(value) => handleRoleChange(value as UserRole)}>
-            <SelectTrigger className="h-8 w-[170px] text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="contractor">Contractor mode</SelectItem>
-              <SelectItem value="client_viewer">Client viewer mode</SelectItem>
-            </SelectContent>
-          </Select>
+          <select
+            aria-label="Role switch"
+            className="h-8 w-[170px] rounded-md border border-input bg-background px-2 text-xs"
+            value={currentUser.role === "client_viewer" ? "client_viewer" : "contractor"}
+            onChange={(event) => handleRoleChange(event.target.value as UserRole)}
+          >
+            <option value="contractor">Contractor mode</option>
+            <option value="client_viewer">Client viewer mode</option>
+          </select>
         ) : null}
         <Button variant="ghost" size="icon" className="text-muted-foreground">
           <Bell className="h-4 w-4" />
