@@ -42,6 +42,15 @@ function createInitialExpense(): Omit<Expense, "id"> {
   };
 }
 
+export function canSubmitExpenseForm(form: Omit<Expense, "id">): boolean {
+  const requiresBillingAssociation = form.billableToClient !== false;
+  if (!requiresBillingAssociation) {
+    return true;
+  }
+
+  return form.billTo === "project" ? Boolean(form.projectId) : Boolean(form.clientId);
+}
+
 export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAttachment, onOpenChange, onSubmit, open, projects }: ExpenseDialogProps) {
   const [form, setForm] = useState<Omit<Expense, "id">>(
     expense
@@ -85,6 +94,8 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
 
     return activeProjects.filter((project) => project.clientId === form.clientId);
   }, [form.clientId, projects]);
+
+  const canSubmit = canSubmitExpenseForm(form);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -304,7 +315,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
           </Button>
           <Button
             className="bg-accent text-accent-foreground hover:bg-accent/90"
-            disabled={form.billTo === "project" ? !form.projectId : !form.clientId}
+            disabled={!canSubmit}
             onClick={() =>
               onSubmit(
                 {
