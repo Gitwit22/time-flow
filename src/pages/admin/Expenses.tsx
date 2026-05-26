@@ -42,6 +42,19 @@ export default function ExpensesPage() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expenseDocuments, setExpenseDocuments] = useState<Record<string, AttachedDocument[]>>({});
   const normalizedPayPeriodStartDate = settings.payPeriodStartDate?.trim() || undefined;
+  const selectableClients = useMemo(() => {
+    const seen = new Set<string>();
+
+    return clients.filter((client) => {
+      const id = client.id?.trim();
+      if (!id || seen.has(id)) {
+        return false;
+      }
+
+      seen.add(id);
+      return true;
+    });
+  }, [clients]);
 
   useEffect(() => {
     void listTimeflowDocuments("expense")
@@ -52,6 +65,12 @@ export default function ExpensesPage() {
         setExpenseDocuments({});
       });
   }, []);
+
+  useEffect(() => {
+    if (clientFilter !== "all" && !selectableClients.some((client) => client.id === clientFilter)) {
+      setClientFilter("all");
+    }
+  }, [clientFilter, selectableClients]);
 
   const payPeriodSettings = {
     payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
@@ -282,7 +301,7 @@ export default function ExpensesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All clients</SelectItem>
-                {clients.map((client) => (
+                {selectableClients.map((client) => (
                   <SelectItem key={client.id} value={client.id}>
                     {client.name}
                   </SelectItem>
@@ -374,21 +393,23 @@ export default function ExpensesPage() {
         </CardContent>
       </Card>
 
-      <ExpenseDialog
-        attachments={editingExpense ? expenseDocuments[editingExpense.id] || [] : []}
-        clients={clients}
-        expense={editingExpense}
-        onArchiveAttachment={handleArchiveExpenseAttachment}
-        open={isDialogOpen}
-        onOpenChange={(open) => {
-          setIsDialogOpen(open);
-          if (!open) {
-            setEditingExpense(null);
-          }
-        }}
-        onSubmit={handleSaveExpense}
-        projects={projects}
-      />
+      {isDialogOpen ? (
+        <ExpenseDialog
+          attachments={editingExpense ? expenseDocuments[editingExpense.id] || [] : []}
+          clients={clients}
+          expense={editingExpense}
+          onArchiveAttachment={handleArchiveExpenseAttachment}
+          open={isDialogOpen}
+          onOpenChange={(open) => {
+            setIsDialogOpen(open);
+            if (!open) {
+              setEditingExpense(null);
+            }
+          }}
+          onSubmit={handleSaveExpense}
+          projects={projects}
+        />
+      ) : null}
     </div>
   );
 }
