@@ -41,6 +41,7 @@ export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expenseDocuments, setExpenseDocuments] = useState<Record<string, AttachedDocument[]>>({});
+  const normalizedPayPeriodStartDate = settings.payPeriodStartDate?.trim() || undefined;
 
   useEffect(() => {
     void listTimeflowDocuments("expense")
@@ -54,7 +55,7 @@ export default function ExpensesPage() {
 
   const payPeriodSettings = {
     payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,
-    payPeriodStartDate: settings.payPeriodStartDate,
+    payPeriodStartDate: normalizedPayPeriodStartDate,
     periodWeekStartsOn: settings.periodWeekStartsOn,
   };
   const currentPayPeriod = getCurrentPayPeriod(payPeriodSettings, new Date());
@@ -76,7 +77,9 @@ export default function ExpensesPage() {
         const projectName = projects.find((project) => project.id === expense.projectId)?.name ?? "";
         const billedTarget = (expense.billTo ?? (expense.projectId ? "project" : "client")).toLowerCase();
 
-        return [expense.description, expense.notes, clientName, projectName, expense.category, billedTarget].some((value) => value.toLowerCase().includes(query));
+        return [expense.description, expense.notes, clientName, projectName, expense.category, billedTarget].some((value) =>
+          String(value ?? "").toLowerCase().includes(query),
+        );
       })
       .sort((left, right) => right.date.localeCompare(left.date));
   }, [clientFilter, clients, expenses, projects, searchQuery, selectedPeriod]);
@@ -219,7 +222,7 @@ export default function ExpensesPage() {
         }
       />
 
-      {!settings.payPeriodStartDate ? (
+      {!normalizedPayPeriodStartDate ? (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
