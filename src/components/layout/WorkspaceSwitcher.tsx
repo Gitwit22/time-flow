@@ -27,8 +27,8 @@ function getWorkspaceTypeLabel(memberCount: number, organizationName?: string, w
 export function WorkspaceSwitcher() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
-  const organizations = useAppStore((state) => state.organizations);
-  const organizationMembers = useAppStore((state) => state.organizationMembers);
+  const organizations = useAppStore((state) => state.organizations) ?? [];
+  const organizationMembers = useAppStore((state) => state.organizationMembers) ?? [];
   const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
   const setActiveOrganization = useAppStore((state) => state.setActiveOrganization);
   const createOrganizationWorkspace = useAppStore((state) => state.createOrganizationWorkspace);

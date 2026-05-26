@@ -33,15 +33,18 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
   const { isDemo } = useAppMode();
   const activeAuthUser = getActiveUser();
   const currentUser = useAppStore((state) => state.currentUser);
-  const clients = useAppStore((state) => state.clients);
+  const clients = useAppStore((state) => state.clients) ?? [];
   const setRole = useAppStore((state) => state.setRole);
   const setViewerClientContext = useAppStore((state) => state.setViewerClientContext);
   const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
   const switchToViewerMode = useAppStore((state) => state.switchToViewerMode);
   const { activeClient, viewerClientId, viewerClientLocked } = useAppStore(useShallow(selectViewerScope));
   const canSwitchRoles = !isDemo && activeAuthUser?.role === "contractor";
-  const availableViewerClients = viewerClientLocked && viewerClientId ? clients.filter((client) => client.id === viewerClientId) : clients;
-  const hasValidViewerSelection = Boolean(viewerClientId && availableViewerClients.some((client) => client.id === viewerClientId));
+  const availableViewerClients =
+    viewerClientLocked && viewerClientId ? clients.filter((client) => client?.id === viewerClientId) : clients ?? [];
+  const hasValidViewerSelection = Boolean(
+    viewerClientId && availableViewerClients?.length > 0 && availableViewerClients.some((client) => client?.id === viewerClientId),
+  );
   const viewerSelectValue = hasValidViewerSelection ? viewerClientId : undefined;
   console.log("[AppTopbar] viewerSelectValue =", viewerSelectValue, "hasValidViewerSelection =", hasValidViewerSelection);
 
@@ -95,7 +98,7 @@ export function AppTopbar({ readonlyHint }: AppTopbarProps) {
                   setViewerClientContext(value, viewerClientLocked);
                 }
               }}
-              disabled={viewerClientLocked || !availableViewerClients.length}
+              disabled={viewerClientLocked || !availableViewerClients?.length}
             >
               <SelectTrigger className="h-8 w-[220px] text-xs">
                 <SelectValue placeholder="Select company" />
