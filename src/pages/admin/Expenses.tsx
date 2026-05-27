@@ -1,7 +1,6 @@
 import { Paperclip, Pencil, Plus, Receipt, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { useShallow } from "zustand/react/shallow";
 
 import { ExpenseDialog } from "@/components/expenses/ExpenseDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
@@ -20,17 +19,18 @@ import {
 } from "@/lib/timeflowDocumentsApi";
 import { getCurrentPayPeriod, getExpensesForPayPeriod, getPayPeriodForDate, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
-import { selectOrganizationScope } from "@/store/selectors";
 import type { AttachedDocument, Expense } from "@/types";
 
 type PayPeriodFilter = "all" | "current" | "previous";
 
 export default function ExpensesPage() {
-  console.log("[ExpensesPage] Rendering");
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const { clients, projects, expenses } = useAppStore(useShallow(selectOrganizationScope));
+  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
+  const allClients = useAppStore((state) => state.clients);
+  const allProjects = useAppStore((state) => state.projects);
+  const allExpenses = useAppStore((state) => state.expenses);
   const addExpense = useAppStore((state) => state.addExpense);
   const updateExpense = useAppStore((state) => state.updateExpense);
   const deleteExpense = useAppStore((state) => state.deleteExpense);
@@ -41,6 +41,67 @@ export default function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expenseDocuments, setExpenseDocuments] = useState<Record<string, AttachedDocument[]>>({});
+  const { clients, projects, expenses } = useMemo(() => {
+    if (!activeOrganizationId) {
+      return {
+        clients: allClients,
+        projects: allProjects,
+        expenses: allExpenses,
+      };
+    }
+
+    const clientsById = new Map(allClients.map((client) => [client.id, client]));
+    const projectsById = new Map(allProjects.map((project) => [project.id, project]));
+
+    const resolveWorkspaceId = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }): string | undefined => {
+      if (record.workspaceId) return record.workspaceId;
+      if (record.organizationId) return record.organizationId;
+
+      if (record.projectId) {
+        const project = projectsById.get(record.projectId);
+        if (project?.workspaceId) return project.workspaceId;
+        if (project?.organizationId) return project.organizationId;
+        if (project?.clientId) {
+          const projectClient = clientsById.get(project.clientId);
+          if (projectClient?.workspaceId) return projectClient.workspaceId;
+          if (projectClient?.organizationId) return projectClient.organizationId;
+        }
+      }
+
+      if (record.clientId) {
+        const client = clientsById.get(record.clientId);
+        if (client?.workspaceId) return client.workspaceId;
+        if (client?.organizationId) return client.organizationId;
+      }
+
+      return undefined;
+    };
+
+    const isInActiveWorkspace = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(record);
+      if (resolvedWorkspaceId) {
+        return resolvedWorkspaceId === activeOrganizationId;
+      }
+
+      return true;
+    };
+
+    return {
+      clients: allClients.filter((client) => isInActiveWorkspace(client)),
+      projects: allProjects.filter((project) => isInActiveWorkspace(project)),
+      expenses: allExpenses.filter((expense) => isInActiveWorkspace(expense)),
+    };
+  }, [activeOrganizationId, allClients, allExpenses, allProjects]);
   const normalizedPayPeriodStartDate = settings.payPeriodStartDate?.trim() || undefined;
   const selectableClients = useMemo(() => {
     const seen = new Set<string>();
