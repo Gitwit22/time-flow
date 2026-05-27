@@ -69,6 +69,18 @@ export default function SetupOrganizationPage() {
         const status = await getSetupOrganizationStatus();
         if (cancelled) return;
         if (!status.onboardingRequired) {
+          status.memberships.forEach((membership) => {
+            seedOrganizationContext({
+              organization: {
+                id: membership.organizationId,
+                name: membership.organizationName,
+                ownerUserId: currentUser.id || membership.organizationId,
+                createdAt: new Date().toISOString(),
+                status: "active",
+              },
+              memberRole: membership.role as OrganizationMember["role"],
+            });
+          });
           navigate("/platform", { replace: true });
           return;
         }
@@ -85,7 +97,7 @@ export default function SetupOrganizationPage() {
     return () => {
       cancelled = true;
     };
-  }, [authStatus, navigate]);
+  }, [authStatus, currentUser.id, navigate, seedOrganizationContext]);
 
   if (authStatus === "unauthenticated") {
     return <Navigate to="/login" replace />;
