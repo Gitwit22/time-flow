@@ -25,6 +25,7 @@ export default function SetupOrganizationPage() {
 
   const authStatus = useAppStore((state) => state.authStatus);
   const currentUser = useAppStore((state) => state.currentUser);
+  const organizations = useAppStore((state) => state.organizations);
   const organizationMembers = useAppStore((state) => state.organizationMembers);
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
   const markAuthenticated = useAppStore((state) => state.markAuthenticated);
@@ -70,12 +71,13 @@ export default function SetupOrganizationPage() {
         if (cancelled) return;
         if (!status.onboardingRequired) {
           status.memberships.forEach((membership) => {
+            const existingOrganization = organizations.find((organization) => organization.id === membership.organizationId);
             seedOrganizationContext({
-              organization: {
+              organization: existingOrganization ?? {
                 id: membership.organizationId,
                 name: membership.organizationName,
-                ownerUserId: currentUser.id || membership.organizationId,
-                createdAt: new Date().toISOString(),
+                ownerUserId: currentUser.id || "",
+                createdAt: "1970-01-01T00:00:00.000Z",
                 status: "active",
               },
               memberRole: membership.role as OrganizationMember["role"],
@@ -97,7 +99,7 @@ export default function SetupOrganizationPage() {
     return () => {
       cancelled = true;
     };
-  }, [authStatus, currentUser.id, navigate, seedOrganizationContext]);
+  }, [authStatus, currentUser.id, navigate, organizations, seedOrganizationContext]);
 
   if (authStatus === "unauthenticated") {
     return <Navigate to="/login" replace />;
