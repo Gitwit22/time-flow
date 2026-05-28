@@ -69,6 +69,22 @@ export default function SetupOrganizationPage() {
         const status = await getSetupOrganizationStatus();
         if (cancelled) return;
         if (!status.onboardingRequired) {
+          status.memberships.forEach((membership) => {
+            const existingOrganization = useAppStore
+              .getState()
+              .organizations
+              .find((organization) => organization.id === membership.organizationId);
+            seedOrganizationContext({
+              organization: existingOrganization ?? {
+                id: membership.organizationId,
+                name: membership.organizationName,
+                ownerUserId: "",
+                createdAt: "1970-01-01T00:00:00.000Z",
+                status: "active",
+              },
+              memberRole: membership.role as OrganizationMember["role"],
+            });
+          });
           navigate("/platform", { replace: true });
           return;
         }
@@ -85,7 +101,7 @@ export default function SetupOrganizationPage() {
     return () => {
       cancelled = true;
     };
-  }, [authStatus, navigate]);
+  }, [authStatus, currentUser.id, navigate, seedOrganizationContext]);
 
   if (authStatus === "unauthenticated") {
     return <Navigate to="/login" replace />;
