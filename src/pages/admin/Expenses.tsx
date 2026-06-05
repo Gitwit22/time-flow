@@ -23,6 +23,23 @@ import type { AttachedDocument, Expense } from "@/types";
 
 type PayPeriodFilter = "all" | "current" | "previous";
 
+function formatExpenseStatus(status?: Expense["status"]) {
+  switch (status) {
+    case "non_billable":
+      return "Non-billable";
+    case "billable":
+      return "Billable";
+    case "invoiced":
+      return "Invoiced";
+    case "reimbursed":
+      return "Reimbursed";
+    case "draft":
+      return "Draft";
+    default:
+      return "Billable";
+  }
+}
+
 export default function ExpensesPage() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
@@ -37,7 +54,7 @@ export default function ExpensesPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [clientFilter, setClientFilter] = useState("all");
-  const [payPeriodFilter, setPayPeriodFilter] = useState<PayPeriodFilter>("current");
+  const [payPeriodFilter, setPayPeriodFilter] = useState<PayPeriodFilter>("all");
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [expenseDocuments, setExpenseDocuments] = useState<Record<string, AttachedDocument[]>>({});
@@ -396,6 +413,8 @@ export default function ExpensesPage() {
                     <th className="px-4 py-3 text-left font-medium">Expense Date</th>
                     <th className="px-4 py-3 text-left font-medium">Description</th>
                     <th className="px-4 py-3 text-left font-medium">Category</th>
+                    <th className="px-4 py-3 text-left font-medium">Status</th>
+                    <th className="px-4 py-3 text-left font-medium">Invoice</th>
                     <th className="px-4 py-3 text-left font-medium">Billed To</th>
                     <th className="px-4 py-3 text-left font-medium">Client / Project</th>
                     <th className="px-4 py-3 text-left font-medium">Pay Period</th>
@@ -426,6 +445,8 @@ export default function ExpensesPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 capitalize">{expense.category}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatExpenseStatus(expense.status)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{expense.invoiceId ?? "-"}</td>
                         <td className="px-4 py-3 capitalize">{billedTarget}</td>
                         <td className="px-4 py-3 text-muted-foreground">{projectName ? `${projectName} · ${clientName ?? "No client"}` : clientName ?? "Unlinked"}</td>
                         <td className="px-4 py-3">{period.label}</td>
