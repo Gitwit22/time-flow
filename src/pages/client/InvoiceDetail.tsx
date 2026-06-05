@@ -12,6 +12,7 @@ import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeE
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/appStore";
 import { selectViewerScope } from "@/store/selectors";
+import type { InvoiceLineItem } from "@/types";
 import { Link, useParams } from "react-router-dom";
 
 const statusStyles: Record<string, string> = {
@@ -64,7 +65,7 @@ export default function ClientInvoiceDetail() {
   const entries = timeEntries
     .filter((entry) => invoice.entryIds.includes(entry.id))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
-  const lineItems = invoice.lineItems.length > 0
+  const lineItems: InvoiceLineItem[] = invoice.lineItems.length > 0
     ? invoice.lineItems
     : entries.map((entry, index) => ({
       id: `legacy-${entry.id}-${index}`,
@@ -81,7 +82,9 @@ export default function ClientInvoiceDetail() {
     }));
   const laborLineItems = lineItems.filter((lineItem) => lineItem.lineType !== "expense");
   const laborGroups = groupInvoiceLaborByProject(lineItems, entries, projects);
-  const expenseLineItems = lineItems.filter((lineItem) => lineItem.lineType === "expense");
+  const expenseLineItems = lineItems.filter(
+    (lineItem): lineItem is InvoiceLineItem & { lineType: "expense" } => lineItem.lineType === "expense",
+  );
   const laborSubtotal = calculateInvoiceLaborSubtotal({ lineItems });
   const expenseSubtotal = calculateInvoiceExpenseSubtotal({ lineItems });
   const displayStatus = getInvoiceDisplayStatus(invoice);

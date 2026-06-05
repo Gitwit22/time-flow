@@ -80,6 +80,26 @@ describe("pay period utilities", () => {
       totalHours: 2,
     });
   });
+
+  it("excludes invoice-linked expenses from pay period net totals", () => {
+    const period = getPayPeriodForDate("2026-06-01", {
+      payPeriodFrequency: "biweekly",
+      payPeriodStartDate: "2026-05-25",
+    });
+
+    const summary = summarizePayPeriod({
+      entries: [{ date: "2026-05-30", durationHours: 2, amount: 200 }],
+      expenses: [
+        { date: "2026-05-31", amount: 90, status: "invoiced", invoiceId: "INV-90" },
+        { date: "2026-06-01", amount: 25, status: "billable", invoiceId: null },
+      ],
+      invoices: [],
+      period,
+    });
+
+    expect(summary.expenseTotal).toBe(25);
+    expect(summary.netAmount).toBe(175);
+  });
 });
 
 describe("date-only helpers", () => {

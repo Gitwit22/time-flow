@@ -17,7 +17,7 @@ import {
   listTimeflowDocuments,
   uploadTimeflowEntityDocumentFile,
 } from "@/lib/timeflowDocumentsApi";
-import { getCurrentPayPeriod, getExpensesForPayPeriod, getPayPeriodForDate, getPreviousPayPeriod } from "@/lib/payPeriods";
+import { getCurrentPayPeriod, getExpensesForPayPeriod, getOpenExpensesForPayPeriod, getPayPeriodForDate, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
 import type { AttachedDocument, Expense } from "@/types";
 
@@ -165,7 +165,7 @@ export default function ExpensesPage() {
   }, [clientFilter, clients, expenses, projects, searchQuery, selectedPeriod]);
 
   const currentPeriodExpenseTotal = useMemo(
-    () => getExpensesForPayPeriod(expenses, currentPayPeriod).reduce((sum, expense) => sum + expense.amount, 0),
+    () => getOpenExpensesForPayPeriod(expenses, currentPayPeriod).reduce((sum, expense) => sum + expense.amount, 0),
     [currentPayPeriod, expenses],
   );
   const filteredExpenseTotal = filteredExpenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -319,11 +319,11 @@ export default function ExpensesPage() {
       <div className="grid gap-4 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-heading">Current Pay Period Expenses</CardTitle>
+            <CardTitle className="text-sm font-heading">Current Pay Period Open Expenses</CardTitle>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold">{formatCurrency(currentPeriodExpenseTotal)}</p>
-            <p className="text-xs text-muted-foreground">{currentPayPeriod.label}</p>
+            <p className="text-xs text-muted-foreground">{currentPayPeriod.label} · excludes invoiced/reimbursed items</p>
           </CardContent>
         </Card>
         <Card>

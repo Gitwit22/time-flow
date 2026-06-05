@@ -29,6 +29,8 @@ interface SummarizeExpense extends DatedRecord {
   amount: number;
   excludedFromPayPeriod?: boolean;
   includedInPayPeriod?: boolean;
+  invoiceId?: string | null;
+  status?: "draft" | "billable" | "invoiced" | "reimbursed" | "non_billable";
 }
 
 interface SummarizeInvoice {
@@ -167,6 +169,15 @@ export function getExpensesForPayPeriod<TExpense extends SummarizeExpense>(expen
   });
 }
 
+function isSettledPayPeriodExpense(expense: SummarizeExpense) {
+  const normalizedStatus = String(expense.status ?? "").toLowerCase();
+  return Boolean(expense.invoiceId) || normalizedStatus === "invoiced" || normalizedStatus === "reimbursed";
+}
+
+export function getOpenExpensesForPayPeriod<TExpense extends SummarizeExpense>(expenses: TExpense[], period: Pick<PayPeriod, "startDate" | "endDate">) {
+  return getExpensesForPayPeriod(expenses, period).filter((expense) => !isSettledPayPeriodExpense(expense));
+}
+
 function invoiceMatchesPeriod(invoice: SummarizeInvoice, period: Pick<PayPeriod, "startDate" | "endDate">) {
   if (invoice.periodStart && invoice.periodEnd) {
     return !(isBefore(toDate(invoice.periodEnd), toDate(period.startDate)) || isAfter(toDate(invoice.periodStart), toDate(period.endDate)));
@@ -195,7 +206,7 @@ export function summarizePayPeriod({
   period: Pick<PayPeriod, "startDate" | "endDate">;
 }) {
   const periodEntries = getEntriesForPayPeriod(entries, period);
-  const periodExpenses = getExpensesForPayPeriod(expenses, period);
+  const periodExpenses = getOpenExpensesForPayPeriod(expenses, period);
   const periodInvoices = (invoices ?? []).filter((invoice) => invoice.status !== "void" && invoiceMatchesPeriod(invoice, period));
   const timeEarnings = Number(
     periodEntries.reduce((sum, entry) => sum + (typeof entry.amount === "number" ? entry.amount : 0), 0).toFixed(2),
