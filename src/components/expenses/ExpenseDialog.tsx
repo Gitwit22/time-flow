@@ -85,15 +85,31 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
     setSelectedFiles([]);
   }, [expense, open]);
 
-  const availableProjects = useMemo(() => {
-    const activeProjects = getSelectableProjects(projects);
+  const selectableClients = useMemo(
+    () =>
+      clients.filter((client) => {
+        const id = client.id?.trim();
+        return Boolean(id);
+      }),
+    [clients],
+  );
 
+  const selectableProjects = useMemo(
+    () =>
+      getSelectableProjects(projects).filter((project) => {
+        const id = project.id?.trim();
+        return Boolean(id);
+      }),
+    [projects],
+  );
+
+  const availableProjects = useMemo(() => {
     if (!form.clientId) {
-      return activeProjects;
+      return selectableProjects;
     }
 
-    return activeProjects.filter((project) => project.clientId === form.clientId);
-  }, [form.clientId, projects]);
+    return selectableProjects.filter((project) => project.clientId === form.clientId);
+  }, [form.clientId, selectableProjects]);
 
   const canSubmit = canSubmitExpenseForm(form);
 
@@ -188,7 +204,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
                     return;
                   }
 
-                  const project = projects.find((item) => item.id === value);
+                  const project = selectableProjects.find((item) => item.id === value);
                   setForm((current) => ({ ...current, projectId: value, clientId: project?.clientId ?? current.clientId }));
                 }}
               >
@@ -219,7 +235,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Select client</SelectItem>
-                  {clients.map((client) => (
+                  {selectableClients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
                     </SelectItem>

@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
+import { selectOrganizationScope } from "@/store/selectors";
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 
 interface UpcomingInvoiceCardProps {
@@ -16,10 +17,7 @@ interface UpcomingInvoiceCardProps {
 export function UpcomingInvoiceCard({ clientId }: UpcomingInvoiceCardProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
+  const { clients, projects, timeEntries, invoices } = useAppStore(selectOrganizationScope);
   const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), clientId ?? settings.defaultClientId);
   const [upcomingInvoice] = invoiceDraftSummary.previews;
   const isReadonly = currentUser.role === "client_viewer";

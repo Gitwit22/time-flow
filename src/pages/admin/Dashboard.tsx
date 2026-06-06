@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
-import { getActiveTimeEntries, selectDashboardMetrics, selectIsReadonly } from "@/store/selectors";
+import { getActiveTimeEntries, selectDashboardMetrics, selectIsReadonly, selectOrganizationScope } from "@/store/selectors";
 import type { TimeEntry } from "@/types";
 
 export default function AdminDashboard() {
@@ -21,12 +21,7 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const invoices = useAppStore((state) => state.invoices);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const expenses = useAppStore((state) => state.expenses);
-  const projectBills = useAppStore((state) => state.projectBills);
+  const { clients, projects, invoices, timeEntries, expenses, projectBills } = useAppStore(selectOrganizationScope);
   const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
