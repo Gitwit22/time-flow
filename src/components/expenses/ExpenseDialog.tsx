@@ -88,8 +88,11 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
   const selectableClients = useMemo(
     () =>
       clients.filter((client) => {
-        const id = client.id?.trim();
-        return Boolean(id);
+        if (client.id === undefined || client.id === null) {
+          return false;
+        }
+
+        return String(client.id).trim().length > 0;
       }),
     [clients],
   );
@@ -97,8 +100,11 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
   const selectableProjects = useMemo(
     () =>
       getSelectableProjects(projects).filter((project) => {
-        const id = project.id?.trim();
-        return Boolean(id);
+        if (project.id === undefined || project.id === null) {
+          return false;
+        }
+
+        return String(project.id).trim().length > 0;
       }),
     [projects],
   );
@@ -108,7 +114,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
       return selectableProjects;
     }
 
-    return selectableProjects.filter((project) => project.clientId === form.clientId);
+    return selectableProjects.filter((project) => String(project.clientId) === String(form.clientId));
   }, [form.clientId, selectableProjects]);
 
   const canSubmit = canSubmitExpenseForm(form);
@@ -197,14 +203,14 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs">Project</Label>
               <Select
-                value={form.projectId ?? "none"}
+                value={form.projectId != null ? String(form.projectId) : "none"}
                 onValueChange={(value) => {
                   if (value === "none") {
                     setForm((current) => ({ ...current, projectId: undefined }));
                     return;
                   }
 
-                  const project = selectableProjects.find((item) => item.id === value);
+                  const project = selectableProjects.find((item) => String(item.id) === value);
                   setForm((current) => ({ ...current, projectId: value, clientId: project?.clientId ?? current.clientId }));
                 }}
               >
@@ -214,7 +220,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
                 <SelectContent>
                   <SelectItem value="none">Select project</SelectItem>
                   {availableProjects.map((project) => (
-                    <SelectItem key={project.id} value={project.id}>
+                    <SelectItem key={String(project.id)} value={String(project.id)}>
                       {project.name}
                     </SelectItem>
                   ))}
@@ -225,7 +231,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
             <div className="space-y-1.5 sm:col-span-2">
               <Label className="text-xs">Client</Label>
               <Select
-                value={form.clientId ?? "none"}
+                value={form.clientId != null ? String(form.clientId) : "none"}
                 onValueChange={(value) =>
                   setForm((current) => ({ ...current, clientId: value === "none" ? undefined : value, projectId: undefined }))
                 }
@@ -236,7 +242,7 @@ export function ExpenseDialog({ attachments = [], clients, expense, onArchiveAtt
                 <SelectContent>
                   <SelectItem value="none">Select client</SelectItem>
                   {selectableClients.map((client) => (
-                    <SelectItem key={client.id} value={client.id}>
+                    <SelectItem key={String(client.id)} value={String(client.id)}>
                       {client.name}
                     </SelectItem>
                   ))}

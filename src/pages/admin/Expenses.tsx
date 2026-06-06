@@ -124,7 +124,11 @@ export default function ExpensesPage() {
     const seen = new Set<string>();
 
     return clients.filter((client) => {
-      const id = client.id?.trim();
+      if (client.id === undefined || client.id === null) {
+        return false;
+      }
+
+      const id = String(client.id).trim();
       if (!id || seen.has(id)) {
         return false;
       }
