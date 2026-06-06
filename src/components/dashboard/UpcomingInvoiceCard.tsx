@@ -4,10 +4,10 @@ import { Link } from "react-router-dom";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useMemo } from "react";
 import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { formatCurrency, formatHours, formatLongDate, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
-import { selectOrganizationScope } from "@/store/selectors";
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 
 interface UpcomingInvoiceCardProps {
@@ -17,7 +17,76 @@ interface UpcomingInvoiceCardProps {
 export function UpcomingInvoiceCard({ clientId }: UpcomingInvoiceCardProps) {
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const { clients, projects, timeEntries, invoices } = useAppStore(selectOrganizationScope);
+  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
+  const allClients = useAppStore((state) => state.clients);
+  const allProjects = useAppStore((state) => state.projects);
+  const allTimeEntries = useAppStore((state) => state.timeEntries);
+  const allInvoices = useAppStore((state) => state.invoices);
+
+  const { clients, projects, timeEntries, invoices } = useMemo(() => {
+    if (!activeOrganizationId) {
+      return {
+        clients: allClients,
+        projects: allProjects,
+        timeEntries: allTimeEntries,
+        invoices: allInvoices,
+      };
+    }
+
+    const clientsById = new Map(allClients.map((client) => [client.id, client]));
+    const projectsById = new Map(allProjects.map((project) => [project.id, project]));
+
+    const resolveWorkspaceId = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }) => {
+      if (record.workspaceId) return record.workspaceId;
+      if (record.organizationId) return record.organizationId;
+
+      if (record.projectId) {
+        const project = projectsById.get(record.projectId);
+        if (project?.workspaceId) return project.workspaceId;
+        if (project?.organizationId) return project.organizationId;
+        if (project?.clientId) {
+          const projectClient = clientsById.get(project.clientId);
+          if (projectClient?.workspaceId) return projectClient.workspaceId;
+          if (projectClient?.organizationId) return projectClient.organizationId;
+        }
+      }
+
+      if (record.clientId) {
+        const client = clientsById.get(record.clientId);
+        if (client?.workspaceId) return client.workspaceId;
+        if (client?.organizationId) return client.organizationId;
+      }
+
+      return undefined;
+    };
+
+    const isInActiveWorkspace = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(record);
+      if (resolvedWorkspaceId) {
+        return resolvedWorkspaceId === activeOrganizationId;
+      }
+
+      return true;
+    };
+
+    return {
+      clients: allClients.filter((client) => isInActiveWorkspace(client)),
+      projects: allProjects.filter((project) => isInActiveWorkspace(project)),
+      timeEntries: allTimeEntries.filter((entry) => isInActiveWorkspace(entry)),
+      invoices: allInvoices.filter((invoice) => isInActiveWorkspace(invoice)),
+    };
+  }, [activeOrganizationId, allClients, allProjects, allTimeEntries, allInvoices]);
+
   const invoiceDraftSummary = buildInvoiceDraftSummary(timeEntries, clients, projects, currentUser, settings, invoices, new Date(), clientId ?? settings.defaultClientId);
   const [upcomingInvoice] = invoiceDraftSummary.previews;
   const isReadonly = currentUser.role === "client_viewer";

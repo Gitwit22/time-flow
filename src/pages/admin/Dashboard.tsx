@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatPeriodLabel } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
-import { getActiveTimeEntries, selectDashboardMetrics, selectIsReadonly, selectOrganizationScope } from "@/store/selectors";
+import { getActiveTimeEntries, selectDashboardMetrics, selectIsReadonly } from "@/store/selectors";
 import type { TimeEntry } from "@/types";
 
 export default function AdminDashboard() {
@@ -21,10 +21,84 @@ export default function AdminDashboard() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const { clients, projects, invoices, timeEntries, expenses, projectBills } = useAppStore(selectOrganizationScope);
+  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
+  const allClients = useAppStore((state) => state.clients);
+  const allProjects = useAppStore((state) => state.projects);
+  const allInvoices = useAppStore((state) => state.invoices);
+  const allTimeEntries = useAppStore((state) => state.timeEntries);
+  const allExpenses = useAppStore((state) => state.expenses);
+  const allProjectBills = useAppStore((state) => state.projectBills);
   const activeSession = useAppStore((state) => state.activeSession);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);
+
+  const { clients, projects, invoices, timeEntries, expenses, projectBills } = useMemo(() => {
+    if (!activeOrganizationId) {
+      return {
+        clients: allClients,
+        projects: allProjects,
+        invoices: allInvoices,
+        timeEntries: allTimeEntries,
+        expenses: allExpenses,
+        projectBills: allProjectBills,
+      };
+    }
+
+    const clientsById = new Map(allClients.map((client) => [client.id, client]));
+    const projectsById = new Map(allProjects.map((project) => [project.id, project]));
+
+    const resolveWorkspaceId = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }) => {
+      if (record.workspaceId) return record.workspaceId;
+      if (record.organizationId) return record.organizationId;
+
+      if (record.projectId) {
+        const project = projectsById.get(record.projectId);
+        if (project?.workspaceId) return project.workspaceId;
+        if (project?.organizationId) return project.organizationId;
+        if (project?.clientId) {
+          const projectClient = clientsById.get(project.clientId);
+          if (projectClient?.workspaceId) return projectClient.workspaceId;
+          if (projectClient?.organizationId) return projectClient.organizationId;
+        }
+      }
+
+      if (record.clientId) {
+        const client = clientsById.get(record.clientId);
+        if (client?.workspaceId) return client.workspaceId;
+        if (client?.organizationId) return client.organizationId;
+      }
+
+      return undefined;
+    };
+
+    const isInActiveWorkspace = (record: {
+      workspaceId?: string;
+      organizationId?: string;
+      clientId?: string;
+      projectId?: string;
+    }) => {
+      const resolvedWorkspaceId = resolveWorkspaceId(record);
+      if (resolvedWorkspaceId) {
+        return resolvedWorkspaceId === activeOrganizationId;
+      }
+
+      return true;
+    };
+
+    return {
+      clients: allClients.filter((client) => isInActiveWorkspace(client)),
+      projects: allProjects.filter((project) => isInActiveWorkspace(project)),
+      invoices: allInvoices.filter((invoice) => isInActiveWorkspace(invoice)),
+      timeEntries: allTimeEntries.filter((entry) => isInActiveWorkspace(entry)),
+      expenses: allExpenses.filter((expense) => isInActiveWorkspace(expense)),
+      projectBills: allProjectBills.filter((bill) => isInActiveWorkspace(bill)),
+    };
+  }, [activeOrganizationId, allClients, allProjects, allInvoices, allTimeEntries, allExpenses, allProjectBills]);
   const metrics = useMemo(
     () =>
       selectDashboardMetrics({
