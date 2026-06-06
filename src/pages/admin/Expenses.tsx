@@ -113,10 +113,17 @@ export default function ExpensesPage() {
       return true;
     };
 
+    const scopedClients = allClients.filter((client) => isInActiveWorkspace(client));
+    const scopedProjects = allProjects.filter((project) => isInActiveWorkspace(project));
+    const scopedExpenses = allExpenses.filter((expense) => isInActiveWorkspace(expense));
+
+    // Some legacy records can carry stale workspace metadata after migrations.
+    // If scoping unexpectedly wipes out all clients/projects, fall back to source lists
+    // so expense linking stays usable instead of showing empty selectors.
     return {
-      clients: allClients.filter((client) => isInActiveWorkspace(client)),
-      projects: allProjects.filter((project) => isInActiveWorkspace(project)),
-      expenses: allExpenses.filter((expense) => isInActiveWorkspace(expense)),
+      clients: scopedClients.length > 0 || allClients.length === 0 ? scopedClients : allClients,
+      projects: scopedProjects.length > 0 || allProjects.length === 0 ? scopedProjects : allProjects,
+      expenses: scopedExpenses,
     };
   }, [activeOrganizationId, allClients, allExpenses, allProjects]);
   const normalizedPayPeriodStartDate = settings.payPeriodStartDate?.trim() || undefined;
