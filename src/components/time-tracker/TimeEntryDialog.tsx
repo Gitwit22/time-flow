@@ -51,7 +51,8 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
   const entryType = getEntryType(form);
 
   useEffect(() => {
-    setForm(entry ? { ...entry } : emptyState(clients[0]?.id ?? ""));
+    const firstActiveClient = clients.find((c) => c.archived !== true);
+    setForm(entry ? { ...entry } : emptyState(firstActiveClient?.id ?? ""));
     setLinkMode(entry?.projectId ? "project" : "client");
     setError("");
   }, [clients, entry, open]);
@@ -221,7 +222,9 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
                         {project.name}
                       </SelectItem>
                     ))
-                  : clients.map((client) => (
+                  : clients
+                      .filter((client) => client.archived !== true)
+                      .map((client) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.name}
                       </SelectItem>

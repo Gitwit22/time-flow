@@ -1,6 +1,6 @@
 import { getBillingSummary } from "@/lib/billing";
 import { getActiveStatus, getPeriodHours, getTodaysHours } from "@/lib/calculations";
-import { formatClockTime } from "@/lib/date";
+import { formatClockTime, getTrackedSessionSeconds, toIsoDate } from "@/lib/date";
 import { isViewerLikeRole } from "@/lib/organization";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import { getEntryHours, getEntrySortKey } from "@/lib/timeEntries";
@@ -347,7 +347,14 @@ export function selectDashboardMetrics(input: DashboardMetricsInput, referenceDa
     invoices: input.invoices,
     period: billingPeriod,
   });
-  const todayHours = getTodaysHours(input.timeEntries, referenceDate);
+  const completedTodayHours = getTodaysHours(input.timeEntries, referenceDate);
+  const liveSessionHours =
+    input.activeSession.isActive &&
+    input.activeSession.startedAt &&
+    toIsoDate(new Date(input.activeSession.startedAt)) === toIsoDate(referenceDate)
+      ? getTrackedSessionSeconds(input.activeSession, referenceDate) / 3600
+      : 0;
+  const todayHours = Number((completedTodayHours + liveSessionHours).toFixed(2));
   const periodHours = getPeriodHours(input.timeEntries, billingPeriod.startDate, billingPeriod.endDate);
   const periodProjectBills = input.projectBills.filter((bill: ProjectBill) => {
     if (bill.status === "void") {

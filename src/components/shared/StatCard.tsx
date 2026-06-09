@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { type LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -5,7 +6,7 @@ import { cn } from "@/lib/utils";
 interface StatCardProps {
   title: string;
   value: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   icon: LucideIcon;
   iconClassName?: string;
   className?: string;

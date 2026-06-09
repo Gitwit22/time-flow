@@ -1,3 +1,4 @@
+import { type ReactNode } from "react";
 import { type LucideIcon } from "lucide-react";
 
 import { StatCard } from "@/components/shared/StatCard";
@@ -5,7 +6,7 @@ import { StatCard } from "@/components/shared/StatCard";
 interface SummaryCardProps {
   title: string;
   value: string;
-  subtitle?: string;
+  subtitle?: ReactNode;
   icon: LucideIcon;
   iconClassName?: string;
   className?: string;

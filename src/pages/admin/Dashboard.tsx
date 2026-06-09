@@ -213,7 +213,13 @@ export default function AdminDashboard() {
         <SummaryCard
           title="Period Earnings"
           value={formatCurrency(metrics.periodEarnings)}
-          subtitle={metrics.unratedEntryCount ? `${metrics.unratedEntryCount} entries missing client rates` : "Based on rated client work"}
+          subtitle={
+            metrics.unratedEntryCount ? (
+              <Link to="/platform/clients" className="underline underline-offset-2 hover:text-foreground">
+                {metrics.unratedEntryCount} {metrics.unratedEntryCount === 1 ? "entry" : "entries"} missing client rates — set rates
+              </Link>
+            ) : "Based on rated client work"
+          }
           icon={DollarSign}
           iconClassName="bg-success/10 text-success"
         />
