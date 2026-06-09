@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateForInput, parseDateInput, toDateOnlyString } from "@/lib/date";
-import { getProjectBudgetSnapshot, getProjectWarningMessage, getSelectableProjects } from "@/lib/projects";
+import { getProjectBudgetSnapshot, getProjectWarningMessage } from "@/lib/projects";
 import { getEntryType } from "@/lib/timeEntries";
 import type { Client, Project, TimeEntry } from "@/types";
 
@@ -45,39 +45,18 @@ function emptyState(clientId = "") {
 }
 
 export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, onOpenChange, onSubmit }: TimeEntryDialogProps) {
-  const [form, setForm] = useState<Omit<TimeEntry, "id">>(entry ? { ...entry } : emptyState(clients.find((c) => c.archived !== true)?.id ?? ""));
+  const [form, setForm] = useState<Omit<TimeEntry, "id">>(entry ? { ...entry } : emptyState(clients[0]?.id ?? ""));
   const [linkMode, setLinkMode] = useState<"client" | "project">(entry?.projectId ? "project" : "client");
   const [error, setError] = useState<string>("");
   const entryType = getEntryType(form);
 
   useEffect(() => {
-    const firstActiveClient = clients.find((c) => c.archived !== true);
-    setForm(entry ? { ...entry } : emptyState(firstActiveClient?.id ?? ""));
+    setForm(entry ? { ...entry } : emptyState(clients[0]?.id ?? ""));
     setLinkMode(entry?.projectId ? "project" : "client");
     setError("");
   }, [clients, entry, open]);
 
-  // Active clients — plus the entry's existing client if it has since been archived
-  const selectableClients = useMemo(() => {
-    const active = clients.filter((c) => c.archived !== true);
-    if (entry?.clientId && !active.some((c) => c.id === entry.clientId)) {
-      const current = clients.find((c) => c.id === entry.clientId);
-      if (current) return [...active, current];
-    }
-    return active;
-  }, [clients, entry?.clientId]);
-
-  const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
-
-  // Selectable projects — plus the entry's existing project if it has since been archived
-  const selectableProjectsForEntry = useMemo(() => {
-    if (!entry?.projectId) return selectableProjects;
-    if (selectableProjects.some((p) => p.id === entry.projectId)) return selectableProjects;
-    const current = projects.find((p) => p.id === entry.projectId);
-    return current ? [...selectableProjects, current] : selectableProjects;
-  }, [selectableProjects, projects, entry?.projectId]);
-
-  const selectedProject = selectableProjectsForEntry.find((project) => project.id === form.projectId);
+  const selectedProject = projects.find((project) => project.id === form.projectId);
   const previewDuration = useMemo(() => {
     const [startHours, startMinutes] = form.startTime.split(":").map(Number);
     const [endHours, endMinutes] = (form.endTime ?? "00:00").split(":").map(Number);
@@ -236,12 +215,12 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
               </SelectTrigger>
               <SelectContent>
                 {linkMode === "project"
-                  ? selectableProjectsForEntry.map((project) => (
+                  ? projects.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name}
                       </SelectItem>
                     ))
-                  : selectableClients.map((client) => (
+                  : clients.map((client) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.name}
                       </SelectItem>

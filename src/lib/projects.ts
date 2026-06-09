@@ -70,7 +70,7 @@ export function getProjectClient(project: Project | undefined, clients: Client[]
 }
 
 export function getSelectableProjects(projects: Project[]) {
-  return projects.filter((project) => project.archived !== true && project.status !== "archived");
+  return projects;
 }
 
 export function resolveTimeEntryBillingContext(entry: Pick<TimeEntry, "clientId" | "projectId" | "billingRate">, clients: Client[], projects: Project[]): ProjectBillingContext {

@@ -22,7 +22,7 @@ export function ActiveSessionCard() {
   const stopSession = useAppStore((state) => state.stopSession);
   const updateActiveSession = useAppStore((state) => state.updateActiveSession);
   const [trackingMode, setTrackingMode] = useState<"client" | "project">("client");
-  const [selectedClientId, setSelectedClientId] = useState(settings.defaultClientId ?? clients.find((c) => c.archived !== true)?.id ?? "");
+  const [selectedClientId, setSelectedClientId] = useState(settings.defaultClientId ?? clients[0]?.id ?? "");
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id ?? "");
   const [draftNotes, setDraftNotes] = useState(activeSession.notes ?? "");
   const [elapsedSeconds, setElapsedSeconds] = useState(getTrackedSessionSeconds(activeSession));
@@ -228,9 +228,7 @@ export function ActiveSessionCard() {
                   <SelectValue placeholder="Select a client" />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients
-                    .filter((client) => client.archived !== true)
-                    .map((client) => (
+                  {clients.map((client) => (
                     <SelectItem key={client.id} value={client.id}>
                       {client.name}
                     </SelectItem>
