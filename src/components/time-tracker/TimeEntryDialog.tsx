@@ -45,7 +45,7 @@ function emptyState(clientId = "") {
 }
 
 export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, onOpenChange, onSubmit }: TimeEntryDialogProps) {
-  const [form, setForm] = useState<Omit<TimeEntry, "id">>(entry ? { ...entry } : emptyState(clients[0]?.id ?? ""));
+  const [form, setForm] = useState<Omit<TimeEntry, "id">>(entry ? { ...entry } : emptyState(clients.find((c) => c.archived !== true)?.id ?? ""));
   const [linkMode, setLinkMode] = useState<"client" | "project">(entry?.projectId ? "project" : "client");
   const [error, setError] = useState<string>("");
   const entryType = getEntryType(form);
@@ -57,8 +57,27 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
     setError("");
   }, [clients, entry, open]);
 
+  // Active clients — plus the entry's existing client if it has since been archived
+  const selectableClients = useMemo(() => {
+    const active = clients.filter((c) => c.archived !== true);
+    if (entry?.clientId && !active.some((c) => c.id === entry.clientId)) {
+      const current = clients.find((c) => c.id === entry.clientId);
+      if (current) return [...active, current];
+    }
+    return active;
+  }, [clients, entry?.clientId]);
+
   const selectableProjects = useMemo(() => getSelectableProjects(projects), [projects]);
-  const selectedProject = selectableProjects.find((project) => project.id === form.projectId);
+
+  // Selectable projects — plus the entry's existing project if it has since been archived
+  const selectableProjectsForEntry = useMemo(() => {
+    if (!entry?.projectId) return selectableProjects;
+    if (selectableProjects.some((p) => p.id === entry.projectId)) return selectableProjects;
+    const current = projects.find((p) => p.id === entry.projectId);
+    return current ? [...selectableProjects, current] : selectableProjects;
+  }, [selectableProjects, projects, entry?.projectId]);
+
+  const selectedProject = selectableProjectsForEntry.find((project) => project.id === form.projectId);
   const previewDuration = useMemo(() => {
     const [startHours, startMinutes] = form.startTime.split(":").map(Number);
     const [endHours, endMinutes] = (form.endTime ?? "00:00").split(":").map(Number);
@@ -217,14 +236,12 @@ export function TimeEntryDialog({ clients, projects, timeEntries, entry, open, o
               </SelectTrigger>
               <SelectContent>
                 {linkMode === "project"
-                  ? selectableProjects.map((project) => (
+                  ? selectableProjectsForEntry.map((project) => (
                       <SelectItem key={project.id} value={project.id}>
                         {project.name}
                       </SelectItem>
                     ))
-                  : clients
-                      .filter((client) => client.archived !== true)
-                      .map((client) => (
+                  : selectableClients.map((client) => (
                       <SelectItem key={client.id} value={client.id}>
                         {client.name}
                       </SelectItem>
