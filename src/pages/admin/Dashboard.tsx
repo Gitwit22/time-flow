@@ -289,8 +289,8 @@ export default function AdminDashboard() {
         <CardContent>
           <RecentTimeEntriesTable
             entries={metrics.recentEntries}
-            clients={clients}
-            projects={projects}
+            clients={allClients}
+            projects={allProjects}
             readOnly={isReadonly}
             onEdit={handleEditEntry}
             onDelete={handleDeleteEntry}
@@ -299,8 +299,8 @@ export default function AdminDashboard() {
       </Card>
 
       <TimeEntryDialog
-        clients={clients}
-        projects={projects}
+        clients={allClients}
+        projects={allProjects}
         timeEntries={timeEntries}
         entry={editingEntry}
         open={isEntryDialogOpen}
