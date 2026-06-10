@@ -102,15 +102,15 @@ export default function AdminDashboard() {
   const metrics = useMemo(
     () =>
       selectDashboardMetrics({
-        clients,
+        clients: allClients,
         currentUser: {
           invoiceFrequency: currentUser.invoiceFrequency,
         },
-        invoices,
-        projects,
-        timeEntries,
-        expenses,
-        projectBills,
+        invoices: allInvoices,
+        projects: allProjects,
+        timeEntries: allTimeEntries,
+        expenses: allExpenses,
+        projectBills: allProjectBills,
         activeSession,
         settings: {
           invoiceFrequency: settings.invoiceFrequency,
@@ -121,17 +121,17 @@ export default function AdminDashboard() {
       }),
     [
       activeSession,
-      clients,
+      allClients,
       currentUser.invoiceFrequency,
-      expenses,
-      invoices,
-      projectBills,
-      projects,
+      allExpenses,
+      allInvoices,
+      allProjectBills,
+      allProjects,
       settings.invoiceFrequency,
       settings.payPeriodFrequency,
       settings.payPeriodStartDate,
       settings.periodWeekStartsOn,
-      timeEntries,
+      allTimeEntries,
     ],
   );
   const isReadonly = useAppStore(selectIsReadonly);
@@ -145,11 +145,11 @@ export default function AdminDashboard() {
 
   const activeClockIns = useMemo(
     () =>
-      getActiveTimeEntries(timeEntries, projects, clients, {
+      getActiveTimeEntries(allTimeEntries, allProjects, allClients, {
         currentUserName: currentUser.name,
         now,
       }),
-    [clients, currentUser.name, now, projects, timeEntries],
+    [allClients, currentUser.name, now, allProjects, allTimeEntries],
   );
 
   const handleEditEntry = (entry: TimeEntry) => {
