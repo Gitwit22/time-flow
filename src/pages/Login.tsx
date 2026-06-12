@@ -144,6 +144,11 @@ export default function Login() {
           <p className="text-sm text-muted-foreground">
             Sign in directly to MRJC TimeFlow with database-backed sessions. Suite launch tokens are optional.
           </p>
+          {searchParams.get("session") === "expired" && (
+            <p className="rounded-md bg-yellow-50 border border-yellow-200 px-3 py-2 text-sm text-yellow-800">
+              Your session expired. Please sign in again.
+            </p>
+          )}
         </CardHeader>
         <CardContent>
           <Tabs value={tab} onValueChange={(value) => setTab(value as LoginTab)} className="space-y-4">

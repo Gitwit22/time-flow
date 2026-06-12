@@ -20,6 +20,27 @@ import type {
 
 type ApiRecord = Record<string, unknown>;
 
+/**
+ * Thrown when any API request receives a 401 Unauthorized response.
+ * Caught by hydrateFromApi and the registered unauthorized handler
+ * to clear the session and redirect to login.
+ */
+export class UnauthorizedError extends Error {
+  constructor(message = "Session expired. Please sign in again.") {
+    super(message);
+    this.name = "UnauthorizedError";
+  }
+}
+
+/**
+ * Register a callback that fires whenever any API request returns 401.
+ * Should be called once on app mount by the auth bootstrapper.
+ */
+let _onUnauthorized: (() => void) | null = null;
+export function registerUnauthorizedHandler(handler: () => void): void {
+  _onUnauthorized = handler;
+}
+
 function buildHeaders(): HeadersInit {
   // Prefer suite-launched platform identity when present.
   // This prevents stale local sessions from masking platform-scoped data.
@@ -38,6 +59,10 @@ async function apiRequest<T>(method: string, path: string, body?: unknown): Prom
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return undefined as T;
+  if (res.status === 401) {
+    _onUnauthorized?.();
+    throw new UnauthorizedError();
+  }
   const data = (await res.json().catch(() => ({}))) as ApiRecord;
   if (!res.ok) throw new Error((data.error as string) || `Request failed: ${res.status}`);
   return data as T;

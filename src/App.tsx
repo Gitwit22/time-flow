@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -9,10 +9,13 @@ import { RequireClientViewer } from "@/components/layout/RequireClientViewer";
 import { RequireEmployee } from "@/components/layout/RequireEmployee";
 import { RequireAuth } from "@/components/layout/RequireAuth";
 import { RequireWorkspaceMembership } from "@/components/layout/RequireWorkspaceMembership";
-import { getActiveUser, getViewerClientIdForUser, toAppIdentity } from "@/lib/auth";
-import { getPlatformSession } from "@/lib/platformApi";
+import { IdleWarningModal } from "@/components/IdleWarningModal";
+import { clearAuthState, getActiveUser, getViewerClientIdForUser, logoutActiveUser, toAppIdentity } from "@/lib/auth";
+import { clearPlatformSession, getPlatformSession } from "@/lib/platformApi";
+import { registerUnauthorizedHandler } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
-import { AppModeProvider } from "@/context/AppModeContext";
+import { AppModeProvider, useAppMode } from "@/context/AppModeContext";
+import { useIdleLogout } from "@/hooks/useIdleLogout";
 
 // Entry point for suite-launched sessions
 import PlatformLaunch from "./pages/PlatformLaunch";
@@ -65,6 +68,9 @@ function LegacyAdminRedirect() {
  * When a valid platform session exists, syncs the user profile into the store
  * and clears any leftover demo-mode data (so demo mutations don't bleed into
  * the authenticated session).
+ *
+ * Also registers the central 401 unauthorized handler so any API call that
+ * receives a 401 clears the session and redirects to login.
  */
 function AuthBootstrapper() {
   const syncCurrentUser = useAppStore((state) => state.syncCurrentUser);
@@ -73,6 +79,16 @@ function AuthBootstrapper() {
   const markUnauthenticated = useAppStore((state) => state.markUnauthenticated);
   const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
   const authStatus = useAppStore((state) => state.authStatus);
+
+  // Register the global 401 handler once. When any API call returns 401,
+  // we clear both local and platform sessions and redirect to login.
+  useEffect(() => {
+    registerUnauthorizedHandler(() => {
+      clearAuthState();
+      clearPlatformSession();
+      window.location.replace("/login?session=expired");
+    });
+  }, []);
 
   useEffect(() => {
     if (authStatus !== "unknown") return;
@@ -125,6 +141,35 @@ function AuthBootstrapper() {
   return null;
 }
 
+/**
+ * Tracks user inactivity and auto-logs out after the configured idle threshold.
+ * Rendered inside AppModeProvider so it can read isAuthenticated.
+ * Only active when the user is authenticated.
+ */
+function IdleManager() {
+  const { isAuthenticated } = useAppMode();
+  const resetApp = useAppStore((state) => state.resetApp);
+
+  const warningMinutes = Number(import.meta.env.VITE_IDLE_WARNING_MINUTES) || 55;
+  const logoutMinutes = Number(import.meta.env.VITE_IDLE_LOGOUT_MINUTES) || 60;
+
+  const handleLogout = useCallback(() => {
+    logoutActiveUser();
+    resetApp();
+    window.location.replace("/login");
+  }, [resetApp]);
+
+  const { isWarningVisible, resetTimer } = useIdleLogout({
+    warningMs: warningMinutes * 60 * 1000,
+    logoutMs: logoutMinutes * 60 * 1000,
+    onLogout: handleLogout,
+  });
+
+  if (!isAuthenticated) return null;
+
+  return <IdleWarningModal open={isWarningVisible} onStaySignedIn={resetTimer} />;
+}
+
 function InviteRedirect() {
   const [searchParams] = useSearchParams();
   const code = searchParams.get("code");
@@ -148,6 +193,7 @@ const App = () => (
       <AuthBootstrapper />
       <BrowserRouter>
       <AppModeProvider>
+        <IdleManager />
         <Routes>
           {/* Suite launch entry point (optional SSO hand-off) */}
           <Route path="/launch" element={<PlatformLaunch />} />

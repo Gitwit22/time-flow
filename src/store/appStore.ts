@@ -47,6 +47,7 @@ import {
   apiCreateInvoice,
   apiUpdateInvoice,
   apiSaveSettings,
+  UnauthorizedError,
 } from "@/lib/timeflowApi";
 import type {
   AppSettings,
@@ -432,6 +433,8 @@ function canTrackTime(role: UserRole) {
 export interface AppState {
   authStatus: "unknown" | "authenticated" | "unauthenticated";
   hydrated: boolean;
+  /** True when hydrateFromApi failed with a non-auth error (e.g. network/server). */
+  hydrateError: boolean;
   currentUser: UserProfile;
   organizations: Organization[];
   activeOrganizationId?: string;
@@ -549,6 +552,7 @@ const defaultSettings: AppSettings = {
 const emptyState = {
   authStatus: "unknown" as const,
   hydrated: false,
+  hydrateError: false,
   currentUser: defaultUser,
   organizations: [] as Organization[],
   activeOrganizationId: undefined as string | undefined,
@@ -664,6 +668,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         settings: mergedSettings,
         ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
+        hydrateError: false,
       });
       writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(mergedSettings));
       writePersistedExpenses(normalizedExpenses);
@@ -688,7 +693,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
         projectAssignments,
       });
     } catch (err) {
-      set({ hydrated: true });
+      if (err instanceof UnauthorizedError) {
+        // The registered unauthorized handler (AuthBootstrapper) handles clearing
+        // the session and redirecting to login. Just mark hydration complete.
+        set({ hydrated: true });
+        return;
+      }
+      // Network or server error — restore persisted workspace data so the user
+      // is NOT incorrectly sent to Setup Workspace.
+      const persistedWorkspace = readPersistedWorkspaceState();
+      set({
+        hydrated: true,
+        hydrateError: true,
+        ...(persistedWorkspace.organizations?.length
+          ? {
+              organizations: persistedWorkspace.organizations,
+              activeOrganizationId:
+                persistedWorkspace.activeOrganizationId ??
+                persistedWorkspace.organizations[0]?.id,
+              organizationMembers: persistedWorkspace.organizationMembers ?? [],
+              employeeProfiles: persistedWorkspace.employeeProfiles ?? [],
+              projectAssignments: persistedWorkspace.projectAssignments ?? [],
+            }
+          : {}),
+      });
       toast.error(err instanceof Error ? err.message : "Failed to load data from server");
     }
   },
