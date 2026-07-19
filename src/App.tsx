@@ -42,6 +42,7 @@ import Reports from "./pages/admin/Reports";
 import ApprovalsPage from "./pages/admin/Approvals";
 import SettingsPage from "./pages/admin/Settings";
 import DataTransferPage from "./pages/admin/DataTransfer";
+import BusinessesPage from "./pages/admin/Businesses";
 import EmployeeClockPage from "./pages/employee/Clock";
 import MyTimesheetsPage from "./pages/employee/MyTimesheets";
 
@@ -337,6 +338,14 @@ const App = () => (
               element={
                 <RequireContractor>
                   <DataTransferPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="businesses"
+              element={
+                <RequireContractor>
+                  <BusinessesPage />
                 </RequireContractor>
               }
             />

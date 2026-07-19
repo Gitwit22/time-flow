@@ -34,6 +34,63 @@ export type TimeEntryStatus =
 /** TimeFlow payroll export pipeline status (Open → Approved → Locked → Exported) */
 export type TimeFlowPayrollPipelineStatus = "open" | "approved" | "locked" | "exported";
 
+export type BusinessType =
+  | "sole_proprietorship"
+  | "llc"
+  | "corporation"
+  | "partnership"
+  | "nonprofit"
+  | "other";
+
+export type BusinessIndustry =
+  | "technology"
+  | "construction"
+  | "consulting"
+  | "creative"
+  | "healthcare"
+  | "legal"
+  | "finance"
+  | "education"
+  | "retail"
+  | "hospitality"
+  | "real_estate"
+  | "manufacturing"
+  | "other";
+
+export type EstimateHeaderStyle = "modern" | "classic" | "minimal";
+
+export interface BusinessBranding {
+  logoDataUrl?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  estimateHeaderStyle?: EstimateHeaderStyle;
+}
+
+export interface BusinessSettings {
+  currency: string;
+  taxRate: number;
+  estimatePrefix: string;
+  nextEstimateNumber: number;
+  invoicePrefix: string;
+  nextInvoiceNumber: number;
+  defaultEstimateExpirationDays: number;
+  defaultPaymentTerms: string;
+  defaultDepositPercent: number;
+  defaultCustomerNote?: string;
+  defaultTermsAndConditions?: string;
+  defaultTaxableStatus: boolean;
+  timezone?: string;
+}
+
+export interface BusinessAddress {
+  street?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  country?: string;
+  useOnDocuments?: boolean;
+}
+
 export interface Organization {
   id: string;
   name: string;
@@ -44,6 +101,16 @@ export interface Organization {
   solo?: boolean;
   teamEnabled?: boolean;
   isDefault?: boolean;
+  // Extended business fields
+  legalName?: string;
+  businessType?: BusinessType;
+  industry?: BusinessIndustry;
+  email?: string;
+  phone?: string;
+  website?: string;
+  address?: BusinessAddress;
+  branding?: BusinessBranding;
+  businessSettings?: BusinessSettings;
 }
 
 export interface WorkspaceInvite {

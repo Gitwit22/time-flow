@@ -503,6 +503,7 @@ export interface AppState {
     setDefaultOrganization: (id: string) => Promise<void>;
     transferOrganizationOwnership: (id: string, newOwnerEmail: string) => Promise<void>;
     refreshOrganizations: () => Promise<void>;
+    updateOrganization: (id: string, updates: Partial<Organization>) => void;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "id" | "name" | "email" | "role">) => void;
@@ -871,6 +872,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to load workspaces");
     }
+  },
+
+  updateOrganization: (id, updates) => {
+    const state = get();
+    const organizations = state.organizations.map((org) =>
+      org.id === id ? { ...org, ...updates } : org,
+    );
+    set({ organizations });
+    persistWorkspaceSnapshot({
+      organizations,
+      activeOrganizationId: state.activeOrganizationId,
+      organizationMembers: state.organizationMembers,
+      employeeProfiles: state.employeeProfiles,
+      projectAssignments: state.projectAssignments,
+    });
   },
 
   renameOrganization: async (id, name) => {
