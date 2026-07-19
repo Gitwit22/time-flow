@@ -145,7 +145,6 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
   const navigate = useNavigate();
   const createOrganizationWorkspace = useAppStore((state) => state.createOrganizationWorkspace);
   const seedOrganizationContext = useAppStore((state) => state.seedOrganizationContext);
-  const addEstimate = useAppStore((state) => state.addEstimate);
   const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
   const currentUser = useAppStore((state) => state.currentUser);
 
@@ -236,17 +235,9 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
       setData(initialData);
 
       if (andCreateEstimate) {
-        // Create a blank draft estimate and navigate directly to it
-        const newEstimate = addEstimate({
-          clientId: "",
-          status: "draft",
-          groups: [],
-          items: [],
-          discount: 0,
-          taxRate: 0,
-          fees: 0,
-        });
-        navigate(`/platform/estimates/${newEstimate.id}`);
+        // Navigate to the estimates list so the user can start a properly
+        // formed estimate (client selection is handled by the estimates UI)
+        navigate("/platform/estimates");
       } else {
         navigate("/platform/businesses");
       }

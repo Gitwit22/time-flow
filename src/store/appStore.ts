@@ -2298,11 +2298,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addEstimate: (draft) => {
     const state = get();
     const now = new Date().toISOString();
+    const activeOrg = state.organizations.find((o) => o.id === state.activeOrganizationId);
+    const estimatePrefix = activeOrg?.businessSettings?.estimatePrefix ?? "EST";
+    const prefixPattern = new RegExp(`^${estimatePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-`);
     const maxSeq = state.estimates.reduce((max, e) => {
-      const n = parseInt(e.estimateNumber.replace(/^EST-/, ""), 10);
+      const n = parseInt(e.estimateNumber.replace(prefixPattern, ""), 10);
       return isNaN(n) ? max : Math.max(max, n);
-    }, 0);
-    const estimateNumber = `EST-${(maxSeq + 1).toString().padStart(4, "0")}`;
+    }, (activeOrg?.businessSettings?.nextEstimateNumber ?? 1) - 1);
+    const estimateNumber = `${estimatePrefix}-${(maxSeq + 1).toString().padStart(4, "0")}`;
     const base: Estimate = {
       id: createId("estimate"),
       estimateNumber,
@@ -2351,14 +2354,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const original = state.estimates.find((e) => e.id === id);
     if (!original) return null;
     const now = new Date().toISOString();
+    const activeOrg = state.organizations.find((o) => o.id === state.activeOrganizationId);
+    const estimatePrefix = activeOrg?.businessSettings?.estimatePrefix ?? "EST";
+    const prefixPattern = new RegExp(`^${estimatePrefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-`);
     const maxSeq = state.estimates.reduce((max, e) => {
-      const n = parseInt(e.estimateNumber.replace(/^EST-/, ""), 10);
+      const n = parseInt(e.estimateNumber.replace(prefixPattern, ""), 10);
       return isNaN(n) ? max : Math.max(max, n);
-    }, 0);
+    }, (activeOrg?.businessSettings?.nextEstimateNumber ?? 1) - 1);
     const copy: Estimate = {
       ...original,
       id: createId("estimate"),
-      estimateNumber: `EST-${(maxSeq + 1).toString().padStart(4, "0")}`,
+      estimateNumber: `${estimatePrefix}-${(maxSeq + 1).toString().padStart(4, "0")}`,
       status: "draft",
       createdAt: now,
       updatedAt: now,
