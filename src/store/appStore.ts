@@ -419,7 +419,7 @@ function writePersistedEstimates(estimates: Estimate[]) {
 function calculateEstimateTotals(estimate: Estimate): Estimate {
   const subtotal = Number(estimate.items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
   const discountAmount = estimate.discount ?? 0;
-  const taxableBase = subtotal - discountAmount;
+  const taxableBase = Math.max(0, subtotal - discountAmount);
   const taxAmount = Number((taxableBase * (estimate.taxRate ?? 0)).toFixed(2));
   const total = Number((taxableBase + taxAmount + (estimate.fees ?? 0)).toFixed(2));
   return { ...estimate, subtotal, taxAmount, total };

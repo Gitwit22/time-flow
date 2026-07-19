@@ -90,10 +90,14 @@ function calcLineTotal(qty: number, price: number, discount = 0) {
   return Math.max(0, (qty * price) - discount);
 }
 
+function newId(prefix: string) {
+  return `${prefix}-${crypto.randomUUID()}`;
+}
+
 function calcTotals(estimate: Estimate) {
   const subtotal = estimate.items.reduce((sum, item) => sum + item.lineTotal, 0);
   const discount = estimate.discount ?? 0;
-  const taxableBase = subtotal - discount;
+  const taxableBase = Math.max(0, subtotal - discount);
   const taxAmount = taxableBase * (estimate.taxRate ?? 0);
   const total = taxableBase + taxAmount + (estimate.fees ?? 0);
   return { subtotal, taxAmount, total };
@@ -153,7 +157,7 @@ export default function EstimateDetail() {
   function addItem(groupId?: string) {
     const sortOrder = estimate!.items.length;
     const item: EstimateItem = {
-      id: `item-${crypto.randomUUID()}`,
+      id: newId("estimate-item"),
       groupId,
       category: "labor",
       description: "",
@@ -194,7 +198,7 @@ export default function EstimateDetail() {
     if (!source) return;
     const copy: EstimateItem = {
       ...source,
-      id: `item-${crypto.randomUUID()}`,
+      id: newId("estimate-item"),
       sortOrder: estimate!.items.length,
     };
     patchItems([...estimate!.items, copy]);
@@ -204,7 +208,7 @@ export default function EstimateDetail() {
 
   function addGroup() {
     const group: EstimateGroup = {
-      id: `group-${crypto.randomUUID()}`,
+      id: newId("estimate-group"),
       name: "New Section",
       sortOrder: estimate!.groups.length,
     };

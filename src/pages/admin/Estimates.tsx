@@ -89,25 +89,29 @@ export default function EstimatesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
-  const rows = useMemo(() => {
+  const { rows, statusCounts } = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
-    return estimates
-      .map((est) => {
-        const isExpired =
-          est.status !== "accepted" &&
-          est.status !== "declined" &&
-          est.expirationDate &&
-          est.expirationDate < today;
-        const displayStatus: EstimateStatus = isExpired ? "expired" : est.status;
-        return {
-          ...est,
-          displayStatus,
-          clientName: clients.find((c) => c.id === est.clientId)?.name ?? "Unknown",
-          projectName: est.projectId
-            ? (projects.find((p) => p.id === est.projectId)?.name ?? "")
-            : "",
-        };
-      })
+    const counts: Partial<Record<EstimateStatus, number>> = {};
+
+    const enriched = estimates.map((est) => {
+      const isExpired =
+        est.status !== "accepted" &&
+        est.status !== "declined" &&
+        est.expirationDate &&
+        est.expirationDate < today;
+      const displayStatus: EstimateStatus = isExpired ? "expired" : est.status;
+      counts[displayStatus] = (counts[displayStatus] ?? 0) + 1;
+      return {
+        ...est,
+        displayStatus,
+        clientName: clients.find((c) => c.id === est.clientId)?.name ?? "Unknown",
+        projectName: est.projectId
+          ? (projects.find((p) => p.id === est.projectId)?.name ?? "")
+          : "",
+      };
+    });
+
+    const filtered = enriched
       .filter((r) => statusFilter === "all" || r.displayStatus === statusFilter)
       .filter((r) => clientFilter === "all" || r.clientId === clientFilter)
       .filter((r) => {
@@ -120,6 +124,8 @@ export default function EstimatesPage() {
         );
       })
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    return { rows: filtered, statusCounts: counts };
   }, [estimates, clients, projects, statusFilter, clientFilter, searchQuery]);
 
   function handleNew() {
@@ -188,9 +194,9 @@ export default function EstimatesPage() {
             }`}
           >
             {tab.label}
-            {tab.value !== "all" && (
+            {tab.value !== "all" && (statusCounts[tab.value as EstimateStatus] ?? 0) > 0 && (
               <span className="ml-1 text-xs opacity-70">
-                {estimates.filter((e) => e.status === tab.value).length}
+                {statusCounts[tab.value as EstimateStatus]}
               </span>
             )}
           </button>
