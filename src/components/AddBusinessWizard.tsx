@@ -412,6 +412,12 @@ function Step1Details({ data, update }: { data: WizardData; update: (u: Partial<
   );
 }
 
+// ─── Shared helpers ───────────────────────────────────────────────────────────
+
+function PrefixDisplay({ value }: { value: string }) {
+  return <span className="font-mono">{value}</span>;
+}
+
 // ─── Step 2: Business Address ─────────────────────────────────────────────────
 
 function Step2Address({ data, update }: { data: WizardData; update: (u: Partial<WizardData>) => void }) {
@@ -729,9 +735,9 @@ function Step4Financial({ data, update }: { data: WizardData; update: (u: Partia
 
       <div className="rounded-md border bg-muted/20 p-3 text-sm text-muted-foreground">
         <p className="font-medium text-foreground mb-1">Example</p>
-        <p>Estimate Prefix: <span className="font-mono">{data.estimatePrefix || "EST"}</span> — Starting: <span className="font-mono">{data.estimateStartNumber || "1001"}</span></p>
-        <p>Invoice Prefix: <span className="font-mono">{data.invoicePrefix || "INV"}</span> — Starting: <span className="font-mono">{data.invoiceStartNumber || "1001"}</span></p>
-        <p>Default Expiration: <span className="font-mono">{data.defaultExpirationDays || "30"} days</span></p>
+        <p>Estimate Prefix: <PrefixDisplay value={data.estimatePrefix || "EST"} /> — Starting: <PrefixDisplay value={data.estimateStartNumber || "1001"} /></p>
+        <p>Invoice Prefix: <PrefixDisplay value={data.invoicePrefix || "INV"} /> — Starting: <PrefixDisplay value={data.invoiceStartNumber || "1001"} /></p>
+        <p>Default Expiration: <PrefixDisplay value={`${data.defaultExpirationDays || "30"} days`} /></p>
       </div>
     </div>
   );
