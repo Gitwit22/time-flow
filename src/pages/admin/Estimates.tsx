@@ -123,8 +123,12 @@ export default function EstimatesPage() {
   }, [estimates, clients, projects, statusFilter, clientFilter, searchQuery]);
 
   function handleNew() {
+    if (clients.length === 0) {
+      toast({ title: "No clients found", description: "Add a client before creating an estimate." });
+      return;
+    }
     const draft = addEstimate({
-      clientId: clients[0]?.id ?? "",
+      clientId: clients[0].id,
       status: "draft",
       groups: [],
       items: [],
@@ -149,12 +153,12 @@ export default function EstimatesPage() {
   }
 
   function handleConvertToProject(est: Estimate) {
-    if (est.convertedProjectId) {
-      toast({ title: "Already converted", description: "This estimate was already converted to a project." });
+    if (est.convertedProjectId || est.convertedAt) {
+      toast({ title: "Already marked for conversion", description: "This estimate has already been flagged for project conversion." });
       return;
     }
     updateEstimate(est.id, { convertedAt: new Date().toISOString() });
-    toast({ title: "Marked for conversion", description: `${est.estimateNumber} — create a project manually to link it.` });
+    toast({ title: "Marked for conversion", description: `${est.estimateNumber} — link it to a project in the Projects page.` });
   }
 
   return (
@@ -376,7 +380,7 @@ function EstimateRowMenu({
           Duplicate
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={onConvert} disabled={!!estimate.convertedProjectId}>
+        <DropdownMenuItem onClick={onConvert} disabled={!!(estimate.convertedProjectId || estimate.convertedAt)}>
           <ArrowRightCircle className="mr-2 h-4 w-4" />
           Convert to Project
         </DropdownMenuItem>

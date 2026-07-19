@@ -2282,8 +2282,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   addEstimate: (draft) => {
     const state = get();
     const now = new Date().toISOString();
-    const seq = (state.estimates.length + 1).toString().padStart(4, "0");
-    const estimateNumber = `EST-${seq}`;
+    const maxSeq = state.estimates.reduce((max, e) => {
+      const n = parseInt(e.estimateNumber.replace(/^EST-/, ""), 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
+    const estimateNumber = `EST-${(maxSeq + 1).toString().padStart(4, "0")}`;
     const base: Estimate = {
       id: createId("estimate"),
       estimateNumber,
@@ -2332,11 +2335,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const original = state.estimates.find((e) => e.id === id);
     if (!original) return null;
     const now = new Date().toISOString();
-    const seq = (state.estimates.length + 1).toString().padStart(4, "0");
+    const maxSeq = state.estimates.reduce((max, e) => {
+      const n = parseInt(e.estimateNumber.replace(/^EST-/, ""), 10);
+      return isNaN(n) ? max : Math.max(max, n);
+    }, 0);
     const copy: Estimate = {
       ...original,
       id: createId("estimate"),
-      estimateNumber: `EST-${seq}`,
+      estimateNumber: `EST-${(maxSeq + 1).toString().padStart(4, "0")}`,
       status: "draft",
       createdAt: now,
       updatedAt: now,

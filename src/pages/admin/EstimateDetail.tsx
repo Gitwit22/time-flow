@@ -241,8 +241,8 @@ export default function EstimateDetail() {
   }
 
   function handleConvert() {
-    if (estimate!.convertedProjectId) {
-      toast({ title: "Already converted" });
+    if (estimate!.convertedProjectId || estimate!.convertedAt) {
+      toast({ title: "Already marked for conversion" });
       return;
     }
     patch({ convertedAt: new Date().toISOString() });
@@ -265,7 +265,7 @@ export default function EstimateDetail() {
 
   // Ungrouped items (no groupId or group not found)
   const groupIds = new Set(estimate.groups.map((g) => g.id));
-  const ungroupedItems = estimate.items.filter((item) => !item.groupId || !groupIds.has(item.groupId!));
+  const ungroupedItems = estimate.items.filter((item) => !item.groupId || !groupIds.has(item.groupId));
   const sortedGroups = [...estimate.groups].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
@@ -297,9 +297,9 @@ export default function EstimateDetail() {
               Send
             </Button>
           )}
-          <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleConvert} disabled={!!estimate.convertedProjectId}>
+          <Button size="sm" className="bg-accent text-accent-foreground hover:bg-accent/90" onClick={handleConvert} disabled={!!(estimate.convertedProjectId || estimate.convertedAt)}>
             <ArrowRightCircle className="mr-2 h-4 w-4" />
-            {estimate.convertedProjectId ? "Converted" : "Convert to Project"}
+            {(estimate.convertedProjectId || estimate.convertedAt) ? "Converted" : "Convert to Project"}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
