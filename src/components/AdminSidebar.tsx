@@ -1,4 +1,5 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, ArrowLeftRight, Receipt } from "lucide-react";
+import { useState } from "react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, ArrowLeftRight, Receipt, ClipboardList } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -14,6 +15,8 @@ import {
 } from "@/components/ui/sidebar";
 import { useAppStore } from "@/store/appStore";
 import { canGenerateInvoices, canManageTeam, canViewAdminWorkspace, isEmployeeRole, isViewerLikeRole } from "@/lib/organization";
+import { BusinessSwitcher } from "@/components/BusinessSwitcher";
+import { AddBusinessWizard } from "@/components/AddBusinessWizard";
 
 const mainItems = [
   { title: "Dashboard", url: "/platform", icon: LayoutDashboard },
@@ -22,12 +25,14 @@ const mainItems = [
   { title: "Clients", url: "/platform/clients", icon: Users },
   { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
   { title: "Team", url: "/platform/team", icon: Users },
+  { title: "Estimates", url: "/platform/estimates", icon: ClipboardList },
   { title: "Invoices", url: "/platform/invoices", icon: FileText },
   { title: "Export Center", url: "/platform/export-center", icon: Mail },
   { title: "Reports", url: "/platform/reports", icon: BarChart3 },
 ];
 
 const bottomItems = [
+  { title: "Businesses", url: "/platform/businesses", icon: BriefcaseBusiness },
   { title: "Data Transfer", url: "/platform/data", icon: ArrowLeftRight },
   { title: "Settings", url: "/platform/settings", icon: Settings },
 ];
@@ -37,7 +42,7 @@ export function AdminSidebar() {
   const collapsed = state === "collapsed";
   const role = useAppStore((store) => store.currentUser.role);
   const settings = useAppStore((store) => store.settings);
-  const logoSrc = "/mrjc-logo.png";
+  const [wizardOpen, setWizardOpen] = useState(false);
   const employeeItems = [
     { title: "Clock In / Out", url: "/employee", icon: Clock },
     { title: "My Timesheets", url: "/employee/timesheets", icon: FileText },
@@ -45,7 +50,7 @@ export function AdminSidebar() {
   const viewerItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
   const payrollReviewerItems = mainItems.filter((item) => ["Dashboard", "Approvals", "Invoices", "Reports"].includes(item.title));
   const auditorItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
-  const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Invoices", "Reports"].includes(item.title));
+  const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Estimates", "Invoices", "Reports"].includes(item.title));
   const adminItems = mainItems;
 
   const visibleMainItems = isEmployeeRole(role)
@@ -63,7 +68,7 @@ export function AdminSidebar() {
               if (item.title === "Team") {
                 return canManageTeam(role);
               }
-              if (["Invoices", "Export Center"].includes(item.title)) {
+              if (["Invoices", "Export Center", "Estimates"].includes(item.title)) {
                 return canGenerateInvoices(role);
               }
               return true;
@@ -74,24 +79,8 @@ export function AdminSidebar() {
 
   return (
     <Sidebar collapsible="icon" className="border-r-0">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2.5">
-          {settings.invoiceLogoDataUrl ? (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
-              <img src={settings.invoiceLogoDataUrl} alt="Brand logo" className="h-full w-full object-contain" />
-            </div>
-          ) : (
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
-              <img src={logoSrc} alt="MRJC" className="h-full w-full object-contain" />
-            </div>
-          )}
-          {!collapsed && (
-            <div>
-              <h2 className="font-heading text-sm font-bold text-sidebar-foreground">{settings.businessName || "MRJC TimeFlow"}</h2>
-              <p className="text-xs text-sidebar-muted">Michigan Roundtable Workspace</p>
-            </div>
-          )}
-        </div>
+      <SidebarHeader className="p-3">
+        <BusinessSwitcher collapsed={collapsed} onAddBusiness={() => setWizardOpen(true)} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -138,6 +127,7 @@ export function AdminSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarFooter>
+      <AddBusinessWizard open={wizardOpen} onClose={() => setWizardOpen(false)} />
     </Sidebar>
   );
 }

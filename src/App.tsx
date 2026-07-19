@@ -35,11 +35,14 @@ import ExpensesPage from "./pages/admin/Expenses";
 import ProjectDetailPage from "./pages/admin/ProjectDetail";
 import InvoiceCenter from "./pages/admin/InvoiceCenter";
 import InvoiceDetail from "./pages/admin/InvoiceDetail";
+import EstimatesPage from "./pages/admin/Estimates";
+import EstimateDetail from "./pages/admin/EstimateDetail";
 import ExportCenter from "./pages/admin/ExportCenter";
 import Reports from "./pages/admin/Reports";
 import ApprovalsPage from "./pages/admin/Approvals";
 import SettingsPage from "./pages/admin/Settings";
 import DataTransferPage from "./pages/admin/DataTransfer";
+import BusinessesPage from "./pages/admin/Businesses";
 import EmployeeClockPage from "./pages/employee/Clock";
 import MyTimesheetsPage from "./pages/employee/MyTimesheets";
 
@@ -296,6 +299,22 @@ const App = () => (
               }
             />
             <Route path="invoice/:id" element={<LegacyInvoiceDetailRedirect />} />
+            <Route
+              path="estimates"
+              element={
+                <RequireContractor>
+                  <EstimatesPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="estimates/:id"
+              element={
+                <RequireContractor>
+                  <EstimateDetail />
+                </RequireContractor>
+              }
+            />
             <Route path="email" element={<Navigate to="/platform/export-center" replace />} />
             <Route
               path="export-center"
@@ -319,6 +338,14 @@ const App = () => (
               element={
                 <RequireContractor>
                   <DataTransferPage />
+                </RequireContractor>
+              }
+            />
+            <Route
+              path="businesses"
+              element={
+                <RequireContractor>
+                  <BusinessesPage />
                 </RequireContractor>
               }
             />
