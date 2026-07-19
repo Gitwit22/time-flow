@@ -54,6 +54,7 @@ import type {
   AttachedDocument,
   Client,
   EmailDraft,
+  Estimate,
   Expense,
   Invoice,
   InvoiceDraftPreview,
@@ -98,10 +99,16 @@ type OrganizationMemberDraft = Omit<OrganizationMember, "id" | "status" | "invit
 };
 type ProjectAssignmentDraft = Omit<ProjectAssignment, "id">;
 type EmployeeProfileDraft = EmployeeProfile;
+type EstimateDraft = Omit<Estimate, "id" | "estimateNumber" | "createdAt" | "updatedAt" | "subtotal" | "taxAmount" | "total"> & {
+  subtotal?: number;
+  taxAmount?: number;
+  total?: number;
+};
 
 const PAY_PERIOD_STORAGE_KEY = "timeflow-pay-period-settings-v1";
 const EXPENSE_STORAGE_KEY = "timeflow-expenses-v1";
 const WORKSPACE_STORAGE_KEY = "timeflow-workspaces-v1";
+const ESTIMATES_STORAGE_KEY = "timeflow-estimates-v1";
 
 type PersistedPayPeriodSettings = Pick<
   AppSettings,
@@ -393,6 +400,31 @@ function clearPersistedExpenses() {
   window.localStorage.removeItem(EXPENSE_STORAGE_KEY);
 }
 
+function readPersistedEstimates(): Estimate[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ESTIMATES_STORAGE_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as Estimate[];
+  } catch {
+    return [];
+  }
+}
+
+function writePersistedEstimates(estimates: Estimate[]) {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(ESTIMATES_STORAGE_KEY, JSON.stringify(estimates));
+}
+
+function calculateEstimateTotals(estimate: Estimate): Estimate {
+  const subtotal = Number(estimate.items.reduce((sum, item) => sum + item.lineTotal, 0).toFixed(2));
+  const discountAmount = estimate.discount ?? 0;
+  const taxableBase = subtotal - discountAmount;
+  const taxAmount = Number((taxableBase * (estimate.taxRate ?? 0)).toFixed(2));
+  const total = Number((taxableBase + taxAmount + (estimate.fees ?? 0)).toFixed(2));
+  return { ...estimate, subtotal, taxAmount, total };
+}
+
 function resolveViewerClientId(clients: Client[], settings: AppSettings, preferredClientId?: string) {
   if (preferredClientId && clients.some((client) => client.id === preferredClientId)) {
     return preferredClientId;
@@ -451,6 +483,7 @@ export interface AppState {
   projectBills: ProjectBill[];
   activeSession: WorkSession;
   invoices: Invoice[];
+  estimates: Estimate[];
   emailDrafts: Record<string, EmailDraft>;
   markAuthenticated: () => void;
   markUnauthenticated: () => void;
@@ -521,6 +554,10 @@ export interface AppState {
   createInvoiceFromFixedBill: (billAmount: number, billTitle: string, clientId: string, projectId: string | undefined, dueDate: string) => Invoice | null;
   saveEmailDraft: (draft: EmailDraft) => void;
   markEmailDraftReady: (invoiceId: string, ready: boolean) => void;
+  addEstimate: (draft: EstimateDraft) => Estimate;
+  updateEstimate: (id: string, updates: Partial<Estimate>) => void;
+  duplicateEstimate: (id: string) => Estimate | null;
+  deleteEstimate: (id: string) => void;
   resetApp: () => void;
 }
 
@@ -569,11 +606,13 @@ const emptyState = {
   projectBills: [] as ProjectBill[],
   activeSession: { isActive: false } as WorkSession,
   invoices: [] as Invoice[],
+  estimates: [] as Estimate[],
   emailDrafts: {} as Record<string, EmailDraft>,
 };
 
 export const useAppStore = create<AppState>()((set, get) => ({
   ...emptyState,
+  estimates: readPersistedEstimates(),
 
   markAuthenticated: () => set({ authStatus: "authenticated" }),
   markUnauthenticated: () => set({ authStatus: "unauthenticated", hydrated: true }),
@@ -2238,5 +2277,86 @@ export const useAppStore = create<AppState>()((set, get) => ({
           : entry,
       ),
     }));
+  },
+
+  addEstimate: (draft) => {
+    const state = get();
+    const now = new Date().toISOString();
+    const seq = (state.estimates.length + 1).toString().padStart(4, "0");
+    const estimateNumber = `EST-${seq}`;
+    const base: Estimate = {
+      id: createId("estimate"),
+      estimateNumber,
+      organizationId: state.activeOrganizationId,
+      clientId: draft.clientId,
+      projectId: draft.projectId,
+      status: draft.status ?? "draft",
+      groups: draft.groups ?? [],
+      items: draft.items ?? [],
+      subtotal: draft.subtotal ?? 0,
+      discount: draft.discount ?? 0,
+      taxRate: draft.taxRate ?? 0,
+      taxAmount: draft.taxAmount ?? 0,
+      fees: draft.fees ?? 0,
+      total: draft.total ?? 0,
+      depositPercent: draft.depositPercent,
+      notes: draft.notes,
+      terms: draft.terms,
+      expirationDate: draft.expirationDate,
+      createdBy: state.currentUser.id,
+      createdAt: now,
+      updatedAt: now,
+      versionNumber: 1,
+    };
+    const withTotals = calculateEstimateTotals(base);
+    const estimates = [...state.estimates, withTotals];
+    set({ estimates });
+    writePersistedEstimates(estimates);
+    return withTotals;
+  },
+
+  updateEstimate: (id, updates) => {
+    set((state) => {
+      const estimates = state.estimates.map((e) => {
+        if (e.id !== id) return e;
+        const merged = { ...e, ...updates, updatedAt: new Date().toISOString() };
+        return calculateEstimateTotals(merged);
+      });
+      writePersistedEstimates(estimates);
+      return { estimates };
+    });
+  },
+
+  duplicateEstimate: (id) => {
+    const state = get();
+    const original = state.estimates.find((e) => e.id === id);
+    if (!original) return null;
+    const now = new Date().toISOString();
+    const seq = (state.estimates.length + 1).toString().padStart(4, "0");
+    const copy: Estimate = {
+      ...original,
+      id: createId("estimate"),
+      estimateNumber: `EST-${seq}`,
+      status: "draft",
+      createdAt: now,
+      updatedAt: now,
+      versionNumber: 1,
+      acceptedAt: undefined,
+      signature: undefined,
+      convertedProjectId: undefined,
+      convertedAt: undefined,
+    };
+    const estimates = [...state.estimates, copy];
+    set({ estimates });
+    writePersistedEstimates(estimates);
+    return copy;
+  },
+
+  deleteEstimate: (id) => {
+    set((state) => {
+      const estimates = state.estimates.filter((e) => e.id !== id);
+      writePersistedEstimates(estimates);
+      return { estimates };
+    });
   },
 }));

@@ -1,4 +1,4 @@
-import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, ArrowLeftRight, Receipt } from "lucide-react";
+import { LayoutDashboard, Clock, Users, BriefcaseBusiness, FileText, Mail, BarChart3, Settings, ArrowLeftRight, Receipt, ClipboardList } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import {
   Sidebar,
@@ -22,6 +22,7 @@ const mainItems = [
   { title: "Clients", url: "/platform/clients", icon: Users },
   { title: "Projects", url: "/platform/projects", icon: BriefcaseBusiness },
   { title: "Team", url: "/platform/team", icon: Users },
+  { title: "Estimates", url: "/platform/estimates", icon: ClipboardList },
   { title: "Invoices", url: "/platform/invoices", icon: FileText },
   { title: "Export Center", url: "/platform/export-center", icon: Mail },
   { title: "Reports", url: "/platform/reports", icon: BarChart3 },
@@ -45,7 +46,7 @@ export function AdminSidebar() {
   const viewerItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
   const payrollReviewerItems = mainItems.filter((item) => ["Dashboard", "Approvals", "Invoices", "Reports"].includes(item.title));
   const auditorItems = mainItems.filter((item) => ["Dashboard", "Invoices", "Reports"].includes(item.title));
-  const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Invoices", "Reports"].includes(item.title));
+  const managerItems = mainItems.filter((item) => ["Dashboard", "Time Tracker", "Projects", "Estimates", "Invoices", "Reports"].includes(item.title));
   const adminItems = mainItems;
 
   const visibleMainItems = isEmployeeRole(role)
@@ -63,7 +64,7 @@ export function AdminSidebar() {
               if (item.title === "Team") {
                 return canManageTeam(role);
               }
-              if (["Invoices", "Export Center"].includes(item.title)) {
+              if (["Invoices", "Export Center", "Estimates"].includes(item.title)) {
                 return canGenerateInvoices(role);
               }
               return true;

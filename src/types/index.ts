@@ -432,3 +432,67 @@ export interface InvoiceDraftPreview {
 }
 
 export type InvoiceDisplayStatus = Invoice["status"] | "overdue";
+
+// ─── Estimates ────────────────────────────────────────────────────────────────
+
+export type EstimateStatus = "draft" | "sent" | "viewed" | "accepted" | "declined" | "expired";
+
+export type EstimateItemCategory = "labor" | "materials" | "equipment" | "rental" | "permit" | "travel" | "other";
+
+export interface EstimateItem {
+  id: string;
+  groupId?: string;
+  category: EstimateItemCategory;
+  description: string;
+  quantity: number;
+  unit?: string;
+  unitPrice: number;
+  discount?: number;
+  taxable?: boolean;
+  lineTotal: number;
+  sortOrder: number;
+}
+
+export interface EstimateGroup {
+  id: string;
+  name: string;
+  sortOrder: number;
+  collapsed?: boolean;
+}
+
+export interface EstimateSignature {
+  customerName: string;
+  signature: string;
+  acceptedAt: string;
+  ipAddress?: string;
+}
+
+export interface Estimate {
+  id: string;
+  estimateNumber: string;
+  organizationId?: string;
+  clientId: string;
+  projectId?: string;
+  status: EstimateStatus;
+  groups: EstimateGroup[];
+  items: EstimateItem[];
+  subtotal: number;
+  discount: number;
+  taxRate: number;
+  taxAmount: number;
+  fees: number;
+  total: number;
+  depositPercent?: number;
+  notes?: string;
+  terms?: string;
+  expirationDate?: string;
+  acceptedAt?: string;
+  signature?: EstimateSignature;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  versionNumber?: number;
+  templateId?: string;
+  convertedProjectId?: string;
+  convertedAt?: string;
+}
