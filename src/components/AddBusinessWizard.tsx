@@ -145,6 +145,7 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
   const navigate = useNavigate();
   const createOrganizationWorkspace = useAppStore((state) => state.createOrganizationWorkspace);
   const seedOrganizationContext = useAppStore((state) => state.seedOrganizationContext);
+  const addEstimate = useAppStore((state) => state.addEstimate);
   const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
   const currentUser = useAppStore((state) => state.currentUser);
 
@@ -235,7 +236,17 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
       setData(initialData);
 
       if (andCreateEstimate) {
-        navigate("/platform/estimates/new");
+        // Create a blank draft estimate and navigate directly to it
+        const newEstimate = addEstimate({
+          clientId: "",
+          status: "draft",
+          groups: [],
+          items: [],
+          discount: 0,
+          taxRate: 0,
+          fees: 0,
+        });
+        navigate(`/platform/estimates/${newEstimate.id}`);
       } else {
         navigate("/platform/businesses");
       }
@@ -484,10 +495,14 @@ function Step2Address({ data, update }: { data: WizardData; update: (u: Partial<
 // ─── Step 3: Branding ─────────────────────────────────────────────────────────
 
 function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial<WizardData>) => void }) {
+  const { toast } = useToast();
+
   function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 750 * 1024) {
+      toast({ title: "Logo file too large", description: "Please choose an image under 750 KB.", variant: "destructive" });
+      e.target.value = "";
       return;
     }
     const reader = new FileReader();
@@ -602,7 +617,7 @@ function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial
             <span className="font-bold" style={{ color: data.primaryColor }}>
               {data.name || "Business Name"}
             </span>
-            <span style={{ color: data.accentColor }} className="font-medium">ESTIMATE #EST-1001</span>
+            <span style={{ color: data.accentColor }} className="font-medium">ESTIMATE #{data.estimatePrefix || "EST"}-{data.estimateStartNumber || "1001"}</span>
           </div>
           <div className="text-muted-foreground">
             <p>Customer Name</p>
