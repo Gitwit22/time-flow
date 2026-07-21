@@ -102,15 +102,15 @@ export default function AdminDashboard() {
   const metrics = useMemo(
     () =>
       selectDashboardMetrics({
-        clients: allClients,
+        clients,
         currentUser: {
           invoiceFrequency: currentUser.invoiceFrequency,
         },
-        invoices: allInvoices,
-        projects: allProjects,
-        timeEntries: allTimeEntries,
-        expenses: allExpenses,
-        projectBills: allProjectBills,
+        invoices,
+        projects,
+        timeEntries,
+        expenses,
+        projectBills,
         activeSession,
         settings: {
           invoiceFrequency: settings.invoiceFrequency,
@@ -121,17 +121,17 @@ export default function AdminDashboard() {
       }),
     [
       activeSession,
-      allClients,
+      clients,
       currentUser.invoiceFrequency,
-      allExpenses,
-      allInvoices,
-      allProjectBills,
-      allProjects,
+      expenses,
+      invoices,
+      projectBills,
+      projects,
       settings.invoiceFrequency,
       settings.payPeriodFrequency,
       settings.payPeriodStartDate,
       settings.periodWeekStartsOn,
-      allTimeEntries,
+      timeEntries,
     ],
   );
   const isReadonly = useAppStore(selectIsReadonly);
@@ -145,11 +145,11 @@ export default function AdminDashboard() {
 
   const activeClockIns = useMemo(
     () =>
-      getActiveTimeEntries(allTimeEntries, allProjects, allClients, {
+      getActiveTimeEntries(timeEntries, projects, clients, {
         currentUserName: currentUser.name,
         now,
       }),
-    [allClients, currentUser.name, now, allProjects, allTimeEntries],
+    [clients, currentUser.name, now, projects, timeEntries],
   );
 
   const handleEditEntry = (entry: TimeEntry) => {
@@ -289,8 +289,8 @@ export default function AdminDashboard() {
         <CardContent>
           <RecentTimeEntriesTable
             entries={metrics.recentEntries}
-            clients={allClients}
-            projects={allProjects}
+            clients={clients}
+            projects={projects}
             readOnly={isReadonly}
             onEdit={handleEditEntry}
             onDelete={handleDeleteEntry}
@@ -299,8 +299,8 @@ export default function AdminDashboard() {
       </Card>
 
       <TimeEntryDialog
-        clients={allClients}
-        projects={allProjects}
+        clients={clients}
+        projects={projects}
         timeEntries={timeEntries}
         entry={editingEntry}
         open={isEntryDialogOpen}
