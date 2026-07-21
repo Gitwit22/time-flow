@@ -47,6 +47,7 @@ import {
   apiCreateInvoice,
   apiUpdateInvoice,
   apiSaveSettings,
+  setActiveWorkspaceId,
   UnauthorizedError,
 } from "@/lib/timeflowApi";
 import type {
@@ -646,6 +647,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ?? state.activeOrganizationId
         ?? organizations[0]?.id
         ?? undefined;
+      // Keep the API header in sync with the resolved active workspace.
+      setActiveWorkspaceId(activeOrganizationId);
       const organizationMembers = persistedWorkspace.organizationMembers?.length
         ? persistedWorkspace.organizationMembers
         : state.organizationMembers;
@@ -764,6 +767,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setHydrated: (hydrated) => set({ hydrated }),
 
   setActiveOrganization: (organizationId) => {
+    setActiveWorkspaceId(organizationId);
     set({ activeOrganizationId: organizationId });
     const current = get();
     persistWorkspaceSnapshot({
@@ -805,6 +809,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           },
         ];
 
+    setActiveWorkspaceId(organization.id);
     set({
       organizations,
       organizationMembers,
@@ -841,6 +846,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     const organizationMembers = [...state.organizationMembers, ownerMember];
 
+    setActiveWorkspaceId(created.id);
     set({ organizations, organizationMembers, activeOrganizationId: created.id });
     persistWorkspaceSnapshot({
       organizations,

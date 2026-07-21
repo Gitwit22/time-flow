@@ -160,7 +160,7 @@ export function WorkspaceSwitcher() {
                     </div>
                   </div>
                   <span className="text-xs text-muted-foreground">{typeLabel}</span>
-                  {isActive && canManageWorkspaces ? (
+                  {canManageWorkspaces ? (
                     <div className="flex items-center gap-2 pt-1">
                       <Button
                         variant="ghost"

@@ -41,6 +41,16 @@ export function registerUnauthorizedHandler(handler: () => void): void {
   _onUnauthorized = handler;
 }
 
+/**
+ * The active workspace ID sent as x-active-workspace-id on every request.
+ * The API uses this to scope data to the correct organization when the user
+ * has multiple workspaces (overrides the JWT's stored organizationId).
+ */
+let _activeWorkspaceId: string | undefined;
+export function setActiveWorkspaceId(id: string | undefined): void {
+  _activeWorkspaceId = id;
+}
+
 function buildHeaders(): HeadersInit {
   // Prefer suite-launched platform identity when present.
   // This prevents stale local sessions from masking platform-scoped data.
@@ -48,6 +58,7 @@ function buildHeaders(): HeadersInit {
   return {
     "Content-Type": "application/json",
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(_activeWorkspaceId ? { "x-active-workspace-id": _activeWorkspaceId } : {}),
   };
 }
 
