@@ -14,6 +14,7 @@ import { formatCurrency, formatDateForInput, formatHours, formatLongDate, parseD
 import { getCurrentPayPeriod, getPreviousPayPeriod } from "@/lib/payPeriods";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import type { InvoiceBillingMode, InvoiceDraftPreview } from "@/types";
 
 interface GenerateInvoiceDialogProps {
@@ -25,13 +26,9 @@ type RangeMode = "current-period" | "previous-period" | "custom-range" | "outsta
 
 export function GenerateInvoiceDialog({ trigger }: GenerateInvoiceDialogProps) {
   const { toast } = useToast();
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
+  const { clients, projects, timeEntries, expenses, invoices } = useWorkspaceData();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const expenses = useAppStore((state) => state.expenses);
-  const invoices = useAppStore((state) => state.invoices);
   const commitSingleInvoice = useAppStore((state) => state.commitSingleInvoice);
 
   const [open, setOpen] = useState(false);

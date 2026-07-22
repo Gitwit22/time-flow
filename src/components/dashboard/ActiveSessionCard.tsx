@@ -9,12 +9,11 @@ import { getElapsedSeconds, getTrackedSessionSeconds, formatClockTime, formatDur
 import { getProjectBudgetSnapshot, getProjectWarningMessage, getSelectableProjects } from "@/lib/projects";
 import { useToast } from "@/hooks/use-toast";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 
 export function ActiveSessionCard() {
   const { toast } = useToast();
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
+  const { clients, projects, timeEntries } = useWorkspaceData();
   const settings = useAppStore((state) => state.settings);
   const currentUser = useAppStore((state) => state.currentUser);
   const activeSession = useAppStore((state) => state.activeSession);

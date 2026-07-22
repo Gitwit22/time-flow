@@ -17,6 +17,7 @@ import { getSelectableProjects } from "@/lib/projects";
 import { getEntrySortKey, getEntryType } from "@/lib/timeEntries";
 import { apiCreateTimeOffRequest } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import type { TimeEntry } from "@/types";
 
 interface TimeEntryPayPeriodGroup {
@@ -31,9 +32,7 @@ export default function TimeTracker() {
   const { toast } = useToast();
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
+  const { clients, projects, timeEntries } = useWorkspaceData();
   const addTimeEntry = useAppStore((state) => state.addTimeEntry);
   const updateTimeEntry = useAppStore((state) => state.updateTimeEntry);
   const deleteTimeEntry = useAppStore((state) => state.deleteTimeEntry);

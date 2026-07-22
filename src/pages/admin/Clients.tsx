@@ -18,11 +18,12 @@ import {
   uploadTimeflowDocumentFile,
 } from "@/lib/timeflowDocumentsApi";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import type { Client } from "@/types";
 
 export default function Clients() {
   const { toast } = useToast();
-  const clients = useAppStore((state) => state.clients);
+  const { clients } = useWorkspaceData();
   const addClient = useAppStore((state) => state.addClient);
   const updateClient = useAppStore((state) => state.updateClient);
   const archiveClient = useAppStore((state) => state.archiveClient);

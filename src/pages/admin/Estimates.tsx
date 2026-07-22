@@ -42,6 +42,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatLongDate } from "@/lib/date";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import type { Estimate, EstimateStatus } from "@/types";
 
 const STATUS_TABS: { value: EstimateStatus | "all"; label: string }[] = [
@@ -76,9 +77,7 @@ export default function EstimatesPage() {
   const { toast } = useToast();
   const navigate = useNavigate();
 
-  const estimates = useAppStore((s) => s.estimates);
-  const clients = useAppStore((s) => s.clients);
-  const projects = useAppStore((s) => s.projects);
+  const { estimates, clients, projects } = useWorkspaceData();
   const addEstimate = useAppStore((s) => s.addEstimate);
   const duplicateEstimate = useAppStore((s) => s.duplicateEstimate);
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);

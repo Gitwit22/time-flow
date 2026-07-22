@@ -8,6 +8,7 @@ import { getInvoiceStatusCounts, getPeriodHours, getWeeklyHours } from "@/lib/ca
 import { formatCurrency, formatHours } from "@/lib/date";
 import { getCurrentPayPeriod, summarizePayPeriod } from "@/lib/payPeriods";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 
 const pieColors = {
   paid: "hsl(152, 60%, 40%)",
@@ -19,14 +20,9 @@ const pieColors = {
 };
 
 export default function Reports() {
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const expenses = useAppStore((state) => state.expenses);
-  const projectBills = useAppStore((state) => state.projectBills);
+  const { timeEntries, invoices, clients, projects, expenses, projectBills } = useWorkspaceData();
   const billingPeriod = getCurrentPayPeriod(
     {
       payPeriodFrequency: settings.payPeriodFrequency ?? settings.invoiceFrequency ?? currentUser.invoiceFrequency,

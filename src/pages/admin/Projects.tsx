@@ -24,6 +24,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatHours, formatLongDate } from "@/lib/date";
 import { getProjectCapHandlingLabel, getProjectDerivedMetrics, getProjectWarningMessage } from "@/lib/projects";
 import { useAppStore } from "@/store/appStore";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import type { Project } from "@/types";
 
 const statusStyles: Record<Project["status"], string> = {
@@ -40,10 +41,7 @@ function formatEnumLabel(value: string) {
 
 export default function ProjectsPage() {
   const { toast } = useToast();
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
+  const { clients, projects, timeEntries, invoices } = useWorkspaceData();
   const addProject = useAppStore((state) => state.addProject);
   const archiveProject = useAppStore((state) => state.archiveProject);
   const restoreProject = useAppStore((state) => state.restoreProject);
