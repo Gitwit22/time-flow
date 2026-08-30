@@ -621,6 +621,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   hydrateFromApi: async () => {
     try {
+      const state = get();
+      const persistedWorkspace = readPersistedWorkspaceState();
+      const requestedOrganizationId =
+        persistedWorkspace.activeOrganizationId
+        ?? state.activeOrganizationId
+        ?? persistedWorkspace.organizations?.[0]?.id;
+      setActiveWorkspaceId(requestedOrganizationId);
+
       const [hydratedData, organizationsFromApi] = await Promise.all([
         apiHydrateAll(),
         apiListOrganizations().catch(() => [] as Organization[]),
@@ -634,8 +642,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const settings = hydratedData.settings;
       const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
       const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
-      const state = get();
-      const persistedWorkspace = readPersistedWorkspaceState();
       const safeOrganizationsFromApi = organizationsFromApi ?? [];
       const organizations = safeOrganizationsFromApi.length
         ? safeOrganizationsFromApi
@@ -678,7 +684,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         normalizeInvoiceRecord(
           {
             ...inv,
-            workspaceId: resolveWorkspaceId(inv.workspaceId ?? inv.organizationId, activeOrganizationId),
+            workspaceId: inv.workspaceId ?? inv.organizationId,
           },
           normalizedEntries,
         ),

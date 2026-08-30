@@ -1,5 +1,8 @@
 import { useMemo } from "react";
-import { useAppStore } from "@/store/appStore";
+import { useShallow } from "zustand/react/shallow";
+
+import { useAppStore, type AppState } from "@/store/appStore";
+import { selectOrganizationScope } from "@/store/selectors";
 
 /**
  * Returns all data collections filtered to the currently active workspace.
@@ -8,54 +11,39 @@ import { useAppStore } from "@/store/appStore";
  * that only data belonging to the active workspace is surfaced — preventing
  * cross-business data leaks when the user has multiple workspaces.
  */
-function matchesWorkspace(
-  item: { workspaceId?: string; organizationId?: string },
-  activeOrganizationId: string,
-): boolean {
-  const id = item.workspaceId ?? item.organizationId;
-  return !id || id === activeOrganizationId;
-}
-
 export function useWorkspaceData() {
-  const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
-  const allClients = useAppStore((state) => state.clients);
-  const allProjects = useAppStore((state) => state.projects);
-  const allTimeEntries = useAppStore((state) => state.timeEntries);
-  const allInvoices = useAppStore((state) => state.invoices);
-  const allExpenses = useAppStore((state) => state.expenses);
-  const allProjectBills = useAppStore((state) => state.projectBills);
+  const scopeInput = useAppStore(useShallow((state) => ({
+    activeOrganizationId: state.activeOrganizationId,
+    clients: state.clients,
+    projects: state.projects,
+    timeEntries: state.timeEntries,
+    invoices: state.invoices,
+    expenses: state.expenses,
+    projectBills: state.projectBills,
+  })));
   const allEstimates = useAppStore((state) => state.estimates);
+  const organizationScope = useMemo(
+    () => selectOrganizationScope(scopeInput as AppState),
+    [scopeInput],
+  );
 
   return useMemo(() => {
-    if (!activeOrganizationId) {
+    if (!scopeInput.activeOrganizationId) {
       return {
-        clients: allClients,
-        projects: allProjects,
-        timeEntries: allTimeEntries,
-        invoices: allInvoices,
-        expenses: allExpenses,
-        projectBills: allProjectBills,
+        ...organizationScope,
         estimates: allEstimates,
       };
     }
 
     return {
-      clients: allClients.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      projects: allProjects.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      timeEntries: allTimeEntries.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      invoices: allInvoices.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      expenses: allExpenses.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      projectBills: allProjectBills.filter((item) => matchesWorkspace(item, activeOrganizationId)),
-      estimates: allEstimates.filter((item) => matchesWorkspace(item, activeOrganizationId)),
+      ...organizationScope,
+      estimates: allEstimates.filter(
+        (item) => !item.organizationId || item.organizationId === scopeInput.activeOrganizationId,
+      ),
     };
   }, [
-    activeOrganizationId,
-    allClients,
-    allProjects,
-    allTimeEntries,
-    allInvoices,
-    allExpenses,
-    allProjectBills,
+    scopeInput.activeOrganizationId,
+    organizationScope,
     allEstimates,
   ]);
 }

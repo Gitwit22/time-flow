@@ -23,6 +23,7 @@ import {
   updateTimeflowDocument,
   uploadTimeflowDocumentFile,
 } from "@/lib/timeflowDocumentsApi";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import { useAppStore } from "@/store/appStore";
 
 function formatEnumLabel(value: string) {
@@ -33,13 +34,9 @@ export default function ProjectDetailPage() {
   const { toast } = useToast();
   const { id } = useParams();
   const currentUser = useAppStore((state) => state.currentUser);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const invoices = useAppStore((state) => state.invoices);
+  const { clients, projects, timeEntries, invoices, projectBills } = useWorkspaceData();
   const updateProject = useAppStore((state) => state.updateProject);
   const createPartialProjectInvoice = useAppStore((state) => state.createPartialProjectInvoice);
-  const projectBills = useAppStore((state) => state.projectBills);
   const addProjectBill = useAppStore((state) => state.addProjectBill);
   const markProjectBillPaid = useAppStore((state) => state.markProjectBillPaid);
   const voidProjectBill = useAppStore((state) => state.voidProjectBill);

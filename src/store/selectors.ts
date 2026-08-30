@@ -277,8 +277,7 @@ export function selectOrganizationScope(state: AppState) {
       return resolvedWorkspaceId === activeWorkspaceId;
     }
 
-    // Legacy records with no scoping metadata stay visible in the active workspace.
-    return true;
+    return false;
   };
 
   return {

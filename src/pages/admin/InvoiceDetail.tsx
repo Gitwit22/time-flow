@@ -15,6 +15,7 @@ import { canMoveInvoiceBackToDraft, getInvoiceDisplayStatus, getInvoiceSourceTyp
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { listTimeflowDocuments, getTimeflowDocumentViewUrl } from "@/lib/timeflowDocumentsApi";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 import { useAppStore } from "@/store/appStore";
 import type { AttachedDocument, InvoiceLineItem } from "@/types";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -38,11 +39,7 @@ export default function InvoiceDetail() {
 
   const currentUser = useAppStore((state) => state.currentUser);
   const settings = useAppStore((state) => state.settings);
-  const invoices = useAppStore((state) => state.invoices);
-  const clients = useAppStore((state) => state.clients);
-  const projects = useAppStore((state) => state.projects);
-  const timeEntries = useAppStore((state) => state.timeEntries);
-  const expenses = useAppStore((state) => state.expenses);
+  const { invoices, clients, projects, timeEntries, expenses } = useWorkspaceData();
   const updateInvoice = useAppStore((state) => state.updateInvoice);
   const moveInvoiceBackToDraft = useAppStore((state) => state.moveInvoiceBackToDraft);
   const voidInvoice = useAppStore((state) => state.voidInvoice);
