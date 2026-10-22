@@ -124,13 +124,26 @@ type WorkspaceStateSnapshot = {
   projectAssignments: ProjectAssignment[];
 };
 
-function readPersistedPayPeriodSettings(): Partial<PersistedPayPeriodSettings> {
+// Settings belong to a single workspace (each business has its own branding,
+// pay period, etc.), so the local cache is keyed per workspace. Sharing one key
+// let a previous workspace's values leak into — and get promoted to — another.
+function payPeriodStorageKey(workspaceId: string | undefined): string {
+  return workspaceId ? `${PAY_PERIOD_STORAGE_KEY}:${workspaceId}` : PAY_PERIOD_STORAGE_KEY;
+}
+
+function readPersistedPayPeriodSettings(
+  workspaceId: string | undefined,
+  { allowLegacyFallback = false }: { allowLegacyFallback?: boolean } = {},
+): Partial<PersistedPayPeriodSettings> {
   if (typeof window === "undefined") {
     return {};
   }
 
   try {
-    const raw = window.localStorage.getItem(PAY_PERIOD_STORAGE_KEY);
+    // The legacy un-keyed value cannot be attributed to a workspace, so it is
+    // only trusted when the user has a single workspace.
+    const raw = window.localStorage.getItem(payPeriodStorageKey(workspaceId))
+      ?? (allowLegacyFallback ? window.localStorage.getItem(PAY_PERIOD_STORAGE_KEY) : null);
     if (!raw) {
       return {};
     }
@@ -141,12 +154,12 @@ function readPersistedPayPeriodSettings(): Partial<PersistedPayPeriodSettings> {
   }
 }
 
-function writePersistedPayPeriodSettings(settings: PersistedPayPeriodSettings) {
+function writePersistedPayPeriodSettings(workspaceId: string | undefined, settings: PersistedPayPeriodSettings) {
   if (typeof window === "undefined") {
     return;
   }
 
-  window.localStorage.setItem(PAY_PERIOD_STORAGE_KEY, JSON.stringify(settings));
+  window.localStorage.setItem(payPeriodStorageKey(workspaceId), JSON.stringify(settings));
 }
 
 function pickPersistedPayPeriodSettings(settings: AppSettings): PersistedPayPeriodSettings {
@@ -574,6 +587,8 @@ const defaultUser: UserProfile = {
   currency: "USD",
 };
 
+let hydrateRequestSeq = 0;
+
 const defaultSettings: AppSettings = {
   businessName: "",
   invoiceNotes: "",
@@ -620,6 +635,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
   markUnauthenticated: () => set({ authStatus: "unauthenticated", hydrated: true }),
 
   hydrateFromApi: async () => {
+    // Only the most recent hydrate may write to the store; an older in-flight
+    // one (e.g. from before a workspace switch) would otherwise overwrite the
+    // newly selected workspace with the previous workspace's data.
+    const requestSeq = ++hydrateRequestSeq;
     try {
       const state = get();
       const persistedWorkspace = readPersistedWorkspaceState();
@@ -639,9 +658,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expenses = hydratedData.expenses ?? [];
       const invoices = hydratedData.invoices ?? [];
       const projectBills = hydratedData.projectBills ?? [];
+      if (requestSeq !== hydrateRequestSeq) return;
       const settings = hydratedData.settings;
-      const persistedPayPeriodSettings = readPersistedPayPeriodSettings();
-      const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const safeOrganizationsFromApi = organizationsFromApi ?? [];
       const organizations = safeOrganizationsFromApi.length
         ? safeOrganizationsFromApi
@@ -655,6 +673,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ?? undefined;
       // Keep the API header in sync with the resolved active workspace.
       setActiveWorkspaceId(activeOrganizationId);
+      const persistedPayPeriodSettings = readPersistedPayPeriodSettings(activeOrganizationId, {
+        allowLegacyFallback: organizations.length <= 1,
+      });
+      const mergedSettings = buildHydratedSettings(settings, persistedPayPeriodSettings);
       const organizationMembers = persistedWorkspace.organizationMembers?.length
         ? persistedWorkspace.organizationMembers
         : state.organizationMembers;
@@ -719,7 +741,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         hydrated: true,
         hydrateError: false,
       });
-      writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(mergedSettings));
+      writePersistedPayPeriodSettings(activeOrganizationId, pickPersistedPayPeriodSettings(mergedSettings));
       writePersistedExpenses(normalizedExpenses);
 
       // Backward-compat bridge: if this browser still has older local pay period
@@ -742,6 +764,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         projectAssignments,
       });
     } catch (err) {
+      if (requestSeq !== hydrateRequestSeq) return;
       if (err instanceof UnauthorizedError) {
         // The registered unauthorized handler (AuthBootstrapper) handles clearing
         // the session and redirecting to login. Just mark hydration complete.
@@ -773,8 +796,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   setHydrated: (hydrated) => set({ hydrated }),
 
   setActiveOrganization: (organizationId) => {
+    const isSwitch = get().activeOrganizationId !== organizationId;
     setActiveWorkspaceId(organizationId);
-    set({ activeOrganizationId: organizationId });
+    // Settings are per workspace. Drop the previous workspace's values right
+    // away so its branding never renders under the new workspace, then reload.
+    set(isSwitch
+      ? { activeOrganizationId: organizationId, settings: defaultSettings }
+      : { activeOrganizationId: organizationId });
     const current = get();
     persistWorkspaceSnapshot({
       organizations: current.organizations,
@@ -783,6 +811,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       employeeProfiles: current.employeeProfiles,
       projectAssignments: current.projectAssignments,
     });
+    if (isSwitch) {
+      void current.hydrateFromApi();
+    }
   },
 
   seedOrganizationContext: ({ organization, memberRole }) => {
@@ -820,6 +851,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       organizations,
       organizationMembers,
       activeOrganizationId: organization.id,
+      ...(state.activeOrganizationId !== organization.id ? { settings: defaultSettings } : {}),
     });
 
     persistWorkspaceSnapshot({
@@ -853,7 +885,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const organizationMembers = [...state.organizationMembers, ownerMember];
 
     setActiveWorkspaceId(created.id);
-    set({ organizations, organizationMembers, activeOrganizationId: created.id });
+    // A new workspace starts with its own blank settings on the server.
+    set({ organizations, organizationMembers, activeOrganizationId: created.id, settings: defaultSettings });
     persistWorkspaceSnapshot({
       organizations,
       activeOrganizationId: created.id,
@@ -1064,8 +1097,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
   updateSettings: (updates) => {
     if (!canManageWorkspace(get().currentUser.role)) return;
     const prev = get().settings;
+    const workspaceIdAtSave = get().activeOrganizationId;
     const nextSettings = { ...prev, ...updates };
-    writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(nextSettings));
+    writePersistedPayPeriodSettings(workspaceIdAtSave, pickPersistedPayPeriodSettings(nextSettings));
     set({ settings: nextSettings });
     if (Object.keys(updates).length === 0) {
       return;
@@ -1074,11 +1108,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
     void apiSaveSettings(updates)
       .then((savedSettings) => {
         const normalizedSavedSettings = buildHydratedSettings(savedSettings, {});
-        writePersistedPayPeriodSettings(pickPersistedPayPeriodSettings(normalizedSavedSettings));
+        writePersistedPayPeriodSettings(workspaceIdAtSave, pickPersistedPayPeriodSettings(normalizedSavedSettings));
+        // The save belongs to the workspace it was made in; don't apply it if
+        // the user has since switched to another workspace.
+        if (get().activeOrganizationId !== workspaceIdAtSave) return;
         set({ settings: normalizedSavedSettings });
       })
       .catch((err) => {
-        set({ settings: prev });
+        if (get().activeOrganizationId === workspaceIdAtSave) {
+          set({ settings: prev });
+        }
         toast.error(err instanceof Error ? err.message : "Failed to save settings");
       });
   },

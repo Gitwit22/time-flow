@@ -48,7 +48,6 @@ export default function BusinessesPage() {
   const setDefaultOrganization = useAppStore((state) => state.setDefaultOrganization);
   const archiveOrganization = useAppStore((state) => state.archiveOrganization);
   const deleteOrganization = useAppStore((state) => state.deleteOrganization);
-  const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
 
   const [wizardOpen, setWizardOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Organization | null>(null);
@@ -67,8 +66,8 @@ export default function BusinessesPage() {
   }
 
   function handleOpen(org: Organization) {
+    // setActiveOrganization reloads the new workspace's data and settings.
     setActiveOrganization(org.id);
-    void hydrateFromApi();
     navigate("/platform");
   }
 
