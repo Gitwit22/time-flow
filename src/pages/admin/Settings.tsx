@@ -30,6 +30,7 @@ export default function SettingsPage() {
   const clients = useAppStore((state) => state.clients);
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
   const updateSettings = useAppStore((state) => state.updateSettings);
+  const saveBusinessProfile = useAppStore((state) => state.saveBusinessProfile);
   const resetApp = useAppStore((state) => state.resetApp);
   const organizations = useAppStore((state) => state.organizations);
   const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
@@ -555,6 +556,19 @@ export default function SettingsPage() {
             size="sm"
             onClick={() => {
               updateSettings({ invoiceLogoDataUrl, invoiceBannerDataUrl });
+              // Keep this business's profile logo in step so the business
+              // switcher shows the same logo for it from any workspace.
+              if (activeWorkspace && canManageWorkspace(currentUser.role)) {
+                void saveBusinessProfile(activeWorkspace.id, {
+                  branding: { ...activeWorkspace.branding, logoDataUrl: invoiceLogoDataUrl },
+                }).catch((error) => {
+                  toast({
+                    title: "Business logo not updated",
+                    description: error instanceof Error ? error.message : "Try saving branding again.",
+                    variant: "destructive",
+                  });
+                });
+              }
               toast({ title: "Branding saved", description: "Invoice downloads will use your current logo and banner." });
             }}
           >

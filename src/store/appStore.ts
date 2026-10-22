@@ -35,6 +35,8 @@ import {
   apiListOrganizations,
   apiTransferWorkspaceOwnership,
   apiRenameWorkspace,
+  apiSaveBusinessProfile,
+  type BusinessProfileUpdate,
   apiRestoreClient,
   apiRestoreProject,
   apiCreateTimeEntry,
@@ -518,6 +520,7 @@ export interface AppState {
     transferOrganizationOwnership: (id: string, newOwnerEmail: string) => Promise<void>;
     refreshOrganizations: () => Promise<void>;
     updateOrganization: (id: string, updates: Partial<Organization>) => void;
+    saveBusinessProfile: (id: string, profile: BusinessProfileUpdate) => Promise<void>;
   setViewerClientContext: (clientId?: string, locked?: boolean) => void;
   switchToViewerMode: (preferredClientId?: string) => string | undefined;
   syncCurrentUser: (updates: Pick<UserProfile, "id" | "name" | "email" | "role">) => void;
@@ -932,6 +935,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       employeeProfiles: state.employeeProfiles,
       projectAssignments: state.projectAssignments,
     });
+  },
+
+  saveBusinessProfile: async (id, profile) => {
+    // The server returns the full merged profile; apply it as the source of truth.
+    const saved = await apiSaveBusinessProfile(id, profile);
+    get().updateOrganization(id, saved);
   },
 
   renameOrganization: async (id, name) => {
