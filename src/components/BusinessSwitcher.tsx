@@ -22,7 +22,6 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
   const organizations = useAppStore((state) => state.organizations);
   const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
   const setActiveOrganization = useAppStore((state) => state.setActiveOrganization);
-  const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
   const settings = useAppStore((state) => state.settings);
 
   const [open, setOpen] = useState(false);
@@ -35,8 +34,8 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
 
   function handleSwitch(orgId: string) {
     if (orgId === activeOrganizationId) return;
+    // setActiveOrganization reloads the new workspace's data and settings.
     setActiveOrganization(orgId);
-    void hydrateFromApi();
     setOpen(false);
   }
 
