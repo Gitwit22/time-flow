@@ -12,6 +12,8 @@ import { formatDateForInput, parseDateInput } from "@/lib/date";
 import { canManageWorkspace } from "@/lib/organization";
 import { useAppStore } from "@/store/appStore";
 import { BrandingImageError, prepareBrandingImage } from "@/lib/brandingImage";
+import { nextInvoiceId, normalizeInvoicePrefix, resolveInvoicePrefix } from "@/lib/invoice";
+import { useWorkspaceData } from "@/hooks/useWorkspaceData";
 
 
 export default function SettingsPage() {
@@ -44,6 +46,8 @@ export default function SettingsPage() {
   const [periodTargetHours, setPeriodTargetHours] = useState(0);
   const [periodTargetEarnings, setPeriodTargetEarnings] = useState(0);
   const [workspaceRename, setWorkspaceRename] = useState("");
+  const [invoicePrefixDraft, setInvoicePrefixDraft] = useState("");
+  const [savingInvoicePrefix, setSavingInvoicePrefix] = useState(false);
   const [newOwnerEmail, setNewOwnerEmail] = useState("");
 
   useEffect(() => {
@@ -81,6 +85,37 @@ export default function SettingsPage() {
 
   const canManageWorkspaces = canManageWorkspace(currentUser.role);
   const activeWorkspace = organizations.find((org) => org.id === activeOrganizationId);
+  const { invoices: workspaceInvoices } = useWorkspaceData();
+  const effectiveInvoicePrefix = resolveInvoicePrefix({
+    configuredPrefix: activeWorkspace?.businessSettings?.invoicePrefix,
+    businessName: activeWorkspace?.name,
+    existingInvoices: workspaceInvoices,
+  });
+  const draftInvoicePrefix = normalizeInvoicePrefix(invoicePrefixDraft);
+  const nextInvoiceNumberPreview = nextInvoiceId(workspaceInvoices, new Date(), draftInvoicePrefix ?? effectiveInvoicePrefix);
+
+  useEffect(() => {
+    setInvoicePrefixDraft(effectiveInvoicePrefix);
+  }, [activeOrganizationId, effectiveInvoicePrefix]);
+
+  const handleSaveInvoicePrefix = async () => {
+    if (!activeWorkspace || !draftInvoicePrefix) return;
+    setSavingInvoicePrefix(true);
+    try {
+      await saveBusinessProfile(activeWorkspace.id, {
+        businessSettings: { ...activeWorkspace.businessSettings, invoicePrefix: draftInvoicePrefix },
+      });
+      toast({ title: "Invoice prefix saved", description: `New invoices in ${activeWorkspace.name} will be numbered ${nextInvoiceNumberPreview}.` });
+    } catch (error) {
+      toast({
+        title: "Invoice prefix not saved",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingInvoicePrefix(false);
+    }
+  };
 
   async function handleSetDefaultWorkspace(workspaceId: string) {
     try {
@@ -374,6 +409,33 @@ export default function SettingsPage() {
               </Select>
             </div>
           </div>
+          {activeWorkspace && canManageWorkspace(currentUser.role) ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs" htmlFor="invoice-prefix">Invoice Number Prefix</Label>
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  id="invoice-prefix"
+                  className="w-40 uppercase"
+                  maxLength={10}
+                  value={invoicePrefixDraft}
+                  onChange={(event) => setInvoicePrefixDraft(event.target.value.toUpperCase())}
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={!draftInvoicePrefix || draftInvoicePrefix === effectiveInvoicePrefix || savingInvoicePrefix}
+                  onClick={() => void handleSaveInvoicePrefix()}
+                >
+                  {savingInvoicePrefix ? "Saving…" : "Save Prefix"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {draftInvoicePrefix
+                  ? `Each business numbers its own invoices. Next invoice: ${nextInvoiceNumberPreview}`
+                  : "Use 2–10 letters or numbers."}
+              </p>
+            </div>
+          ) : null}
           <div className="space-y-1.5">
             <Label className="text-xs">Default Invoice Notes</Label>
             <Textarea value={invoiceNotes} onChange={(event) => setInvoiceNotes(event.target.value)} className="resize-none" />

@@ -497,7 +497,9 @@ function toBusinessProfile(r: ApiRecord): BusinessProfile {
 }
 
 /** Partial update: omitted keys are kept, `null` clears a field or section. */
-export type BusinessProfileUpdate = { [K in keyof BusinessProfile]?: BusinessProfile[K] | null };
+export type BusinessProfileUpdate = { [K in Exclude<keyof BusinessProfile, "businessSettings">]?: BusinessProfile[K] | null } & {
+  businessSettings?: Partial<NonNullable<BusinessProfile["businessSettings"]>> | null;
+};
 
 export const apiSaveBusinessProfile = (organizationId: string, profile: BusinessProfileUpdate) =>
   apiRequest<ApiRecord>("PUT", `/organizations/${encodeURIComponent(organizationId)}/profile`, profile)

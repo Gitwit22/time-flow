@@ -72,9 +72,55 @@ export function buildInvoiceDrafts(
   return buildInvoiceDraftSummary(entries, clients, projects, currentUser, settings, invoices, referenceDate, clientId).previews;
 }
 
-export function nextInvoiceId(invoices: Invoice[], referenceDate = new Date()) {
+export const DEFAULT_INVOICE_PREFIX = "INV";
+
+const INVOICE_ID_PREFIX_PATTERN = /^(.+)-\d{4}-\d+$/;
+
+/** The prefix of an id like "PPM-2026-001" ("PPM"), or undefined. */
+export function getInvoiceIdPrefix(invoiceId: string): string | undefined {
+  return INVOICE_ID_PREFIX_PATTERN.exec(invoiceId)?.[1];
+}
+
+/** Uppercase letters/digits only, 2–10 characters, or undefined if unusable. */
+export function normalizeInvoicePrefix(value: string | undefined): string | undefined {
+  const cleaned = (value ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return cleaned.length >= 2 && cleaned.length <= 10 ? cleaned : undefined;
+}
+
+/** "Premiere Project Management" -> "PPM"; short names fall back to their first letters. */
+export function invoicePrefixFromBusinessName(name: string | undefined): string | undefined {
+  const words = (name ?? "").toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  const initials = words.map((word) => word[0]).join("").slice(0, 4);
+  return normalizeInvoicePrefix(initials) ?? normalizeInvoicePrefix(words.join("").slice(0, 3));
+}
+
+/**
+ * Which prefix a business's next invoice uses: its configured prefix, else the
+ * prefix its existing invoices already use (so established numbering never
+ * changes), else its initials. Each business then numbers independently.
+ */
+export function resolveInvoicePrefix(params: {
+  configuredPrefix?: string;
+  businessName?: string;
+  existingInvoices: Invoice[];
+}): string {
+  const configured = normalizeInvoicePrefix(params.configuredPrefix);
+  if (configured && configured !== DEFAULT_INVOICE_PREFIX) return configured;
+
+  const newestExisting = [...params.existingInvoices]
+    .sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? ""))
+    .map((invoice) => getInvoiceIdPrefix(invoice.id))
+    .find(Boolean);
+  if (newestExisting) return newestExisting;
+
+  // "INV" is only the wizard's default; a business without invoices of its own
+  // gets its initials so its numbers don't run into another business's INV-…
+  return invoicePrefixFromBusinessName(params.businessName) ?? DEFAULT_INVOICE_PREFIX;
+}
+
+export function nextInvoiceId(invoices: Invoice[], referenceDate = new Date(), invoicePrefix = DEFAULT_INVOICE_PREFIX) {
   const year = referenceDate.getFullYear();
-  const prefix = `INV-${year}-`;
+  const prefix = `${invoicePrefix}-${year}-`;
   const currentMax = invoices
     .filter((invoice) => invoice.id.startsWith(prefix))
     .map((invoice) => Number(invoice.id.replace(prefix, "")))
@@ -182,7 +228,12 @@ export function getInvoiceSourceTypeLabel(invoice: Pick<Invoice, "invoiceSourceT
   return "Time Entries";
 }
 
-export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoices: Invoice[], referenceDate = new Date()) {
+export function materializeInvoiceDrafts(
+  previews: InvoiceDraftPreview[],
+  invoices: Invoice[],
+  referenceDate = new Date(),
+  invoicePrefix = DEFAULT_INVOICE_PREFIX,
+) {
   const nextInvoices: Invoice[] = [];
   let runningInvoices = [...invoices];
   const createdAt = new Date().toISOString();
@@ -198,7 +249,7 @@ export function materializeInvoiceDrafts(previews: InvoiceDraftPreview[], invoic
       grouping: preview.grouping ?? "none",
       hasMixedRates: preview.hasMixedRates,
       hourlyRate: preview.hourlyRate,
-      id: nextInvoiceId(runningInvoices, referenceDate),
+      id: nextInvoiceId(runningInvoices, referenceDate, invoicePrefix),
       invoiceSourceType: preview.invoiceSourceType,
       lineItems: preview.lineItems ?? [],
       periodEnd: preview.periodEnd,
