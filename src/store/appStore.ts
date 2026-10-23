@@ -496,6 +496,8 @@ export interface AppState {
   hydrated: boolean;
   /** True when hydrateFromApi failed with a non-auth error (e.g. network/server). */
   hydrateError: boolean;
+  /** Which attempt of the current load is running (0 when idle); >1 means retrying. */
+  hydrateAttempt: number;
   currentUser: UserProfile;
   organizations: Organization[];
   activeOrganizationId?: string;
@@ -604,6 +606,29 @@ const defaultUser: UserProfile = {
 };
 
 let hydrateRequestSeq = 0;
+
+// Waits before re-trying the initial load; covers a server or database waking
+// from sleep (Render / Neon scale-to-zero) or a deploy in progress.
+export const HYDRATE_RETRY_DELAYS_MS = [2_000, 5_000];
+
+async function withHydrateRetries<T>(
+  load: () => Promise<T>,
+  onAttempt: (attempt: number) => void,
+  isSuperseded: () => boolean,
+): Promise<T> {
+  for (let attempt = 1; ; attempt += 1) {
+    onAttempt(attempt);
+    try {
+      return await load();
+    } catch (error) {
+      const delay = HYDRATE_RETRY_DELAYS_MS[attempt - 1];
+      // A 401 is handled by redirecting to login; retrying can't fix it.
+      if (error instanceof UnauthorizedError || delay === undefined || isSuperseded()) throw error;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      if (isSuperseded()) throw error;
+    }
+  }
+}
 
 type StoreSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
 
@@ -740,6 +765,7 @@ const emptyState = {
   authStatus: "unknown" as const,
   hydrated: false,
   hydrateError: false,
+  hydrateAttempt: 0,
   currentUser: defaultUser,
   organizations: [] as Organization[],
   activeOrganizationId: undefined as string | undefined,
@@ -781,10 +807,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ?? persistedWorkspace.organizations?.[0]?.id;
       setActiveWorkspaceId(requestedOrganizationId);
 
-      const [hydratedData, organizationsFromApi] = await Promise.all([
-        apiHydrateAll(),
-        apiListOrganizations().catch(() => [] as Organization[]),
-      ]);
+      const [hydratedData, organizationsFromApi] = await withHydrateRetries(
+        () => Promise.all([
+          apiHydrateAll(),
+          apiListOrganizations().catch(() => [] as Organization[]),
+        ]),
+        (attempt) => {
+          if (requestSeq === hydrateRequestSeq) set({ hydrateAttempt: attempt });
+        },
+        () => requestSeq !== hydrateRequestSeq,
+      );
       const clients = hydratedData.clients ?? [];
       const projects = hydratedData.projects ?? [];
       const timeEntries = hydratedData.timeEntries ?? [];
@@ -873,6 +905,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...(restoredSession ? { activeSession: restoredSession } : {}),
         hydrated: true,
         hydrateError: false,
+        hydrateAttempt: 0,
       });
       writePersistedPayPeriodSettings(activeOrganizationId, pickPersistedPayPeriodSettings(mergedSettings));
       writePersistedExpenses(normalizedExpenses);
@@ -901,7 +934,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       if (err instanceof UnauthorizedError) {
         // The registered unauthorized handler (AuthBootstrapper) handles clearing
         // the session and redirecting to login. Just mark hydration complete.
-        set({ hydrated: true });
+        set({ hydrated: true, hydrateAttempt: 0 });
         return;
       }
       // Network or server error — restore persisted workspace data so the user
@@ -910,6 +943,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       set({
         hydrated: true,
         hydrateError: true,
+        hydrateAttempt: 0,
         ...(persistedWorkspace.organizations?.length
           ? {
               organizations: persistedWorkspace.organizations,

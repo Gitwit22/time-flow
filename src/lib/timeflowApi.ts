@@ -25,6 +25,18 @@ type ApiRecord = Record<string, unknown>;
  * Caught by hydrateFromApi and the registered unauthorized handler
  * to clear the session and redirect to login.
  */
+export class RequestTimeoutError extends Error {
+  constructor(message = "The server took too long to respond.") {
+    super(message);
+    this.name = "RequestTimeoutError";
+  }
+}
+
+// Reads give up after this long so a slow or waking server can't leave the app
+// waiting forever. Writes are left alone: abandoning one that the server still
+// completes could make a retry create a duplicate.
+export const READ_TIMEOUT_MS = 30_000;
+
 export class UnauthorizedError extends Error {
   constructor(message = "Session expired. Please sign in again.") {
     super(message);
@@ -63,12 +75,24 @@ function buildHeaders(): HeadersInit {
 }
 
 async function apiRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${TIMEFLOW_API_BASE}/api/timeflow${path}`, {
-    method,
-    credentials: "include",
-    headers: buildHeaders(),
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const isRead = method === "GET";
+  const controller = isRead ? new AbortController() : undefined;
+  const timeout = controller ? setTimeout(() => controller.abort(), READ_TIMEOUT_MS) : undefined;
+  let res: Response;
+  try {
+    res = await fetch(`${TIMEFLOW_API_BASE}/api/timeflow${path}`, {
+      method,
+      credentials: "include",
+      headers: buildHeaders(),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: controller?.signal,
+    });
+  } catch (error) {
+    if (controller?.signal.aborted) throw new RequestTimeoutError();
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
   if (res.status === 204) return undefined as T;
   if (res.status === 401) {
     _onUnauthorized?.();

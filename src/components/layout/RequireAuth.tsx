@@ -1,6 +1,7 @@
 import type { ReactElement } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useAppMode } from "@/context/AppModeContext";
+import { useAppStore } from "@/store/appStore";
 
 /**
  * RequireAuth — guards app routes based on resolved mode.
@@ -14,6 +15,7 @@ import { useAppMode } from "@/context/AppModeContext";
  */
 export function RequireAuth({ children }: { children: ReactElement }) {
   const { isLoading, isAuthenticated } = useAppMode();
+  const hydrateAttempt = useAppStore((state) => state.hydrateAttempt);
   const location = useLocation();
 
   if (isLoading) {
@@ -21,7 +23,9 @@ export function RequireAuth({ children }: { children: ReactElement }) {
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <div className="h-7 w-7 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          <span className="text-sm">Loading…</span>
+          <span className="text-sm">
+            {hydrateAttempt > 1 ? "Still connecting… the server may be waking up." : "Loading…"}
+          </span>
         </div>
       </div>
     );
