@@ -8,6 +8,7 @@ import {
   createProjectPartialInvoicePreview,
   getInvoiceBalanceDue,
   materializeInvoiceDrafts,
+  resolveInvoicePrefix,
   normalizeInvoiceRecord,
 } from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
@@ -603,6 +604,123 @@ const defaultUser: UserProfile = {
 };
 
 let hydrateRequestSeq = 0;
+
+type StoreSet = (partial: Partial<AppState> | ((state: AppState) => Partial<AppState>)) => void;
+
+type LinkedRecordSnapshot = {
+  entries: Map<string, Pick<TimeEntry, "status" | "invoiced" | "invoiceId">>;
+  expenses: Map<string, Pick<Expense, "status" | "invoiceId">>;
+};
+
+/** The invoice prefix for the active business (see resolveInvoicePrefix). */
+function getActiveInvoicePrefix(state: AppState): string {
+  const organization = state.organizations.find((org) => org.id === state.activeOrganizationId);
+  return resolveInvoicePrefix({
+    configuredPrefix: organization?.businessSettings?.invoicePrefix,
+    businessName: organization?.name,
+    existingInvoices: state.invoices.filter(
+      (invoice) => !state.activeOrganizationId
+        || (invoice.workspaceId ?? invoice.organizationId ?? state.activeOrganizationId) === state.activeOrganizationId,
+    ),
+  });
+}
+
+/** Captures what linked entries/expenses looked like before being marked invoiced, for rollback. */
+function snapshotLinkedRecords(state: AppState, entryIds: string[], expenseIds: string[]): LinkedRecordSnapshot {
+  const entryIdSet = new Set(entryIds);
+  const expenseIdSet = new Set(expenseIds);
+  return {
+    entries: new Map(
+      state.timeEntries
+        .filter((entry) => entryIdSet.has(entry.id))
+        .map((entry) => [entry.id, { status: entry.status, invoiced: entry.invoiced, invoiceId: entry.invoiceId }]),
+    ),
+    expenses: new Map(
+      state.expenses
+        .filter((expense) => expenseIdSet.has(expense.id))
+        .map((expense) => [expense.id, { status: expense.status, invoiceId: expense.invoiceId }]),
+    ),
+  };
+}
+
+/**
+ * Saves a newly created invoice, then marks its time entries and expenses as
+ * invoiced with the id the server actually stored. If the save fails, the
+ * optimistic invoice is removed and the linked records are restored, so the UI
+ * never shows an invoice (or invoiced work) the server doesn't have.
+ */
+async function syncNewInvoiceToServer(
+  set: StoreSet,
+  params: {
+    invoice: Invoice;
+    preview: InvoiceDraftPreview;
+    entryIds: string[];
+    expenseIds: string[];
+    previous: LinkedRecordSnapshot;
+    failureMessage: string;
+    onSaved?: (savedId: string) => void;
+  },
+): Promise<void> {
+  const localId = params.invoice.id;
+  let savedId: string;
+  try {
+    const saved = await apiCreateInvoice(localId, params.preview);
+    savedId = saved.id || localId;
+  } catch (err) {
+    set((current) => {
+      const expenses = current.expenses.map((expense) => {
+        const previous = params.previous.expenses.get(expense.id);
+        return previous && expense.invoiceId === localId ? normalizeExpenseRecord({ ...expense, ...previous }) : expense;
+      });
+      writePersistedExpenses(expenses);
+      return {
+        invoices: current.invoices.filter((invoice) => invoice.id !== localId),
+        timeEntries: current.timeEntries.map((entry) => {
+          const previous = params.previous.entries.get(entry.id);
+          return previous && entry.invoiceId === localId ? { ...entry, ...previous } : entry;
+        }),
+        expenses,
+      };
+    });
+    toast.error(`${params.failureMessage}. ${err instanceof Error ? err.message : "Please try again."}`);
+    return;
+  }
+
+  if (savedId !== localId) {
+    // The number was taken (e.g. by another business); the server used the next free one.
+    set((current) => {
+      const expenses = current.expenses.map((expense) =>
+        expense.invoiceId === localId ? normalizeExpenseRecord({ ...expense, invoiceId: savedId }) : expense,
+      );
+      writePersistedExpenses(expenses);
+      return {
+        invoices: current.invoices.map((invoice) => (invoice.id === localId ? { ...invoice, id: savedId } : invoice)),
+        timeEntries: current.timeEntries.map((entry) =>
+          entry.invoiceId === localId ? { ...entry, invoiceId: savedId } : entry,
+        ),
+        expenses,
+      };
+    });
+    toast.info(`Invoice saved as ${savedId}.`);
+  }
+
+  if (params.entryIds.length > 0) {
+    void apiBulkUpdateTimeEntries(params.entryIds, {
+      invoiced: true,
+      invoiceId: savedId,
+      status: "invoiced",
+    }).catch((err) => {
+      toast.error(err instanceof Error ? err.message : "Failed to update time entries");
+    });
+  }
+  params.expenseIds.forEach((expenseId) => {
+    void apiUpdateExpenseRequest(expenseId, {
+      invoiceId: savedId,
+      status: "invoiced",
+    }).catch(() => undefined);
+  });
+  params.onSaved?.(savedId);
+}
 
 const defaultSettings: AppSettings = {
   businessName: "",
@@ -1753,7 +1871,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (!canManageWorkspace(state.currentUser.role)) return [];
 
-    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices).map((invoice) =>
+    const nextInvoices = materializeInvoiceDrafts(previews, state.invoices, undefined, getActiveInvoicePrefix(state)).map((invoice) =>
       appendInvoiceAuditEvent(
         recalculateInvoiceFinancials({
           ...invoice,
@@ -1771,6 +1889,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ),
     );
 
+    const previousLinked = snapshotLinkedRecords(
+      state,
+      previews.flatMap((preview) => preview.entryIds),
+      nextInvoices.flatMap((invoice) => getInvoiceExpenseIds(invoice)),
+    );
     const entryToInvoiceId = new Map<string, string>();
     const expenseToInvoiceId = new Map<string, string>();
     previews.forEach((preview, i) => {
@@ -1809,25 +1932,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
     nextInvoices.forEach((invoice, i) => {
       const preview = previews[i];
       if (!preview) return;
-      void apiCreateInvoice(invoice.id, preview).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to save invoice");
-      });
-      if (preview.entryIds.length > 0) {
-        void apiBulkUpdateTimeEntries(preview.entryIds, {
-          invoiced: true,
-          invoiceId: invoice.id,
-          status: "invoiced",
-        }).catch((err) => {
-          toast.error(err instanceof Error ? err.message : "Failed to update time entries");
-        });
-      }
-
-      const linkedExpenseIds = getInvoiceExpenseIds(invoice);
-      linkedExpenseIds.forEach((expenseId) => {
-        void apiUpdateExpenseRequest(expenseId, {
-          invoiceId: invoice.id,
-          status: "invoiced",
-        }).catch(() => undefined);
+      void syncNewInvoiceToServer(set, {
+        invoice,
+        preview,
+        entryIds: preview.entryIds,
+        expenseIds: getInvoiceExpenseIds(invoice),
+        previous: previousLinked,
+        failureMessage: `Invoice ${invoice.id} was not saved`,
       });
     });
 
@@ -1838,7 +1949,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const state = get();
     if (!canManageWorkspace(state.currentUser.role)) return null;
 
-    const [invoiceDraft] = materializeInvoiceDrafts([preview], state.invoices);
+    const [invoiceDraft] = materializeInvoiceDrafts([preview], state.invoices, undefined, getActiveInvoicePrefix(state));
     const invoice = invoiceDraft
       ? appendInvoiceAuditEvent(
         recalculateInvoiceFinancials({
@@ -1859,6 +1970,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (!invoice) return null;
 
     const invoiceExpenseIds = new Set(getInvoiceExpenseIds(invoice));
+    const previousLinked = snapshotLinkedRecords(state, preview.entryIds, [...invoiceExpenseIds]);
 
     set((current) => {
       const expenses = current.expenses.map((expense) => {
@@ -1883,24 +1995,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     });
 
-    void apiCreateInvoice(invoice.id, preview).catch((err) => {
-      toast.error(err instanceof Error ? err.message : "Failed to save invoice");
-    });
-    if (preview.entryIds.length > 0) {
-      void apiBulkUpdateTimeEntries(preview.entryIds, {
-        invoiced: true,
-        invoiceId: invoice.id,
-        status: "invoiced",
-      }).catch((err) => {
-        toast.error(err instanceof Error ? err.message : "Failed to update time entries");
-      });
-    }
-
-    invoiceExpenseIds.forEach((expenseId) => {
-      void apiUpdateExpenseRequest(expenseId, {
-        invoiceId: invoice.id,
-        status: "invoiced",
-      }).catch(() => undefined);
+    void syncNewInvoiceToServer(set, {
+      invoice,
+      preview,
+      entryIds: preview.entryIds,
+      expenseIds: [...invoiceExpenseIds],
+      previous: previousLinked,
+      failureMessage: `Invoice ${invoice.id} was not saved`,
     });
 
     return invoice;
@@ -2220,7 +2321,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       sourceDescription,
       title: normalizedTitle,
     });
-    const [baseInvoice] = materializeInvoiceDrafts([preview], state.invoices);
+    const [baseInvoice] = materializeInvoiceDrafts([preview], state.invoices, undefined, getActiveInvoicePrefix(state));
     if (!baseInvoice) {
       return null;
     }
@@ -2253,24 +2354,27 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     set((current) => ({ invoices: [invoice, ...current.invoices] }));
 
-    void apiCreateInvoice(invoice.id, preview)
-      .then(() => {
+    void syncNewInvoiceToServer(set, {
+      invoice,
+      preview,
+      entryIds: [],
+      expenseIds: [],
+      previous: snapshotLinkedRecords(state, [], []),
+      failureMessage: "Partial invoice was not saved",
+      onSaved: (savedId) => {
         if (invoice.status === "draft") {
           return;
         }
 
-        void apiUpdateInvoice(invoice.id, {
+        void apiUpdateInvoice(savedId, {
           issuedAt: invoice.issuedAt,
           paidAt: invoice.paidAt,
           status: invoice.status,
         }).catch((err) => {
           toast.error(err instanceof Error ? err.message : "Failed to update invoice status");
         });
-      })
-      .catch((err) => {
-        set((current) => ({ invoices: current.invoices.filter((inv) => inv.id !== invoice.id) }));
-        toast.error(err instanceof Error ? err.message : "Failed to create partial invoice");
-      });
+      },
+    });
 
     return invoice;
   },
@@ -2286,7 +2390,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     const preview = createFixedBillInvoicePreview(clientId, client, billAmount, billTitle, projectId, dueDate);
-    const [invoice] = materializeInvoiceDrafts([preview], state.invoices);
+    const [invoice] = materializeInvoiceDrafts([preview], state.invoices, undefined, getActiveInvoicePrefix(state));
     if (!invoice) return null;
 
     invoice.organizationId = state.activeOrganizationId;
@@ -2294,9 +2398,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     set((current) => ({ invoices: [invoice, ...current.invoices] }));
 
-    void apiCreateInvoice(invoice.id, preview).catch((err) => {
-      set((current) => ({ invoices: current.invoices.filter((inv) => inv.id !== invoice.id) }));
-      toast.error(err instanceof Error ? err.message : "Failed to create invoice from fixed bill");
+    void syncNewInvoiceToServer(set, {
+      invoice,
+      preview,
+      entryIds: [],
+      expenseIds: [],
+      previous: snapshotLinkedRecords(state, [], []),
+      failureMessage: "Invoice from fixed bill was not saved",
     });
 
     return invoice;
