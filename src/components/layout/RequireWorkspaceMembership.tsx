@@ -13,6 +13,7 @@ export function RequireWorkspaceMembership({ children }: RequireWorkspaceMembers
   const { workspaceBootState } = useAppMode();
   const currentUser = useAppStore((state) => state.currentUser);
   const organizationMembers = useAppStore((state) => state.organizationMembers);
+  const hydrateAttempt = useAppStore((state) => state.hydrateAttempt);
 
   const hasActiveMembership = useMemo(() => {
     if (currentUser.role === "client_viewer") {
@@ -43,7 +44,9 @@ export function RequireWorkspaceMembership({ children }: RequireWorkspaceMembers
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-3 text-muted-foreground">
           <div className="h-7 w-7 animate-spin rounded-full border-2 border-current border-t-transparent" />
-          <span className="text-sm">Loading workspace…</span>
+          <span className="text-sm">
+            {hydrateAttempt > 1 ? "Still connecting… the server may be waking up." : "Loading workspace…"}
+          </span>
         </div>
       </div>
     );
