@@ -470,8 +470,38 @@ function toOrganization(r: ApiRecord): Organization {
     solo: (r.solo as boolean) ?? r.workspaceType !== "team",
     teamEnabled: (r.teamEnabled as boolean) ?? false,
     isDefault: (r.isDefault as boolean) ?? false,
+    ...toBusinessProfile(r),
   };
 }
+
+/** Per-business profile fields (branding, contact, document defaults). */
+export type BusinessProfile = Pick<
+  Organization,
+  "legalName" | "businessType" | "industry" | "email" | "phone" | "website" | "address" | "branding" | "businessSettings"
+>;
+
+function toBusinessProfile(r: ApiRecord): BusinessProfile {
+  const optionalString = (key: string) => (typeof r[key] === "string" ? (r[key] as string) : undefined);
+  const optionalRecord = <T,>(key: string) => (r[key] && typeof r[key] === "object" ? (r[key] as T) : undefined);
+  return {
+    legalName: optionalString("legalName"),
+    businessType: optionalString("businessType") as Organization["businessType"],
+    industry: optionalString("industry") as Organization["industry"],
+    email: optionalString("email"),
+    phone: optionalString("phone"),
+    website: optionalString("website"),
+    address: optionalRecord<Organization["address"]>("address"),
+    branding: optionalRecord<Organization["branding"]>("branding"),
+    businessSettings: optionalRecord<Organization["businessSettings"]>("businessSettings"),
+  };
+}
+
+/** Partial update: omitted keys are kept, `null` clears a field or section. */
+export type BusinessProfileUpdate = { [K in keyof BusinessProfile]?: BusinessProfile[K] | null };
+
+export const apiSaveBusinessProfile = (organizationId: string, profile: BusinessProfileUpdate) =>
+  apiRequest<ApiRecord>("PUT", `/organizations/${encodeURIComponent(organizationId)}/profile`, profile)
+    .then(toBusinessProfile);
 
 export const apiListOrganizations = () =>
   apiRequest<{ organizations: ApiRecord[] }>("GET", "/organizations")

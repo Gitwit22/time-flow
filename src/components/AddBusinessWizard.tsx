@@ -15,6 +15,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { BrandingImageError, prepareBrandingImage } from "@/lib/brandingImage";
+import { apiSaveSettings, type BusinessProfile } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
 import type { BusinessType, BusinessIndustry, EstimateHeaderStyle } from "@/types";
 
@@ -146,6 +148,7 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
   const createOrganizationWorkspace = useAppStore((state) => state.createOrganizationWorkspace);
   const seedOrganizationContext = useAppStore((state) => state.seedOrganizationContext);
   const hydrateFromApi = useAppStore((state) => state.hydrateFromApi);
+  const saveBusinessProfile = useAppStore((state) => state.saveBusinessProfile);
   const currentUser = useAppStore((state) => state.currentUser);
 
   const [step, setStep] = useState(0);
@@ -180,7 +183,45 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
       const newOrgId = await createOrganizationWorkspace(data.name.trim());
       if (!newOrgId) throw new Error("Failed to create business");
 
-      // Seed the extended business data into local state
+      const profile: BusinessProfile = {
+        legalName: data.legalName.trim() || undefined,
+        businessType: data.businessType || undefined,
+        industry: data.industry || undefined,
+        email: data.email.trim() || undefined,
+        phone: data.phone.trim() || undefined,
+        website: data.website.trim() || undefined,
+        address: {
+          street: data.street.trim() || undefined,
+          city: data.city.trim() || undefined,
+          state: data.state.trim() || undefined,
+          zip: data.zip.trim() || undefined,
+          country: data.country.trim() || undefined,
+          useOnDocuments: data.useAddressOnDocuments,
+        },
+        branding: {
+          logoDataUrl: data.logoDataUrl,
+          primaryColor: data.primaryColor,
+          accentColor: data.accentColor,
+          estimateHeaderStyle: data.estimateHeaderStyle,
+        },
+        businessSettings: {
+          currency: data.currency,
+          taxRate: parseFloat(data.taxRate) / 100 || 0,
+          estimatePrefix: data.estimatePrefix.trim() || "EST",
+          nextEstimateNumber: parseInt(data.estimateStartNumber) || 1001,
+          invoicePrefix: data.invoicePrefix.trim() || "INV",
+          nextInvoiceNumber: parseInt(data.invoiceStartNumber) || 1001,
+          defaultEstimateExpirationDays: parseInt(data.defaultExpirationDays) || 30,
+          defaultPaymentTerms: data.defaultPaymentTerms,
+          defaultDepositPercent: parseFloat(data.defaultDepositPercent) || 25,
+          defaultCustomerNote: data.defaultCustomerNote.trim() || undefined,
+          defaultTermsAndConditions: data.defaultTermsAndConditions.trim() || undefined,
+          defaultTaxableStatus: data.defaultTaxableStatus,
+        },
+      };
+
+      // Seed the extended business data into local state (also makes the new
+      // business the active workspace, so the saves below are scoped to it).
       seedOrganizationContext({
         organization: {
           id: newOrgId,
@@ -189,46 +230,32 @@ export function AddBusinessWizard({ open, onClose }: AddBusinessWizardProps) {
           createdAt: new Date().toISOString(),
           status: "active",
           workspaceType: "team",
-          legalName: data.legalName.trim() || undefined,
-          businessType: data.businessType || undefined,
-          industry: data.industry || undefined,
-          email: data.email.trim() || undefined,
-          phone: data.phone.trim() || undefined,
-          website: data.website.trim() || undefined,
-          address: {
-            street: data.street.trim() || undefined,
-            city: data.city.trim() || undefined,
-            state: data.state.trim() || undefined,
-            zip: data.zip.trim() || undefined,
-            country: data.country.trim() || undefined,
-            useOnDocuments: data.useAddressOnDocuments,
-          },
-          branding: {
-            logoDataUrl: data.logoDataUrl,
-            primaryColor: data.primaryColor,
-            accentColor: data.accentColor,
-            estimateHeaderStyle: data.estimateHeaderStyle,
-          },
-          businessSettings: {
-            currency: data.currency,
-            taxRate: parseFloat(data.taxRate) / 100 || 0,
-            estimatePrefix: data.estimatePrefix.trim() || "EST",
-            nextEstimateNumber: parseInt(data.estimateStartNumber) || 1001,
-            invoicePrefix: data.invoicePrefix.trim() || "INV",
-            nextInvoiceNumber: parseInt(data.invoiceStartNumber) || 1001,
-            defaultEstimateExpirationDays: parseInt(data.defaultExpirationDays) || 30,
-            defaultPaymentTerms: data.defaultPaymentTerms,
-            defaultDepositPercent: parseFloat(data.defaultDepositPercent) || 25,
-            defaultCustomerNote: data.defaultCustomerNote.trim() || undefined,
-            defaultTermsAndConditions: data.defaultTermsAndConditions.trim() || undefined,
-            defaultTaxableStatus: data.defaultTaxableStatus,
-          },
+          ...profile,
         },
       });
 
+      // The business exists at this point; if saving its profile fails, say so
+      // instead of reporting full success.
+      const [profileResult, settingsResult] = await Promise.allSettled([
+        saveBusinessProfile(newOrgId, profile),
+        apiSaveSettings({
+          businessName: profile.legalName || data.name.trim(),
+          ...(data.logoDataUrl ? { invoiceLogoDataUrl: data.logoDataUrl } : {}),
+        }),
+      ]);
+      const brandingSaveFailed = profileResult.status === "rejected" || settingsResult.status === "rejected";
+
       await hydrateFromApi();
 
-      toast({ title: `${data.name} is ready!`, description: "Your new business workspace has been created." });
+      if (brandingSaveFailed) {
+        toast({
+          title: `${data.name} was created, but its branding wasn't saved`,
+          description: "Open Settings in this business to add its logo and details again.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: `${data.name} is ready!`, description: "Your new business workspace has been created." });
+      }
 
       onClose();
       setStep(0);
@@ -494,17 +521,21 @@ function Step2Address({ data, update }: { data: WizardData; update: (u: Partial<
 function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial<WizardData>) => void }) {
   const { toast } = useToast();
 
-  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.size > 750 * 1024) {
-      toast({ title: "Logo file too large", description: "Please choose an image under 750 KB.", variant: "destructive" });
-      e.target.value = "";
-      return;
+    try {
+      update({ logoDataUrl: await prepareBrandingImage(file, "logo") });
+    } catch (error) {
+      toast({
+        title: "Logo couldn't be used",
+        description: error instanceof BrandingImageError ? error.message : "Try a different image.",
+        variant: "destructive",
+      });
+    } finally {
+      input.value = "";
     }
-    const reader = new FileReader();
-    reader.onload = () => update({ logoDataUrl: String(reader.result ?? "") });
-    reader.readAsDataURL(file);
   }
 
   return (
@@ -525,7 +556,7 @@ function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={handleLogoUpload}
+              onChange={(event) => void handleLogoUpload(event)}
             />
             <Label
               htmlFor="logo-upload"
@@ -533,7 +564,7 @@ function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial
             >
               Choose image
             </Label>
-            <p className="mt-1 text-xs text-muted-foreground">PNG, JPG up to 750 KB</p>
+            <p className="mt-1 text-xs text-muted-foreground">PNG, JPG, WEBP or SVG up to 5 MB</p>
           </div>
         </div>
       </div>

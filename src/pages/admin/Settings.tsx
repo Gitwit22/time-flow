@@ -11,17 +11,8 @@ import { updateActiveUserProfile } from "@/lib/auth";
 import { formatDateForInput, parseDateInput } from "@/lib/date";
 import { canManageWorkspace } from "@/lib/organization";
 import { useAppStore } from "@/store/appStore";
+import { BrandingImageError, prepareBrandingImage } from "@/lib/brandingImage";
 
-const MAX_BRANDING_FILE_BYTES = 750 * 1024;
-
-function readImageAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result ?? ""));
-    reader.onerror = () => reject(new Error("Failed to read image file."));
-    reader.readAsDataURL(file);
-  });
-}
 
 export default function SettingsPage() {
   const { toast } = useToast();
@@ -30,6 +21,7 @@ export default function SettingsPage() {
   const clients = useAppStore((state) => state.clients);
   const updateCurrentUser = useAppStore((state) => state.updateCurrentUser);
   const updateSettings = useAppStore((state) => state.updateSettings);
+  const saveBusinessProfile = useAppStore((state) => state.saveBusinessProfile);
   const resetApp = useAppStore((state) => state.resetApp);
   const organizations = useAppStore((state) => state.organizations);
   const activeOrganizationId = useAppStore((state) => state.activeOrganizationId);
@@ -110,32 +102,20 @@ export default function SettingsPage() {
       return;
     }
 
-    if (!file.type.startsWith("image/")) {
-      toast({ title: "Unsupported file", description: "Please upload a PNG, JPG, WEBP, or SVG image.", variant: "destructive" });
-      event.target.value = "";
-      return;
-    }
-
-    if (file.size > MAX_BRANDING_FILE_BYTES) {
-      toast({
-        title: "Image too large",
-        description: "Use an image smaller than 750 KB so it can be stored reliably in the browser.",
-        variant: "destructive",
-      });
-      event.target.value = "";
-      return;
-    }
-
     try {
-      const dataUrl = await readImageAsDataUrl(file);
+      const dataUrl = await prepareBrandingImage(file, asset);
       if (asset === "logo") {
         setInvoiceLogoDataUrl(dataUrl);
       } else {
         setInvoiceBannerDataUrl(dataUrl);
       }
       toast({ title: `${asset === "logo" ? "Logo" : "Banner"} loaded`, description: "Save branding to apply it to invoice downloads." });
-    } catch {
-      toast({ title: "Upload failed", description: "The image could not be loaded. Try a different file.", variant: "destructive" });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof BrandingImageError ? error.message : "The image could not be loaded. Try a different file.",
+        variant: "destructive",
+      });
     }
 
     event.target.value = "";
@@ -523,7 +503,7 @@ export default function SettingsPage() {
           <CardTitle className="text-base font-heading">Invoice Branding</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <p className="text-sm text-muted-foreground">Add a logo and optional banner image to the printable invoice. Images are stored locally in this browser, so keep them under 750 KB each.</p>
+          <p className="text-sm text-muted-foreground">Add a logo and optional banner image to the printable invoice. Images up to 5 MB are accepted; large images are resized automatically.</p>
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-3 rounded-lg border p-4">
               <div className="space-y-1.5">
@@ -555,6 +535,19 @@ export default function SettingsPage() {
             size="sm"
             onClick={() => {
               updateSettings({ invoiceLogoDataUrl, invoiceBannerDataUrl });
+              // Keep this business's profile logo in step so the business
+              // switcher shows the same logo for it from any workspace.
+              if (activeWorkspace && canManageWorkspace(currentUser.role)) {
+                void saveBusinessProfile(activeWorkspace.id, {
+                  branding: { ...activeWorkspace.branding, logoDataUrl: invoiceLogoDataUrl },
+                }).catch((error) => {
+                  toast({
+                    title: "Business logo not updated",
+                    description: error instanceof Error ? error.message : "Try saving branding again.",
+                    variant: "destructive",
+                  });
+                });
+              }
               toast({ title: "Branding saved", description: "Invoice downloads will use your current logo and banner." });
             }}
           >

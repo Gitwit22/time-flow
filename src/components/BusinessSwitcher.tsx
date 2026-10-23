@@ -31,6 +31,8 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
   );
 
   const displayName = activeOrg?.name || settings.businessName || "My Business";
+  // The active workspace's settings logo wins; fall back to its business profile logo.
+  const activeLogo = settings.invoiceLogoDataUrl || activeOrg?.branding?.logoDataUrl;
 
   function handleSwitch(orgId: string) {
     if (orgId === activeOrganizationId) return;
@@ -52,8 +54,8 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
   if (collapsed) {
     return (
       <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
-        {settings.invoiceLogoDataUrl ? (
-          <img src={settings.invoiceLogoDataUrl} alt="Business logo" className="h-full w-full object-contain" />
+        {activeLogo ? (
+          <img src={activeLogo} alt="Business logo" className="h-full w-full object-contain" />
         ) : (
           <Building2 className="h-4 w-4 text-sidebar-foreground/70" />
         )}
@@ -71,8 +73,8 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
           )}
         >
           <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-sidebar-border/60 bg-sidebar-accent/40">
-            {settings.invoiceLogoDataUrl ? (
-              <img src={settings.invoiceLogoDataUrl} alt="Business logo" className="h-full w-full object-contain" />
+            {activeLogo ? (
+              <img src={activeLogo} alt="Business logo" className="h-full w-full object-contain" />
             ) : (
               <Building2 className="h-4 w-4 text-sidebar-foreground/70" />
             )}
@@ -94,8 +96,17 @@ export function BusinessSwitcher({ collapsed, onAddBusiness }: BusinessSwitcherP
             onClick={() => handleSwitch(org.id)}
             className="flex items-center gap-2 cursor-pointer"
           >
-            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-muted">
-              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+            <div className="flex h-6 w-6 shrink-0 items-center justify-center overflow-hidden rounded bg-muted">
+              {/* Each business shows its own logo; the active one may only have a settings logo. */}
+              {(org.id === activeOrganizationId ? activeLogo : org.branding?.logoDataUrl) ? (
+                <img
+                  src={(org.id === activeOrganizationId ? activeLogo : org.branding?.logoDataUrl) as string}
+                  alt=""
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
             </div>
             <span className="flex-1 truncate text-sm">{org.name}</span>
             {org.id === activeOrganizationId && (
