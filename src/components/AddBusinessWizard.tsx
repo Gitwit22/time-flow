@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { BrandingImageError, prepareBrandingImage } from "@/lib/brandingImage";
 import { apiSaveSettings, type BusinessProfile } from "@/lib/timeflowApi";
 import { useAppStore } from "@/store/appStore";
 import type { BusinessType, BusinessIndustry, EstimateHeaderStyle } from "@/types";
@@ -520,17 +521,21 @@ function Step2Address({ data, update }: { data: WizardData; update: (u: Partial<
 function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial<WizardData>) => void }) {
   const { toast } = useToast();
 
-  function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.size > 750 * 1024) {
-      toast({ title: "Logo file too large", description: "Please choose an image under 750 KB.", variant: "destructive" });
-      e.target.value = "";
-      return;
+    try {
+      update({ logoDataUrl: await prepareBrandingImage(file, "logo") });
+    } catch (error) {
+      toast({
+        title: "Logo couldn't be used",
+        description: error instanceof BrandingImageError ? error.message : "Try a different image.",
+        variant: "destructive",
+      });
+    } finally {
+      input.value = "";
     }
-    const reader = new FileReader();
-    reader.onload = () => update({ logoDataUrl: String(reader.result ?? "") });
-    reader.readAsDataURL(file);
   }
 
   return (
@@ -551,7 +556,7 @@ function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial
               type="file"
               accept="image/*"
               className="hidden"
-              onChange={handleLogoUpload}
+              onChange={(event) => void handleLogoUpload(event)}
             />
             <Label
               htmlFor="logo-upload"
@@ -559,7 +564,7 @@ function Step3Branding({ data, update }: { data: WizardData; update: (u: Partial
             >
               Choose image
             </Label>
-            <p className="mt-1 text-xs text-muted-foreground">PNG, JPG up to 750 KB</p>
+            <p className="mt-1 text-xs text-muted-foreground">PNG, JPG, WEBP or SVG up to 5 MB</p>
           </div>
         </div>
       </div>

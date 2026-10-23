@@ -259,7 +259,19 @@ function writePersistedWorkspaceState(state: WorkspaceStateSnapshot) {
     return;
   }
 
-  window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(state));
+  // Logos are reloaded from the API; caching them here could exceed the ~5 MB
+  // localStorage quota and break workspace switching.
+  const organizations = state.organizations.map((organization) =>
+    organization.branding?.logoDataUrl
+      ? { ...organization, branding: { ...organization.branding, logoDataUrl: undefined } }
+      : organization,
+  );
+  try {
+    window.localStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify({ ...state, organizations }));
+  } catch (error) {
+    // The cache is only a fallback for offline/failed loads; never block the UI on it.
+    console.warn("[timeflow] could not cache workspace state", error);
+  }
 }
 
 function persistWorkspaceSnapshot(state: WorkspaceStateSnapshot) {
