@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { formatCurrency, formatDateForInput, formatHours, formatLongDate, formatPeriodLabel, parseDateInput, toDateOnlyString } from "@/lib/date";
 import { downloadInvoiceExport, type InvoiceReceiptAttachment } from "@/lib/export";
 import { canMoveInvoiceBackToDraft, getInvoiceDisplayStatus, getInvoiceSourceTypeLabel, groupInvoiceLaborByProject } from "@/lib/invoice";
+import { EditInvoiceDialog } from "@/components/invoices/EditInvoiceDialog";
 import { calculateInvoiceExpenseSubtotal, calculateInvoiceLaborSubtotal } from "@/lib/billing";
 import { getEntryBillableAmount, getEntryHours, getEntryType } from "@/lib/timeEntries";
 import { listTimeflowDocuments, getTimeflowDocumentViewUrl } from "@/lib/timeflowDocumentsApi";
@@ -204,6 +205,7 @@ export default function InvoiceDetail() {
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Open Export Center
             </Link>
           </Button>
+            {!isReadonly ? <EditInvoiceDialog invoice={invoice} initialLineItems={lineItems} /> : null}
             {!isReadonly && invoice.status === "draft" ? (
               <Button
                 size="sm"

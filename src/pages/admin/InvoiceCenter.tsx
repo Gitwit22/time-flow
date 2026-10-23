@@ -1,6 +1,7 @@
 import { FileText, Download, Eye, CheckCircle2, Filter, RotateCcw, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 
+import { EditInvoiceDialog } from "@/components/invoices/EditInvoiceDialog";
 import { GenerateInvoiceDialog } from "@/components/invoices/GenerateInvoiceDialog";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -184,6 +185,7 @@ export default function InvoiceCenter() {
                         >
                           <Download className="h-3.5 w-3.5" />
                         </Button>
+                        {!isReadonly ? <EditInvoiceDialog invoice={inv} compact /> : null}
                         {!isReadonly && inv.status === "draft" && (
                           <Button
                             variant="ghost"
