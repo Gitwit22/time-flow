@@ -9,6 +9,8 @@ import {
   getInvoiceBalanceDue,
   materializeInvoiceDrafts,
   resolveInvoicePrefix,
+  getInvoiceEditLockReason,
+  validateInvoiceLineItems,
   normalizeInvoiceRecord,
 } from "@/lib/invoice";
 import { getTrackedSessionSeconds } from "@/lib/date";
@@ -581,6 +583,8 @@ export interface AppState {
   commitSingleInvoice: (preview: InvoiceDraftPreview) => Invoice | null;
   updateInvoice: (id: string, updates: Partial<Invoice>) => void;
   moveInvoiceBackToDraft: (id: string, note?: string) => { ok: boolean; message?: string };
+  /** Replaces an invoice's line items (reopening a sent invoice as a draft). Resolves once the server has saved. */
+  saveInvoiceEdits: (id: string, lineItems: InvoiceLineItem[]) => Promise<{ ok: boolean; message?: string }>;
   voidInvoice: (id: string, options?: { releaseLinkedItems?: boolean; note?: string }) => { ok: boolean; message?: string };
   deleteInvoice: (id: string) => void;
   createPartialProjectInvoice: (draft: PartialProjectInvoiceDraft) => Invoice | null;
@@ -2113,7 +2117,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }).catch(() => undefined);
     });
 
-    void apiUpdateInvoice(id, updates).catch((err) => {
+    // The server stores totals as given; when the lines or tax change, send the
+    // recalculated totals too or the old ones come back on the next load.
+    const financialUpdates = "lineItems" in updates || "taxRate" in updates
+      ? { subtotal: nextInvoice.subtotal, taxAmount: nextInvoice.taxAmount, totalAmount: nextInvoice.totalAmount }
+      : {};
+    void apiUpdateInvoice(id, { ...updates, ...financialUpdates }).catch((err) => {
       set((state) => {
         const previousExpenseIds = new Set(getInvoiceExpenseIds(prev));
         const restoredExpenses = state.expenses.map((expense) => {
@@ -2136,6 +2145,121 @@ export const useAppStore = create<AppState>()((set, get) => ({
       });
       toast.error(err instanceof Error ? err.message : "Failed to update invoice");
     });
+  },
+
+  saveInvoiceEdits: async (id, lineItems) => {
+    const state = get();
+    if (!canManageWorkspace(state.currentUser.role)) {
+      return { ok: false, message: "You don't have permission to edit invoices." };
+    }
+    const prev = state.invoices.find((inv) => inv.id === id);
+    if (!prev) return { ok: false, message: "Invoice not found." };
+
+    const lockReason = getInvoiceEditLockReason(prev);
+    if (lockReason) return { ok: false, message: lockReason };
+    const invalid = validateInvoiceLineItems(lineItems);
+    if (invalid) return { ok: false, message: invalid };
+
+    const roundMoney = (value: number) => Number(value.toFixed(2));
+    const nextLines = lineItems.map((line) => ({
+      ...line,
+      description: line.description.trim(),
+      hours: roundMoney(line.hours),
+      rate: roundMoney(line.rate),
+      amount: roundMoney(line.amount),
+      timeEntryIds: line.timeEntryIds ?? [],
+    }));
+    const laborLines = nextLines.filter((line) => line.lineType !== "expense");
+    const entryIds = [...new Set(laborLines.flatMap((line) => line.timeEntryIds))];
+    const laborRates = new Set(laborLines.filter((line) => line.hours > 0).map((line) => line.rate));
+    const reopening = prev.status !== "draft";
+
+    const nextInvoice = appendInvoiceAuditEvent(
+      recalculateInvoiceFinancials({
+        ...prev,
+        lineItems: nextLines,
+        entryIds,
+        timeEntryIds: entryIds,
+        totalHours: roundMoney(laborLines.reduce((sum, line) => sum + line.hours, 0)),
+        hourlyRate: laborRates.size === 1 ? [...laborRates][0] : prev.hourlyRate,
+        hasMixedRates: laborRates.size > 1,
+        ...(reopening
+          ? {
+              status: "draft" as const,
+              issuedAt: undefined,
+              movedBackToDraftAt: new Date().toISOString(),
+              revisionNumber: (prev.revisionNumber ?? 0) + 1,
+            }
+          : {}),
+      }),
+      {
+        actionType: reopening ? "moved_back_to_draft" : "updated",
+        previousStatus: prev.status,
+        newStatus: "draft",
+        userId: state.currentUser.id,
+        note: reopening ? "Reopened as draft to edit line items" : "Line items edited",
+      },
+    );
+
+    // Only items taken off the invoice become billable again; everything still
+    // on it stays linked so it can't be billed twice.
+    const previousEntryIds = new Set([...prev.entryIds, ...prev.lineItems.flatMap((line) => line.timeEntryIds ?? [])]);
+    const keptEntryIds = new Set(entryIds);
+    const removedEntryIds = new Set([...previousEntryIds].filter((entryId) => !keptEntryIds.has(entryId)));
+    const keptExpenseIds = new Set(getInvoiceExpenseIds(nextInvoice));
+    const removedExpenseIds = new Set(getInvoiceExpenseIds(prev).filter((expenseId) => !keptExpenseIds.has(expenseId)));
+
+    try {
+      await apiUpdateInvoice(id, {
+        lineItems: nextInvoice.lineItems,
+        entryIds: nextInvoice.entryIds,
+        timeEntryIds: nextInvoice.timeEntryIds,
+        totalHours: nextInvoice.totalHours,
+        hourlyRate: nextInvoice.hourlyRate,
+        hasMixedRates: nextInvoice.hasMixedRates,
+        subtotal: nextInvoice.subtotal,
+        taxAmount: nextInvoice.taxAmount,
+        totalAmount: nextInvoice.totalAmount,
+        status: nextInvoice.status,
+        revisionNumber: nextInvoice.revisionNumber,
+        movedBackToDraftAt: nextInvoice.movedBackToDraftAt,
+        auditLog: nextInvoice.auditLog,
+      });
+    } catch (err) {
+      // Nothing was changed locally, so the invoice and its items are exactly as before.
+      return { ok: false, message: err instanceof Error ? err.message : "The invoice could not be saved." };
+    }
+
+    set((current) => {
+      const { nextTimeEntries, nextExpenses } = releaseLinkedInvoiceItems(
+        id,
+        current.timeEntries,
+        current.expenses,
+        removedEntryIds,
+        removedExpenseIds,
+      );
+      writePersistedExpenses(nextExpenses);
+      return {
+        invoices: current.invoices.map((inv) => (inv.id === id ? nextInvoice : inv)),
+        timeEntries: nextTimeEntries,
+        expenses: nextExpenses,
+      };
+    });
+
+    if (removedEntryIds.size > 0) {
+      void apiBulkUpdateTimeEntries([...removedEntryIds], {
+        invoiced: false,
+        invoiceId: null,
+        status: "completed",
+      }).catch((err) => {
+        toast.error(err instanceof Error ? err.message : "Failed to release removed time entries");
+      });
+    }
+    removedExpenseIds.forEach((expenseId) => {
+      void apiUpdateExpenseRequest(expenseId, { invoiceId: null, status: "billable" }).catch(() => undefined);
+    });
+
+    return { ok: true };
   },
 
   moveInvoiceBackToDraft: (id, note) => {

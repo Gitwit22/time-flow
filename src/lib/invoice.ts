@@ -2,7 +2,7 @@ import { isBefore, parseISO } from "date-fns";
 
 import { buildInvoiceDraftSummary } from "@/lib/billing";
 import { uniqueProjectIds } from "@/lib/projects";
-import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDisplayStatus, InvoiceDraftPreview, Project, TimeEntry, UserProfile } from "@/types";
+import type { AppSettings, Client, EmailDraft, Invoice, InvoiceDisplayStatus, InvoiceDraftPreview, InvoiceLineItem, Project, TimeEntry, UserProfile } from "@/types";
 
 const OVERDUE_STATUSES: ReadonlySet<Invoice["status"]> = new Set(["issued", "sent", "viewed", "partially_paid"]);
 
@@ -28,6 +28,35 @@ export function canMoveInvoiceBackToDraft(invoice: Pick<Invoice, "status">) {
 
 export function canEditInvoiceDirectly(invoice: Pick<Invoice, "status">) {
   return invoice.status === "draft";
+}
+
+/**
+ * Why an invoice's line items can't be edited, or undefined if they can.
+ * Drafts edit in place; sent/unpaid invoices are reopened as drafts first.
+ * Anything with money received stays locked (that needs a credit/adjustment).
+ */
+export function getInvoiceEditLockReason(
+  invoice: Pick<Invoice, "status" | "paidAt" | "paidAmount">,
+): string | undefined {
+  if (invoice.status === "void") return "Void invoices can't be edited.";
+  if (invoice.status === "paid" || invoice.status === "partially_paid" || invoice.paidAt || (invoice.paidAmount ?? 0) > 0) {
+    return "Paid invoices are locked to protect your records.";
+  }
+  if (canEditInvoiceDirectly(invoice) || canMoveInvoiceBackToDraft(invoice)) return undefined;
+  return "This invoice can't be edited.";
+}
+
+/** First problem with a set of edited line items, or undefined when they're valid. */
+export function validateInvoiceLineItems(lineItems: InvoiceLineItem[]): string | undefined {
+  if (lineItems.length === 0) return "An invoice needs at least one line.";
+  for (const [index, line] of lineItems.entries()) {
+    const label = `Line ${index + 1}`;
+    if (!line.description.trim()) return `${label} needs a description.`;
+    for (const [field, value] of [["Hours", line.hours], ["Rate", line.rate], ["Amount", line.amount]] as const) {
+      if (!Number.isFinite(value) || value < 0) return `${label}: ${field.toLowerCase()} must be zero or more.`;
+    }
+  }
+  return undefined;
 }
 
 export function getInvoiceBalanceDue(invoice: Pick<Invoice, "totalAmount" | "paidAmount" | "status">) {
